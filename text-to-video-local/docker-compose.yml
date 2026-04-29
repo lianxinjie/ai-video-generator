@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  text-to-video:
+    build: .
+    image: text-to-video-local:latest
+    container_name: text2video
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    
+    # GPU 配置
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    # 挂载目录
+    volumes:
+      # 模型缓存
+      - ./models:/app/models
+      # 输出目录
+      - ./outputs:/app/outputs
+      # 配置文件（可选）
+      - ./config.yaml:/app/config.yaml:ro
+    
+    # 工作目录
+    working_dir: /app
+    
+    # 保持容器运行（可选）
+    # stdin_open: true
+    # tty: true
+    
+    # 资源限制（可选）
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 32G
+    #     reservations:
+    #       memory: 16G
+
+# 使用示例:
+# 1. 构建镜像
+#    docker-compose build
+#
+# 2. 运行生成命令
+#    docker-compose run --rm text-to-video generate \
+#      --model modelscope \
+#      --prompt "一只可爱的小猫" \
+#      --output /app/outputs/test.mp4
+#
+# 3. 查看 GPU 状态
+#    docker-compose run --rm text-to-video check
