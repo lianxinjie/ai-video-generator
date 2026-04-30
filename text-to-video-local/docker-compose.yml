@@ -1,16 +1,89 @@
 version: '3.8'
 
 services:
-  text-to-video:
-    build: .
-    image: text-to-video-local:latest
-    container_name: text2video
+  # ==================== GPU 模式 ====================
+  video-generator-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base-gpu
+    image: video-generator:gpu-latest
+    container_name: video-gen-gpu
     runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    
-    # GPU 配置
+      - HF_HOME=/app/cache/huggingface
+      - MODELSCOPE_CACHE=/app/cache/modelscope
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+    volumes:
+      - ./outputs:/app/outputs
+      - ./models:/app/models
+      - ./cache:/app/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # 示例命令：生成视频
+    # command: >
+    #   python3 generation.py
+    #   -m modelscope
+    #   -p "一只猫在草地上奔跑"
+    #   -o outputs/demo.mp4
+    #   -d 5
+    #   --fps 8
+    ports:
+      - "8080:8080"  # 如果未来添加 Web UI
+    profiles: ["gpu"]
+    shm_size: '4gb'
+    restart: unless-stopped
+
+  # ==================== CPU 模式 ====================
+  video-generator-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base-cpu
+    image: video-generator:cpu-latest
+    container_name: video-gen-cpu
+    environment:
+      - HF_HOME=/app/cache/huggingface
+    volumes:
+      - ./outputs:/app/outputs
+      - ./models:/app/models
+      - ./cache:/app/cache
+    # command: >
+    #   python3 generation.py
+    #   -m modelscope
+    #   --device cpu
+    #   -p "一只猫在草地上奔跑"
+    #   -o outputs/demo.mp4
+    profiles: ["cpu"]
+    restart: unless-stopped
+
+  # ==================== 混合模式（GPU+CPU 协同） ====================
+  video-generator-hybrid:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base-gpu
+    image: video-generator:hybrid-latest
+    container_name: video-gen-hybrid
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_HOME=/app/cache/huggingface
+      - MODELSCOPE_CACHE=/app/cache/modelscope
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256
+      - TRANSFORMERS_OFFLINE=0
+    volumes:
+      - ./outputs:/app/outputs
+      - ./models:/app/models:ro  # 只读挂载模型
+      - ./cache:/app/cache
+      - ./offload:/app/offload   # CPU offload 目录
     deploy:
       resources:
         reservations:
@@ -18,40 +91,85 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    
-    # 挂载目录
-    volumes:
-      # 模型缓存
-      - ./models:/app/models
-      # 输出目录
-      - ./outputs:/app/outputs
-      # 配置文件（可选）
-      - ./config.yaml:/app/config.yaml:ro
-    
-    # 工作目录
-    working_dir: /app
-    
-    # 保持容器运行（可选）
-    # stdin_open: true
-    # tty: true
-    
-    # 资源限制（可选）
-    # deploy:
-    #   resources:
-    #     limits:
-    #       memory: 32G
-    #     reservations:
-    #       memory: 16G
+    command: >
+      python3 generation.py
+      -m cogvideox
+      -p "高质量视频生成测试"
+      -o outputs/hybrid_test.mp4
+      --steps 30
+    profiles: ["hybrid"]
+    shm_size: '8gb'
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    restart: unless-stopped
 
-# 使用示例:
-# 1. 构建镜像
-#    docker-compose build
+  # ==================== 下载器服务（仅用于下载模型） ====================
+  model-downloader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base-gpu
+    image: video-generator:downloader
+    container_name: video-gen-downloader
+    volumes:
+      - ./models:/app/models
+      - ./cache:/app/cache
+    command: >
+      python3 download_models.py
+      -m modelscope animatediff
+      -o /app/models
+      --parallel 2
+    profiles: ["download"]
+    network_mode: none  # 如果需要网络下载，注释此行
+    restart: "no"
+
+  # ==================== 系统扫描服务 ====================
+  system-scanner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base-cpu
+    image: video-generator:scanner
+    container_name: video-gen-scanner
+    volumes:
+      - ./:/app
+    command: >
+      python3 scanner.py
+      -o /app/scan_report.json
+      --generate-package
+      --package-dir /app/offline-package
+    profiles: ["scan"]
+    restart: "no"
+
+# ==================== 使用示例 ====================
 #
-# 2. 运行生成命令
-#    docker-compose run --rm text-to-video generate \
-#      --model modelscope \
-#      --prompt "一只可爱的小猫" \
-#      --output /app/outputs/test.mp4
+# 1. GPU 模式运行:
+#    docker-compose --profile gpu up video-generator-gpu
 #
-# 3. 查看 GPU 状态
-#    docker-compose run --rm text-to-video check
+# 2. CPU 模式运行:
+#    docker-compose --profile cpu up video-generator-cpu
+#
+# 3. 下载模型:
+#    docker-compose --profile download up model-downloader
+#
+# 4. 系统扫描:
+#    docker-compose --profile scan up system-scanner
+#
+# 5. 后台运行:
+#    docker-compose --profile gpu up -d video-generator-gpu
+#
+# 6. 查看日志:
+#    docker-compose logs -f video-generator-gpu
+#
+# 7. 停止服务:
+#    docker-compose --profile gpu down
+#
+# ==================== 环境变量配置 ====================
+#
+# 可通过 .env 文件配置:
+# NVIDIA_VISIBLE_DEVICES=0        # 使用 GPU 0
+# HF_HOME=/path/to/huggingface    # HuggingFace 缓存
+# MODEL_NAME=modelscope           # 默认模型
+# GENERATION_PROMPT=测试视频       # 默认提示词
+#
