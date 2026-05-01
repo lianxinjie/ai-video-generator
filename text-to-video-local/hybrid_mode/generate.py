@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import click
 from hybrid_mode.prompt_generator import PromptTemplateGenerator
 from hybrid_mode.video_synthesizer import VideoSynthesizer
+from hybrid_mode.ai_analyzer import AIStyleAnalyzer
 
 
 # 配置日志
@@ -61,23 +62,23 @@ def cli(ctx):
 @click.option(
     '--type', '-t',
     type=click.Choice(['time_lapse', 'zoom', 'pan', 'iterative', 'custom']),
-    default='time_lapse',
-    help='模板类型'
+    default=None,
+    help='模板类型（不指定时 AI 自动判断）'
 )
 @click.option(
     '--location', '-l',
-    default='ancient temple courtyard',
+    default=None,
     help='场景位置（用于 time_lapse）'
 )
 @click.option(
     '--subject', '-s',
-    default='cyberpunk robot',
+    default=None,
     help='拍摄主体（用于 zoom）'
 )
 @click.option(
     '--base-prompt', '-p',
-    default='',
-    help='基础提示词（用于 iterative）'
+    required=True,
+    help='基础提示词（AI 会自动分析并生成模板）'
 )
 @click.option(
     '--output', '-o',
@@ -86,12 +87,22 @@ def cli(ctx):
 )
 @click.option(
     '--style',
-    type=click.Choice(['cyberpunk', 'fantasy', 'scifi', 'natural', 'horror']),
-    default='cyberpunk',
-    help='风格预设'
+    type=click.Choice(['cyberpunk', 'fantasy', 'scifi', 'natural', 'horror', 'auto']),
+    default='auto',
+    help='风格预设（auto 时 AI 自动判断）'
 )
-def template(type: str, location: str, subject: str, base_prompt: str, output: str, style: str):
-    """生成提示词模板
+@click.option(
+    '--auto', '-a',
+    is_flag=True,
+    help='使用 AI 智能分析提示词，自动选择场景类型和风格'
+)
+@click.option(
+    '--show-analysis',
+    is_flag=True,
+    help='显示 AI 分析结果后退出'
+)
+def template(type: str, location: str, subject: str, base_prompt: str, output: str, style: str, auto: bool, show_analysis: bool):
+    """生成提示词模板（支持 AI 智能分析）
     
     支持多种场景转换类型：
     - time_lapse: 时间流逝（同一场景不同时间）
@@ -100,10 +111,21 @@ def template(type: str, location: str, subject: str, base_prompt: str, output: s
     - iterative: 迭代图生图（保持一致性）
     - custom: 自定义
     
+    新增 AI 智能分析功能：
+    - 自动判断场景转换类型
+    - 自动识别艺术风格
+    - 提供优化建议
+    
     示例:
     
     \b
-    # 生成时间流逝模板
+    # AI 自动分析推荐（推荐）
+    generate.py template -a -p "赛博朋克城市从日出到夜晚的变化"
+    
+    # 显示 AI 分析结果
+    generate.py template -a -p "cyberpunk city, neon lights" --show-analysis
+    
+    # 手动指定类型
     generate.py template -t time_lapse -l "mountain landscape" -o time_lapse.json
     
     # 生成视角推进模板
@@ -112,6 +134,49 @@ def template(type: str, location: str, subject: str, base_prompt: str, output: s
     # 生成迭代图生图模板
     generate.py template -t iterative -p "cyberpunk street, neon lights" -o iterative.json
     """
+    # 使用 AI 智能分析
+    if auto or (type is None and style == 'auto'):
+        print("\n" + "="*60)
+        print(" AI 智能分析模式")
+        print("="*60 + "\n")
+        
+        analyzer = AIStyleAnalyzer()
+        analysis_result = analyzer.analyze_prompt(base_prompt)
+        
+        # 显示分析结果
+        print_analysis(analysis_result)
+        
+        if show_analysis:
+            # 仅显示分析结果，不生成模板
+            return
+        
+        # 使用 AI 推荐的类型和风格
+        if type is None:
+            type = analysis_result['scene_type']['type']
+            print(f"\n✓ AI 推荐场景类型：{type}")
+        
+        if style == 'auto':
+            style = analysis_result['style']['style']
+            print(f"✓ AI 推荐艺术风格：{style}")
+        
+        # 如果置信度低，提醒用户
+        if analysis_result['confidence']['overall'] < 0.4:
+            print("\n⚠ AI 分析置信度较低，建议:")
+            print("  - 添加更多细节描述")
+            print("  - 手动指定 --type 和 --style 参数")
+            print(f"  - 继续使用 AI 推荐（当前：type={type}, style={style}）")
+            print()
+    
+    # 处理 auto 类型/风格
+    if type == 'custom' or type is None:
+        type = 'iterative'  # 默认使用 iterative
+        logger.info("使用默认场景类型：iterative")
+    
+    if style == 'auto' or style is None:
+        style = 'cyberpunk'  # 默认使用 cyberpunk
+        logger.info("使用默认风格：cyberpunk")
+    
+    # 继续原有的模板生成逻辑
     generator = PromptTemplateGenerator(
         output_dir=str(Path(output).parent)
     )
@@ -160,6 +225,74 @@ def template(type: str, location: str, subject: str, base_prompt: str, output: s
     print(f"  1. 根据模板中的提示词，使用云端免费 API 生成图片")
     print(f"  2. 将生成的图片保存到统一目录")
     print(f"  3. 运行 synthesize 命令合成视频")
+
+
+@cli.command()
+@click.option(
+    '--prompt', '-p',
+    required=True,
+    help='要分析的提示词'
+)
+@click.option(
+    '--output', '-o',
+    default=None,
+    help='保存分析结果为 JSON 文件'
+)
+@click.option(
+    '--detail', '-d',
+    is_flag=True,
+    help='显示详细分析信息'
+)
+def analyze(prompt: str, output: str, detail: bool):
+    """AI 智能分析提示词
+    
+    自动分析用户提示词，推荐最优的场景转换类型和艺术风格。
+    
+    示例:
+    
+    \b
+    # 分析中文提示词
+    generate.py analyze -p "赛博朋克城市从日出到夜晚的变化"
+    
+    # 分析英文提示词
+    generate.py analyze -p "cyberpunk city, neon lights, time lapse"
+    
+    # 保存分析结果
+    generate.py analyze -p "..." -o analysis.json
+    """
+    print("\n" + "="*60)
+    print(" AI 智能分析")
+    print("="*60 + "\n")
+    
+    analyzer = AIStyleAnalyzer()
+    result = analyzer.analyze_prompt(prompt)
+    
+    # 打印分析结果
+    print_analysis(result)
+    
+    # 保存为 JSON
+    if output:
+        with open(output, 'w', encoding='utf-8') as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        print(f"✓ 分析结果已保存：{output}")
+    
+    # 提供下一步建议
+    print("\n【下一步建议】")
+    scene_type = result['scene_type']['type']
+    style = result['style']['style']
+    
+    if result['confidence']['overall'] > 0.6:
+        print(f"✓ AI 分析置信度高，可直接生成模板:")
+        print(f"  generate.py template -a -p \"{prompt}\" -o template.json")
+    elif result['confidence']['overall'] > 0.3:
+        print(f"⚠ AI 分析置信度中等，可:")
+        print(f"  1. 直接使用：generate.py template -a -p \"{prompt}\" -o template.json")
+        print(f"  2. 手动指定：generate.py template -t {scene_type} -p \"{prompt}\" --style {style}")
+    else:
+        print(f"⚠ AI 分析置信度低，建议手动指定参数:")
+        print(f"  generate.py template -t iterative -p \"{prompt}\" --style custom")
+    
+    print()
 
 
 @cli.command()

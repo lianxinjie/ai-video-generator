@@ -88,16 +88,96 @@ python hybrid_mode/generate.py \
 
 ```
 hybrid_mode/
+├── ai_analyzer.py          # AI 智能分析器（新增）
 ├── prompt_generator.py      # 提示词生成器（AI 辅助）
 ├── image_downloader.py      # 云端图片下载器
 ├── video_synthesizer.py     # 本地视频合成器
 ├── consistency_engine.py    # 一致性保持引擎
 ├── generate.py             # 主命令行工具
+├── test_ai_analyze.py      # AI 分析测试脚本
 └── templates/              # 提示词模板
     ├── time_lapse.json
     ├── zoom_sequence.json
     ├── pan_sequence.json
     └── scene_transition.json
+```
+
+---
+
+## 新增 AI 智能分析功能
+
+### 自动判断场景类型和风格
+
+AI 可以分析用户提示词，自动选择最优配置：
+
+```bash
+# AI 全自动分析并生成模板
+python hybrid_mode/generate.py template \
+    -a \
+    -p "cyberpunk city, neon lights, from night to dawn" \
+    -o template.json
+```
+
+**AI 分析内容:**
+- 🎯 场景转换类型（5 种）
+  - time_lapse（时间流逝）
+  - zoom_sequence（视角推进）
+  - pan_sequence（空间移动）
+  - weather_change（天气变化）
+  - iterative_img2img（迭代图生图）
+
+- 🎨 艺术风格（6 种）
+  - cyberpunk（赛博朋克）
+  - fantasy（奇幻）
+  - scifi（科幻）
+  - natural（自然）
+  - horror（恐怖）
+  - custom（自定义）
+
+### 使用示例
+
+```bash
+# 仅分析，不生成模板
+python hybrid_mode/generate.py analyze \
+    -p "赛博朋克城市从日出到夜晚，霓虹灯光"
+
+# 分析并保存结果为 JSON
+python hybrid_mode/generate.py analyze \
+    -p "..." \
+    -o analysis.json
+
+# AI 自动推荐生成模板
+python hybrid_mode/generate.py template \
+    -a \
+    -p "中世纪城堡，魔法师施法，火焰闪电" \
+    -o fantasy_castle.json
+
+# AI 置信度低时手动指定
+python hybrid_mode/generate.py template \
+    -t iterative \
+    -p "自定义场景" \
+    --style cyberpunk
+```
+
+### AI 工作原理
+
+1. **关键词匹配** - 内置场景类型和风格关键词库
+2. **置信度计算** - 根据匹配程度打分（0-1）
+3. **智能推荐** - 置信度>0.6 高，0.3-0.6 中，<0.3 低
+4. **优化建议** - 提供提示词优化、转场、一致性建议
+
+### 置信度处理
+
+```python
+if confidence > 0.6:
+    # 高置信度，直接使用
+    use_ai_recommendation()
+elif confidence > 0.3:
+    # 中等置信度，建议使用但可调整
+    suggest_with_confirmation()
+else:
+    # 低置信度，建议手动指定
+    suggest_manual_config()
 ```
 
 ---
