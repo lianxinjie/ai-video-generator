@@ -32,7 +32,7 @@ def test_analyze():
         # 运行分析
         result = subprocess.run(
             [
-                "python", "hybrid_mode/generate.py", "analyze",
+                "python3", "hybrid_mode/generate.py", "analyze",
                 "-p", prompt
             ],
             capture_output=True,
@@ -81,7 +81,7 @@ def test_auto_template():
         # 生成模板
         result = subprocess.run(
             [
-                "python", "hybrid_mode/generate.py", "template",
+                "python3", "hybrid_mode/generate.py", "template",
                 "-a",  # AI 自动模式
                 "-p", case['prompt'],
                 "-o", str(output_file)
@@ -123,7 +123,7 @@ def demo_realistic_usage():
     print("【步骤 1】AI 分析提示词")
     result1 = subprocess.run(
         [
-            "python", "hybrid_mode/generate.py", "analyze",
+            "python3", "hybrid_mode/generate.py", "analyze",
             "-p", "cyberpunk city street, night to dawn, neon lights reflecting on wet pavement, futuristic buildings"
         ],
         capture_output=True,
@@ -135,7 +135,7 @@ def demo_realistic_usage():
     print("\n【步骤 2】AI 自动生成模板")
     result2 = subprocess.run(
         [
-            "python", "hybrid_mode/generate.py", "template",
+            "python3", "hybrid_mode/generate.py", "template",
             "-a",
             "-p", "cyberpunk city street, night to dawn, neon lights reflecting on wet pavement, futuristic buildings",
             "-o", "./hybrid_mode/prompts/demo_cyberpunk_timelapse.json"

@@ -216,7 +216,7 @@ class AIStyleAnalyzer:
             }
         
         # 找出得分最高的风格
-        if not scores or max(s[1]["score"] for s in scores.values()) == 0:
+        if not scores or scores[max(scores.keys(), key=lambda k: scores[k]["score"])]["score"] == 0:
             # 没有匹配，返回自定义
             return {
                 "style": "custom",
