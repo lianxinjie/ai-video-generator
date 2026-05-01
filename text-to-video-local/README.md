@@ -34,10 +34,11 @@
 - **SVD** - Stability AI 图生视频
 
 ### 🎮 多种运行模式
-- 🖱️ 交互模式（新手友好）
+- 🖱️ 交互模式 (新手友好)
 - 🤖 智能自动模式
-- ⌨️ 命令行模式（高级用户）
+- ⌨️ 命令行模式 (高级用户)
 - 🐳 Docker 容器化部署
+- 💻 **个人电脑模式** - 低显存 GPU 专用 (1-8GB)
 
 ---
 
@@ -57,6 +58,47 @@ python3 run.py -p "一只猫在草地上奔跑" -o output.mp4
 ```
 
 🎉 **完成！**查看生成的 `output.mp4` 文件
+
+---
+
+## 💻 个人电脑模式 (新增)
+
+专为低显存 GPU(1-8GB) 设计，通过**分段生成 + 合并**的方式，用时间换性能。
+
+### 快速开始
+
+```bash
+# 生成 5 秒视频 (每段 0.5 秒，共 10 段)
+python3 personal_mode/generate.py -p "蝴蝶在花丛中飞舞" -d 5 -c 0.5
+
+# 查看进度
+python3 personal_mode/generate.py status --project-dir ./projects/default
+
+# 从断点继续
+python3 personal_mode/generate.py resume --project-dir ./projects/default
+```
+
+### 核心特性
+
+- ✅ **分段生成**: 将长视频分成多个短片段依次生成
+- ✅ **资源监控**: 实时监控 GPU/CPU/内存，超过阈值自动暂停
+- ✅ **断点续传**: 关机后再开机可从中断处继续
+- ✅ **智能等待**: 资源紧张时自动暂停，恢复后继续
+- ✅ **视频合并**: 自动生成完整视频，支持过渡效果
+
+### GTX 1050 2GB 优化配置
+
+```bash
+python3 personal_mode/generate.py \
+  -p "蝴蝶飞舞" \
+  -d 3 \
+  -c 0.5 \
+  --resolution 384x384 \
+  --gpu-threshold 70 \
+  --model modelscope
+```
+
+详细文档：[personal_mode/README.md](personal_mode/README.md)
 
 ---
 

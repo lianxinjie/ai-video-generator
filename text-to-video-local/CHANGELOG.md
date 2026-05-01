@@ -1,5 +1,105 @@
 # 更新日志
 
+## v1.2.0 (2026-05-01) - 个人电脑模式：分段生成 + 断点续传
+
+### 🎯 新增功能
+
+#### 1. 个人电脑模式 (Personal Mode)
+
+**新增目录**: `personal_mode/`
+
+**核心特性**:
+- ✅ **分段生成**: 将长视频分成多个短片段依次生成，降低显存占用
+- ✅ **资源监控**: 实时监控 GPU/CPU/内存/磁盘，超过阈值自动暂停
+- ✅ **断点续传**: 任务状态持久化，支持关机续跑
+- ✅ **智能等待**: 资源紧张时自动暂停，恢复后继续执行
+- ✅ **视频合并**: 自动合并所有片段，支持过渡效果
+- ✅ **AI 卸载**: 可选豆包 API 优化提示词，分担本地计算
+
+**适用场景**:
+- 低显存 GPU(1-8GB): GTX 1050/1060/1650/RTX 3050 等
+- 系统内存紧张 (8-16GB)
+- 需要生成长视频但显存不足
+- 希望后台运行，可随时中断和恢复
+
+#### 2. 核心模块
+
+**新增文件**:
+- `personal_mode/__init__.py` - 模块初始化
+- `personal_mode/monitor.py` - 资源监控模块
+- `personal_mode/checkpoint.py` - 检查点管理模块
+- `personal_mode/chunk_generator.py` - 视频片段生成器
+- `personal_mode/task_manager.py` - 任务调度器
+- `personal_mode/ai_offload.py` - AI 计算卸载模块
+- `personal_mode/merger.py` - 视频合并模块
+- `personal_mode/generate.py` - 命令行工具
+- `personal_mode/README.md` - 详细使用文档
+- `personal_mode/requirements.txt` - 依赖列表
+
+#### 3. 命令行工具
+
+**命令示例**:
+
+```bash
+# 基础使用
+python3 personal_mode/generate.py -p "蝴蝶飞舞" -d 5
+
+# 自定义配置
+python3 personal_mode/generate.py \
+  -p "风景" \
+  -d 10 \
+  -c 0.5 \
+  --resolution 384x384 \
+  --gpu-threshold 70 \
+  --model modelscope
+
+# 查看状态
+python3 personal_mode/generate.py status --project-dir ./projects/butterfly
+
+# 添加过渡效果
+python3 personal_mode/generate.py -p "城市夜景" -d 5 --transition
+```
+
+### 📈 性能参考
+
+**GTX 1050 2GB 配置**:
+
+| 总时长 | 分段数 | 每段时长 | 预估时间 |
+|--------|--------|----------|----------|
+| 3 秒 | 6 | 0.5 秒 | 15-20 分钟 |
+| 5 秒 | 10 | 0.5 秒 | 25-35 分钟 |
+| 10 秒 | 20 | 0.5 秒 | 50-70 分钟 |
+
+### 🔧 技术实现
+
+**资源监控**:
+- GPU 显存：torch.cuda + pynvml
+- GPU 温度：pynvml
+- CPU 使用率：psutil
+- 内存使用：psutil
+- 磁盘空间：psutil
+
+**断点续传**:
+- 任务状态 JSON 持久化
+- 检查点自动保存
+- 支持任意时刻中断和恢复
+
+**视频合并**:
+- FFmpeg 自动检测和调用
+- 支持直接合并和过渡效果
+- 可选清理片段文件
+
+### 📝 更新内容
+
+- 更新 `README.md` - 添加个人电脑模式说明
+- 更新 `.gitignore` - 添加个人模式相关文件
+
+### 🙏 致谢
+
+- 豆包 AI API - 提示词优化支持
+
+---
+
 ## v1.1.0 (2026-04-30) - GPU+CPU 协调模式增强
 
 ### 🎯 新增功能
