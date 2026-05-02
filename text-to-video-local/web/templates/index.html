@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 视频生成器 - Web 界面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-group input[type="text"],
+        .form-group input[type="number"],
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .checkbox-group input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+        }
+        
+        .file-upload {
+            border: 2px dashed #e0e0e0;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .file-upload:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+        
+        .file-upload input[type="file"] {
+            display: none;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .status-panel {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9ff;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .status-panel h3 {
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+        
+        .status-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .status-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        
+        .status-item label {
+            font-size: 12px;
+            color: #666;
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        .status-item .value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s;
+        }
+        
+        .result-panel {
+            display: none;
+            margin-top: 30px;
+            text-align: center;
+        }
+        
+        .result-panel video {
+            max-width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        }
+        
+        .result-panel a {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 12px 30px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+        
+        .result-panel a:hover {
+            background: #764ba2;
+        }
+        
+        .error-panel {
+            display: none;
+            margin-top: 20px;
+            padding: 15px;
+            background: #fff0f0;
+            border-left: 4px solid #f44336;
+            border-radius: 8px;
+            color: #d32f2f;
+        }
+        
+        .help-text {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .mode-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .mode-card {
+            border: 2px solid #e0e0e0;
+            padding: 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .mode-card:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .mode-card.selected {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+        
+        .mode-card h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .mode-card p {
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 AI 视频生成器</h1>
+            <p>基于文本提示词和参考图片，生成专业级 AI 视频</p>
+        </div>
+        
+        <div class="content">
+            <form id="generateForm">
+                <!-- 提示词 -->
+                <div class="form-group">
+                    <label for="prompt">提示词 <span style="color: red;">*</span></label>
+                    <textarea id="prompt" name="prompt" 
+                        placeholder="描述你想要生成的视频内容，例如：一个勇敢的骑士在古老的城堡中与巨龙战斗..."
+                        required></textarea>
+                    <div class="help-text">尽可能详细地描述场景、角色、动作和氛围</div>
+                </div>
+                
+                <!-- 生成模式 -->
+                <div class="form-group">
+                    <label>生成模式</label>
+                    <div class="mode-cards">
+                        <div class="mode-card selected" data-mode="optimized" onclick="selectMode('optimized')">
+                            <h4>⚡ 超优模式（推荐）</h4>
+                            <p>分段文生图 + 合成视频，4GB 显存即可，3-5 分钟</p>
+                        </div>
+                        <div class="mode-card" data-mode="standard" onclick="selectMode('standard')">
+                            <h4>🚀 标准模式</h4>
+                            <p>原文生视频直接跑模型，需要 12GB+ 显存，5-10 分钟</p>
+                        </div>
+                        <div class="mode-card" data-mode="collaborative" onclick="selectMode('collaborative')">
+                            <h4>🤖 协同模式</h4>
+                            <p>本地 + 云端 AI 协同，智能分工，2-4 分钟</p>
+                        </div>
+                    </div>
+                    <input type="hidden" id="mode" name="mode" value="optimized">
+                </div>
+                
+                <div class="form-row">
+                    <!-- 视频时长 -->
+                    <div class="form-group">
+                        <label for="duration">视频时长（秒）</label>
+                        <input type="number" id="duration" name="duration" 
+                            value="10" min="1" max="60" step="1">
+                    </div>
+                </div>
+                
+                <!-- 参考图片 -->
+                <div class="form-group">
+                    <label>参考图片（可选）</label>
+                    <div class="file-upload" onclick="document.getElementById('refImages').click()">
+                        <p>📁 点击上传人物卡或背景图</p>
+                        <p class="help-text">支持单张或多张图片（PNG, JPG, WebP）</p>
+                        <input type="file" id="refImages" name="ref_images" multiple accept="image/*">
+                        <div id="fileList" class="help-text"></div>
+                    </div>
+                    
+                    <div class="form-row" style="margin-top: 15px;">
+                        <div class="form-group">
+                            <label for="refType">参考图类型</label>
+                            <select id="refType" name="ref_type">
+                                <option value="character">人物卡（角色一致性）</option>
+                                <option value="background">背景图（场景一致性）</option>
+                                <option value="mixed">混合（角色 + 背景）</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="refStrength">参考强度：<span id="refStrengthValue">0.6</span></label>
+                            <input type="range" id="refStrength" name="ref_strength" 
+                                min="0" max="1" step="0.1" value="0.6"
+                                oninput="document.getElementById('refStrengthValue').textContent = this.value">
+                            <div class="help-text">值越大越像参考图（0.0-1.0）</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- AI 配音 -->
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="voiceover" name="voiceover">
+                        <label for="voiceover">启用 AI 智能配音（三层架构）</label>
+                    </div>
+                    
+                    <div id="voiceoverOptions" style="display: none; margin-top: 15px;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="characterVoice">配音语音</label>
+                                <select id="characterVoice" name="character_voice">
+                                    <option value="zh-CN-XiaoxiaoNeural">晓晓（女声，通用）</option>
+                                    <option value="zh-CN-YunxiNeural">云希（男声， narration）</option>
+                                    <option value="zh-CN-YunyangNeural">云阳（男声，新闻）</option>
+                                    <option value="zh-CN-XiaomengNeural">晓梦（女声，故事）</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="bgmFile">背景音乐（可选）</label>
+                                <input type="file" id="bgmFile" name="bgm_file" accept="audio/*">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 提交按钮 -->
+                <button type="submit" class="btn" id="submitBtn">
+                    🎬 开始生成视频
+                </button>
+            </form>
+            
+            <!-- 状态面板 -->
+            <div class="status-panel" id="statusPanel">
+                <h3>📊 生成进度</h3>
+                <div class="status-info">
+                    <div class="status-item">
+                        <label>任务 ID</label>
+                        <div class="value" id="taskId">-</div>
+                    </div>
+                    <div class="status-item">
+                        <label>状态</label>
+                        <div class="value" id="taskStatus">-</div>
+                    </div>
+                    <div class="status-item">
+                        <label>模式</label>
+                        <div class="value" id="taskMode">-</div>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+            
+            <!-- 错误提示 -->
+            <div class="error-panel" id="errorPanel"></div>
+            
+            <!-- 结果面板 -->
+            <div class="result-panel" id="resultPanel">
+                <h3>✅ 生成完成！</h3>
+                <video id="videoPlayer" controls></video>
+                <br>
+                <a id="downloadLink" download>⬇️ 下载视频</a>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 选择生成模式
+        function selectMode(mode) {
+            document.querySelectorAll('.mode-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            document.querySelector(`.mode-card[data-mode="${mode}"]`).classList.add('selected');
+            document.getElementById('mode').value = mode;
+        }
+        
+        // 显示文件列表
+        document.getElementById('refImages').addEventListener('change', function(e) {
+            const files = e.target.files;
+            const fileList = document.getElementById('fileList');
+            if (files.length > 0) {
+                fileList.textContent = `已选择 ${files.length} 个文件`;
+            }
+        });
+        
+        // 显示/隐藏配音选项
+        document.getElementById('voiceover').addEventListener('change', function(e) {
+            document.getElementById('voiceoverOptions').style.display = e.target.checked ? 'block' : 'none';
+        });
+        
+        // 表单提交
+        document.getElementById('generateForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const statusPanel = document.getElementById('statusPanel');
+            const errorPanel = document.getElementById('errorPanel');
+            const resultPanel = document.getElementById('resultPanel');
+            
+            // 重置状态
+            statusPanel.style.display = 'none';
+            errorPanel.style.display = 'none';
+            resultPanel.style.display = 'none';
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ 正在生成...';
+            
+            // 准备数据
+            const formData = new FormData(this);
+            
+            try {
+                // 发送请求
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // 显示状态面板
+                    statusPanel.style.display = 'block';
+                    document.getElementById('taskId').textContent = data.task_id;
+                    document.getElementById('taskStatus').textContent = '运行中';
+                    document.getElementById('taskMode').textContent = formData.get('mode');
+                    
+                    // 轮询任务状态
+                    pollTaskStatus(data.task_id);
+                } else {
+                    throw new Error(data.error || '生成失败');
+                }
+            } catch (error) {
+                errorPanel.textContent = '❌ 错误：' + error.message;
+                errorPanel.style.display = 'block';
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🎬 开始生成视频';
+            }
+        });
+        
+        // 轮询任务状态
+        function pollTaskStatus(taskId) {
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/task/${taskId}`);
+                    const data = await response.json();
+                    
+                    document.getElementById('taskStatus').textContent = 
+                        data.status === 'running' ? '⏳ 运行中' :
+                        data.status === 'completed' ? '✅ 已完成' :
+                        '❌ 失败';
+                    
+                    document.getElementById('progressFill').style.width = data.progress + '%';
+                    
+                    if (data.status === 'completed') {
+                        clearInterval(interval);
+                        showResult(data);
+                    } else if (data.status === 'failed') {
+                        clearInterval(interval);
+                        showError(data.error || '生成失败');
+                    }
+                } catch (error) {
+                    clearInterval(interval);
+                    showError('查询状态失败：' + error.message);
+                }
+            }, 2000);
+        }
+        
+        // 显示结果
+        function showResult(data) {
+            const submitBtn = document.getElementById('submitBtn');
+            const resultPanel = document.getElementById('resultPanel');
+            const videoPlayer = document.getElementById('videoPlayer');
+            const downloadLink = document.getElementById('downloadLink');
+            
+            if (data.video_url) {
+                videoPlayer.src = data.video_url;
+                downloadLink.href = data.video_url;
+                
+                resultPanel.style.display = 'block';
+                videoPlayer.scrollIntoView({ behavior: 'smooth' });
+            }
+            
+            submitBtn.disabled = false;
+            submitBtn.textContent = '🎬 开始生成视频';
+        }
+        
+        // 显示错误
+        function showError(message) {
+            const errorPanel = document.getElementById('errorPanel');
+            errorPanel.textContent = '❌ 错误：' + message;
+            errorPanel.style.display = 'block';
+            errorPanel.scrollIntoView({ behavior: 'smooth' });
+            
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').textContent = '🎬 开始生成视频';
+        }
+    </script>
+</body>
+</html>

@@ -158,7 +158,25 @@ logger = logging.getLogger(__name__)
     '--ai-api-key',
     type=str,
     default=None,
-    help='AI API Key（云端模型需要）'
+    help='AI API 密钥（协同模式专属）'
+)
+@click.option(
+    '--ref-images', '-r',
+    type=str,
+    default=None,
+    help='参考图片路径（单张人物卡/背景图 或 多张图片的目录）'
+)
+@click.option(
+    '--ref-type',
+    type=click.Choice(['character', 'background', 'mixed']),
+    default='character',
+    help='参考图类型：character(人物卡)、background(背景图)、mixed(混合)'
+)
+@click.option(
+    '--ref-strength',
+    type=float,
+    default=0.6,
+    help='参考图强度 0.0-1.0（值越大越像参考图，默认 0.6）'
 )
 @click.option(
     '--ai-api-base',
@@ -217,7 +235,10 @@ def main(
     ai_timeout: int,
     ai_max_retries: int,
     ai_health_check: bool,
-    show_mode_info: bool
+    show_mode_info: bool,
+    ref_images: Optional[str],
+    ref_type: str,
+    ref_strength: float
 ):
     """
     个人电脑模式 - AI 视频生成器
@@ -322,6 +343,25 @@ def main(
     
     print(f"\n{'='*70}\n")
     
+    # 加载参考图片（如果有）
+    reference_config = {}
+    if ref_images:
+        print("【加载参考图片】")
+        from personal_mode.reference_manager import ReferenceImageManager
+        
+        ref_manager = ReferenceImageManager(verbose=True)
+        
+        if ref_manager.load_reference(ref_images, ref_type=ref_type, ref_strength=ref_strength):
+            reference_config = ref_manager.get_config()
+            print(f"  ✓ 参考图片加载成功")
+        else:
+            print(f"  ⚠ 参考图片加载失败，继续不使用参考图")
+            reference_config = {'enabled': False}
+    else:
+        reference_config = {'enabled': False}
+    
+    print(f"\n{'='*70}\n")
+    
     # 根据模式选择执行
     if mode == 'standard':
         # 标准模式：直接文生视频
@@ -332,7 +372,8 @@ def main(
             fps=fps,
             model=model,
             device=device,
-            output=str(output_path)
+            output=str(output_path),
+            reference_config=reference_config
         )
     elif mode == 'optimized':
         # 超优模式：分段文生图 + 合成
@@ -347,7 +388,8 @@ def main(
             output=str(output_path),
             character_voice=character_voice,
             bgm_file=bgm_file,
-            bgm_volume=bgm_volume
+            bgm_volume=bgm_volume,
+            reference_config=reference_config
         )
     else:
         # 协同模式：本地 + 云端 AI 协同
@@ -417,7 +459,8 @@ def run_collaborative_mode(
     ai_health_check: bool,
     character_voice: Optional[str],
     bgm_file: Optional[str],
-    bgm_volume: float
+    bgm_volume: float,
+    reference_config: Optional[Dict] = None
 ):
     """
     运行协同模式（本地生成 + 云端 AI 协同配合）
@@ -731,7 +774,8 @@ def run_optimized_mode(
     output: str,
     character_voice: Optional[str],
     bgm_file: Optional[str],
-    bgm_volume: float
+    bgm_volume: float,
+    reference_config: Optional[Dict] = None
 ):
     """
     运行超优模式（分段文生图 + 合成视频 + 分层配音）
