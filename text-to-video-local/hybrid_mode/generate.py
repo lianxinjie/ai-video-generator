@@ -198,21 +198,44 @@ def full(prompt: str, output_dir: str, duration: float, fps: int,
             denoising_strength=0.4
         )
     
-    # 2. 生成配音脚本
+    # 2. 生成配音脚本（增强版：三层配音架构）
     if voiceover:
-        print(f"\n【步骤 2】生成 AI 配音脚本...")
+        print(f"\n【步骤 2】生成 AI 配音脚本（增强三层架构）...")
         
-        from personal_mode.ai_voice_analyzer import AIVoiceAnalyzer
-        voice_analyzer = AIVoiceAnalyzer()
-        
-        script_segments = voice_analyzer.split_script_by_duration(
-            full_prompt=prompt,
-            total_duration=duration,
-            segment_duration=0.5
-        )
-        
-        template_data['voiceover_script'] = script_segments
-        print(f"  ✓ 生成 {len(script_segments)} 段配音脚本")
+        # 优先使用增强配音分析器（三层架构）
+        try:
+            from personal_mode.enhanced_voice_analyzer import EnhancedAIVoiceAnalyzer
+            enhanced_analyzer = EnhancedAIVoiceAnalyzer()
+            
+            script_result = enhanced_analyzer.analyze_and_generate(
+                prompt=prompt,
+                duration=duration
+            )
+            
+            # 提取配音脚本（三层：人物 + 音效+BGM）
+            template_data['voiceover_script'] = script_result.get('character_segments', [])
+            template_data['sound_effects'] = script_result.get('sound_effects', [])
+            template_data['bgm_config'] = script_result.get('bgm_config', {})
+            
+            print(f"  ✓ 生成三层配音架构:")
+            print(f"    - 人物配音：{len(script_result.get('character_segments', []))} 段")
+            print(f"    - 音效：{len(script_result.get('sound_effects', []))} 个")
+            print(f"    - 背景音乐：{'有' if script_result.get('bgm_config') else '无'}")
+            
+        except ImportError:
+            # 回退到基础配音分析器
+            print(f"\n【步骤 2】生成 AI 配音脚本（基础版）...")
+            from personal_mode.ai_voice_analyzer import AIVoiceAnalyzer
+            voice_analyzer = AIVoiceAnalyzer()
+            
+            script_segments = voice_analyzer.split_script_by_duration(
+                full_prompt=prompt,
+                total_duration=duration,
+                segment_duration=0.5
+            )
+            
+            template_data['voiceover_script'] = script_segments
+            print(f"  ✓ 生成 {len(script_segments)} 段配音脚本（基础版）")
     
     # 3. 保存模板
     output_dir_path = Path(output_dir)
@@ -770,15 +793,15 @@ def synthesize(
     bgm_volume: float,
     template: str
 ):
-    """本地合成视频
+    """本地合成视频（支持三层配音架构）
     
     将云端生成的图片序列合成为视频，CPU 即可完成，
     无需独立 GPU。
     
-    新增 AI 智能配音功能：
-    - 自动分析模板生成配音脚本
-    - 分层配音（人物 +BGM+ 音效）
-    - 情绪识别和语速调节
+    新增 AI 智能配音功能（三层架构）：
+    - 人物配音：基于情绪分析的智能配音（0.5s 分段）
+    - 音效：AI 生成的场景音效（待实现）
+    - 背景音乐：循环播放的 BGM（可调节音量）
     
     示例:
     
@@ -857,36 +880,62 @@ def synthesize(
     
     print(f"\n✓ 视频合成完成：{output_video}")
     
-    # AI 配音（如果启用）
+    # AI 配音（如果启用，支持三层架构）
     if voiceover:
         try:
-            from personal_mode.ai_voice_analyzer import AIVoiceAnalyzer
             import edge_tts
             import asyncio
             
-            print("\n【AI 配音】正在生成配音...\n")
+            print("\n【AI 配音】正在生成三层配音...\n")
             
-            # 1. 读取模板中的配音脚本
+            # 1. 读取模板中的配音脚本（支持三层架构）
             voiceover_script = []
+            sound_effects = []
+            bgm_config = {}
+            
             if template and Path(template).exists():
                 with open(template, 'r', encoding='utf-8') as f:
                     template_data = json.load(f)
                     voiceover_script = template_data.get('voiceover_script', [])
+                    sound_effects = template_data.get('sound_effects', [])
+                    bgm_config = template_data.get('bgm_config', {})
             
             if not voiceover_script:
-                # 如果没有模板中的脚本，简单生成
-                from personal_mode.ai_voice_analyzer import AIVoiceAnalyzer
-                analyzer = AIVoiceAnalyzer()
-                voiceover_script = analyzer.split_script_by_duration(
-                    full_prompt="AI 视频",
-                    total_duration=dps,
-                    segment_duration=0.5
-                )
+                # 尝试使用增强配音分析器生成三层架构
+                try:
+                    from personal_mode.enhanced_voice_analyzer import EnhancedAIVoiceAnalyzer
+                    enhanced_analyzer = EnhancedAIVoiceAnalyzer()
+                    result = enhanced_analyzer.analyze_and_generate(
+                        prompt="AI 视频",
+                        duration=dps
+                    )
+                    voiceover_script = result.get('character_segments', [])
+                    sound_effects = result.get('sound_effects', [])
+                    bgm_config = result.get('bgm_config', {})
+                    print("  ✓ 使用增强配音分析器（三层架构）")
+                except ImportError:
+                    # 回退到基础配音
+                    from personal_mode.ai_voice_analyzer import AIVoiceAnalyzer
+                    analyzer = AIVoiceAnalyzer()
+                    voiceover_script = analyzer.split_script_by_duration(
+                        full_prompt="AI 视频",
+                        total_duration=dps,
+                        segment_duration=0.5
+                    )
+                    print("  ✓ 使用基础配音分析器（单层）")
             
-            # 2. 为每段生成配音
+            # 2. 生成配音（三层：人物 + 音效+BGM）
             audio_dir = Path(input).parent / 'audio'
             audio_dir.mkdir(parents=True, exist_ok=True)
             
+            audio_tracks = {
+                'character': [],
+                'sound_effects': [],
+                'bgm': None
+            }
+            
+            # 2.1 生成人物配音
+            print("\n【人物配音】")
             character_audio_files = []
             
             async def generate_single_voiceover(text, voice, output_file):
@@ -900,8 +949,8 @@ def synthesize(
             
             try:
                 for i, seg in enumerate(voiceover_script):
-                    text = seg['voiceover']['text']
-                    voice = character_voice
+                    text = seg.get('voiceover', {}).get('text', str(seg))
+                    voice = character_voice or 'zh-CN-XiaoxiaoNeural'
                     
                     audio_file = audio_dir / f'segment_{i:03d}_character.wav'
                     
@@ -917,10 +966,8 @@ def synthesize(
             finally:
                 loop.close()
             
-            # 3. 合并所有配音片段
             if character_audio_files:
                 print(f"\n  合并 {len(character_audio_files)} 个配音片段...")
-                
                 from hybrid_mode.video_synthesizer import VideoSynthesizer
                 synth = VideoSynthesizer()
                 
@@ -929,40 +976,74 @@ def synthesize(
                 
                 if result:
                     print(f"  ✓ 配音合并完成：{result}")
+                    audio_tracks['character'] = [str(combined_file)]
+            
+            # 2.2 生成音效（增强三层架构）
+            if sound_effects:
+                print(f"\n【音效】生成 {len(sound_effects)} 个音效...")
+                # TODO: 使用 AI 音效生成模型（如 AudioLDM）生成音效
+                # 目前先标记支持，后续实现
+                print("  ⚠  音效生成功能待实现，已跳过")
+            
+            # 2.3 添加背景音乐（增强三层架构）
+            if bgm_config and bgm_file:
+                print(f"\n【背景音乐】使用：{bgm_file}")
+                audio_tracks['bgm'] = bgm_file
+            elif bgm_file:
+                print(f"\n【背景音乐】使用：{bgm_file}")
+                audio_tracks['bgm'] = bgm_file
+            
+            # 3. 混合三层音频（人物 + 音效+BGM）
+            final_audio = None
+            
+            if audio_tracks['character'] and bgm_file:
+                print(f"\n【音频混合】混合人物配音和 BGM...")
                 
-                # 4. 添加 BGM
-                if bgm_file and Path(bgm_file).exists():
-                    print(f"  添加背景音乐：{bgm_file}")
-                    
-                    bgm_output = audio_dir / 'final_audio.wav'
-                    result = synth.mix_audio(
-                        audio1=str(combined_file),
-                        audio2=bgm_file,
-                        output=str(bgm_output),
-                        volume1=1.0,
-                        volume2=bgm_volume
-                    )
-                    
-                    if result:
-                        print(f"  ✓ BGM 已混合：{result}")
-                        audio_to_use = str(bgm_output)
-                    else:
-                        audio_to_use = str(combined_file)
-                else:
-                    audio_to_use = str(combined_file)
+                bgm_volume = 0.3  # BGM 音量（默认 0.3，不盖过配音）
                 
-                # 5. 将配音添加到视频
-                print(f"\n  将配音添加到视频...")
+                combined_file = audio_dir / 'character_combined.wav'
+                bgm_output = audio_dir / 'final_audio.wav'
+                
+                result = synth.mix_audio(
+                    audio1=str(combined_file),
+                    audio2=bgm_file,
+                    output=str(bgm_output),
+                    volume1=1.0,
+                    volume2=bgm_volume
+                )
+                
+                if result:
+                    print(f"  ✓ 音频混合完成：{result}")
+                    final_audio = result
+            
+            elif audio_tracks['character']:
+                # 只有人物配音，无 BGM
+                final_audio = str(audio_dir / 'character_combined.wav')
+            
+            elif bgm_file:
+                # 只有 BGM，无人物配音
+                final_audio = bgm_file
+            
+            # 4. 将最终音频添加到视频
+            if final_audio and Path(final_audio).exists():
+                print(f"\n【视频合成】将音频添加到视频...")
                 audio_output = output_video.replace('.mp4', '_with_voiceover.mp4')
                 result = synthesizer.add_audio(
                     video_file=output_video,
-                    audio_file=audio_to_use,
+                    audio_file=final_audio,
                     output_file=audio_output
                 )
                 
                 if result:
                     output_video = result
-                    print(f"✓ AI 配音已添加：{output_video}")
+                    print(f"  ✓ AI 配音已添加：{output_video}")
+                    
+                    # 显示三层架构信息
+                    if sound_effects or bgm_config:
+                        print(f"\n【三层配音架构】")
+                        print(f"  - 人物配音：{len(voiceover_script)} 段")
+                        print(f"  - 音效：{len(sound_effects)} 个（待生成）")
+                        print(f"  - 背景音乐：{'有' if bgm_config else '无'}")
             
         except ImportError as e:
             print(f"\n⚠ 配音功能需要额外依赖：{e}")
