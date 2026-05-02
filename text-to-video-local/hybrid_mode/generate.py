@@ -207,7 +207,7 @@ def full(prompt: str, output_dir: str, duration: float, fps: int,
             from personal_mode.enhanced_voice_analyzer import EnhancedAIVoiceAnalyzer
             enhanced_analyzer = EnhancedAIVoiceAnalyzer()
             
-            script_result = enhanced_analyzer.analyze_and_generate(
+            script_result = enhanced_analyzer.analyze_for_layers(
                 prompt=prompt,
                 duration=duration
             )
@@ -905,7 +905,7 @@ def synthesize(
                 try:
                     from personal_mode.enhanced_voice_analyzer import EnhancedAIVoiceAnalyzer
                     enhanced_analyzer = EnhancedAIVoiceAnalyzer()
-                    result = enhanced_analyzer.analyze_and_generate(
+                    result = enhanced_analyzer.analyze_for_layers(
                         prompt="AI 视频",
                         duration=dps
                     )
