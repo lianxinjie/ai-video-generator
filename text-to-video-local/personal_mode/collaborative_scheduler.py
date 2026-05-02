@@ -46,11 +46,27 @@ class CollaborativeScheduler:
         local_ratio: float = 0.5,
         enable_auto_adjust: bool = True,
         cloud_platforms: List[str] = None,
-        enable_scene_analysis: bool = True,  # 启用智能场景分析
-        enable_interactive_refine: bool = True,  # 启用交互式场景优化
-        auto_approve_changes: bool = False,  # 自动确认优化建议
+        enable_scene_analysis: bool = True,
+        enable_interactive_refine: bool = True,
+        enable_scene_detection: bool = True,  # 新增：启用智能场景检测
+        auto_approve_changes: bool = False,
         verbose: bool = True
     ):
+        """
+        初始化协同调度器
+        
+        Args:
+            project_dir: 项目目录
+            total_duration: 总时长（秒）
+            segment_duration: 每段时长（秒）
+            local_ratio: 本地生成比例（0.0-1.0，0.5=50% 本地）
+            enable_auto_adjust: 启用自动调整
+            cloud_platforms: 支持的云端平台列表
+            enable_scene_analysis: 启用智能场景分析
+            enable_interactive_refine: 启用交互式场景优化
+            enable_scene_detection: 启用智能场景检测（基于关键词判定新增场景）
+            auto_approve_changes: 自动确认优化建议
+            verbose: 是否输出详细信息
         """
         初始化协同调度器
         
@@ -94,7 +110,10 @@ class CollaborativeScheduler:
         self.scene_refiner = None
         if enable_interactive_refine and SCENE_REFINER_AVAILABLE:
             try:
-                self.scene_refiner = SceneRefiner(verbose=verbose)
+                self.scene_refiner = SceneRefiner(
+                    verbose=verbose,
+                    enable_scene_detection=enable_scene_detection
+                )
                 self._log("已启用智能场景整理器（AI+ 用户交互优化）", "INFO")
             except Exception as e:
                 self._log(f"初始化场景整理器失败：{e}", "WARNING")
@@ -124,7 +143,7 @@ class CollaborativeScheduler:
     
     def optimize_scenes(self, full_prompt: str, raw_segments: List[Dict]) -> List[Dict]:
         """
-        优化场景分割和分配
+        优化场景分割和分配（包含智能场景检测）
         
         Args:
             full_prompt: 完整提示词
@@ -139,7 +158,7 @@ class CollaborativeScheduler:
         
         self._log("\n开始智能场景优化...", "INFO")
         
-        # 分析场景边界
+        # 1. 分析场景边界（传统方法）
         boundaries = self.scene_refiner.analyze_scene_boundaries(full_prompt)
         
         if boundaries:
@@ -149,7 +168,12 @@ class CollaborativeScheduler:
             if len(boundaries) > 5:
                 self._log(f"  ... 还有 {len(boundaries) - 5} 个边界", "INFO")
         
-        # 交互式优化（AI 分析 + 用户确认）
+        # 2. 智能场景检测（基于关键词分析，新增功能）
+        if self.scene_refiner.enable_scene_detection and self.scene_refiner.scene_detector:
+            self._log("\n【智能场景检测】开始分析关键词并判定新增场景...", "INFO")
+            raw_segments = self.scene_refiner.detect_and_add_scenes(full_prompt, raw_segments)
+        
+        # 3. 交互式优化（AI 分析 + 用户确认）
         optimized_segments, scene_report = self.scene_refiner.interactive_refine(
             segments=raw_segments,
             auto_approve=self.auto_approve_changes

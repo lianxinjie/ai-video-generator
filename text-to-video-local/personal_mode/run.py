@@ -131,6 +131,12 @@ logger = logging.getLogger(__name__)
     help='自动确认场景优化建议，无需用户确认（协同模式专属）'
 )
 @click.option(
+    '--enable-scene-detection',
+    is_flag=True,
+    default=True,
+    help='启用智能场景检测（基于关键词分析判定新增场景，协同模式专属）'
+)
+@click.option(
     '--show-mode-info',
     is_flag=True,
     help='显示两种模式的详细说明后退出'
@@ -154,6 +160,7 @@ def main(
     enable_scene_analysis: bool,
     enable_scene_refine: bool,
     auto_approve_changes: bool,
+    enable_scene_detection: bool,
     show_mode_info: bool
 ):
     """
@@ -303,6 +310,7 @@ def main(
             enable_scene_analysis=enable_scene_analysis,
             enable_scene_refine=enable_scene_refine,
             auto_approve_changes=auto_approve_changes,
+            enable_scene_detection=enable_scene_detection,
             character_voice=character_voice,
             bgm_file=bgm_file,
             bgm_volume=bgm_volume
@@ -334,6 +342,7 @@ def run_collaborative_mode(
     enable_scene_analysis: bool,
     enable_scene_refine: bool,
     auto_approve_changes: bool,
+    enable_scene_detection: bool,
     character_voice: Optional[str],
     bgm_file: Optional[str],
     bgm_volume: float
@@ -365,6 +374,7 @@ def run_collaborative_mode(
             enable_auto_adjust=auto_adjust,
             enable_scene_analysis=enable_scene_analysis,
             enable_interactive_refine=enable_scene_refine,
+            enable_scene_detection=enable_scene_detection,
             auto_approve_changes=auto_approve_changes,
             cloud_platforms=cloud_platforms,
             verbose=True
@@ -382,6 +392,7 @@ def run_collaborative_mode(
         print(f"  自动调整：{'启用' if auto_adjust else '禁用'}")
         print(f"  场景分析：{'启用' if enable_scene_analysis else '禁用'}")
         print(f"  场景优化：{'启用' if enable_scene_refine else '禁用'}")
+        print(f"  场景检测：{'启用' if enable_scene_detection else '禁用'}")
         print(f"  自动确认：{'是' if auto_approve_changes else '否（用户确认）'}")
         print("="*70 + "\n")
         
