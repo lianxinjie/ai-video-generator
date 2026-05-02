@@ -18,6 +18,7 @@ AI 场景分析器 - 通过大语言模型智能判断场景拆分
 
 import json
 import re
+import time
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 from datetime import datetime
@@ -44,8 +45,8 @@ class AISceneAnalyzer:
         {
             "index": 场景索引（从 1 开始）,
             "text": "该场景的原始文本",
-            "start_position": 在原文本中的起始位置,
-            "end_position": 在原文本中的结束位置,
+            "start_position": 在原文本中的起始位置，
+            "end_position": 在原文本中的结束位置，
             "importance": 重要度（0-1，越高越应该独立成段）,
             "scene_type": ["time_change", "location_change", "camera_change", "subject_change", "action_change", "mood_change"],
             "reason": "拆分理由（中文描述）",
@@ -76,20 +77,31 @@ class AISceneAnalyzer:
 
 用 JSON 格式输出。"""
 
+    # AI 通道健康状态
+    channel_status: Dict[str, Dict] = {}
+    
     def __init__(self,
                  model_type: str = 'local',
                  model_name: str = None,
                  api_key: str = None,
                  api_base: str = None,
+                 timeout: int = 10,
+                 max_retries: int = 2,
+                 enable_health_check: bool = True,
+                 fallback_channels: List[str] = None,
                  verbose: bool = True):
         """
-        初始化 AI 场景分析器
+        初始化 AI 场景分析器（支持超时和故障转移）
         
         Args:
             model_type: 模型类型 ('local', 'openai', 'claude', 'qwen')
             model_name: 模型名称（本地模型如 'qwen2.5:7b'，云端模型如 'gpt-4'）
             api_key: API Key（云端模式需要）
             api_base: API Base URL（本地模型或自定义 API）
+            timeout: 请求超时时间（秒，默认 10 秒）
+            max_retries: 最大重试次数（默认 2 次）
+            enable_health_check: 启用健康检查（默认 True）
+            fallback_channels: 备用通道列表（故障时自动切换）
             verbose: 是否输出详细信息
         """
         self.verbose = verbose
@@ -97,12 +109,23 @@ class AISceneAnalyzer:
         self.model_name = model_name or self._get_default_model(model_type)
         self.api_key = api_key
         self.api_base = api_base or self._get_default_api_base(model_type)
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.enable_health_check = enable_health_check
+        self.fallback_channels = fallback_channels or self._get_default_fallback_channels()
         
         # 分析历史
         self.analysis_history: List[Dict] = []
         
+        # 当前活跃通道
+        self.active_channel = None
+        
         # 检查依赖
         self._check_dependencies()
+        
+        # 初始化通道健康状态
+        if enable_health_check:
+            self._initialize_channel_status()
         
     def _get_default_model(self, model_type: str) -> str:
         """获取默认模型名称"""
@@ -140,7 +163,145 @@ class AISceneAnalyzer:
             timestamp = datetime.now().strftime("%H:%M:%S")
             print(f"[{timestamp}] [{level}] {message}")
     
-    def analyze(self, prompt: str, 
+    def _get_default_fallback_channels(self) -> List[Dict]:
+        """获取默认备用通道列表"""
+        return [
+            {'model_type': 'qwen', 'model_name': 'qwen-turbo'},  # 通义千问（快速备份）
+            {'model_type': 'local', 'model_name': 'qwen2.5:7b'},  # 本地 Ollama
+        ]
+    
+    def _initialize_channel_status(self):
+        """初始化通道健康状态"""
+        channel_key = f"{self.model_type}/{self.model_name}"
+        self.channel_status[channel_key] = {
+            'healthy': True,
+            'last_check': datetime.now().isoformat(),
+            'fail_count': 0,
+            'success_count': 0,
+            'avg_response_time': 0,
+            'last_error': None
+        }
+        
+        for channel in self.fallback_channels:
+            key = f"{channel['model_type']}/{channel.get('model_name', 'default')}"
+            if key not in self.channel_status:
+                self.channel_status[key] = {
+                    'healthy': True,
+                    'last_check': datetime.now().isoformat(),
+                    'fail_count': 0,
+                    'success_count': 0
+                }
+    
+    def check_channel_health(self, channel: Optional[Dict] = None) -> bool:
+        """检查通道健康状态"""
+        import requests
+        
+        if channel is None:
+            channel = {
+                'model_type': self.model_type,
+                'model_name': self.model_name,
+                'api_base': self.api_base,
+                'api_key': self.api_key
+            }
+        
+        channel_key = f"{channel['model_type']}/{channel.get('model_name', 'default')}"
+        
+        if channel_key in self.channel_status:
+            status = self.channel_status[channel_key]
+            if status['fail_count'] > 3:
+                status['healthy'] = False
+                return False
+        
+        try:
+            import requests
+            test_payload = {
+                "model": channel.get('model_name', 'qwen2.5:7b'),
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 5
+            }
+            
+            headers = {"Content-Type": "application/json"}
+            if channel.get('api_key'):
+                headers["Authorization"] = f"Bearer {channel['api_key']}"
+            
+            response = requests.post(
+                f"{channel.get('api_base', self.api_base)}/chat/completions",
+                headers=headers,
+                json=test_payload,
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                if channel_key in self.channel_status:
+                    self.channel_status[channel_key]['healthy'] = True
+                return True
+            else:
+                if channel_key in self.channel_status:
+                    self.channel_status[channel_key]['healthy'] = False
+                return False
+                
+        except Exception as e:
+            self._log(f"通道 {channel_key} 健康检查异常：{e}", "ERROR")
+            if channel_key in self.channel_status:
+                self.channel_status[channel_key]['healthy'] = False
+            return False
+    
+    def get_available_channel(self) -> Optional[Dict]:
+        """获取可用通道（自动故障转移）"""
+        if self.check_channel_health():
+            self.active_channel = {
+                'model_type': self.model_type,
+                'model_name': self.model_name,
+                'api_base': self.api_base,
+                'api_key': self.api_key,
+                'is_fallback': False
+            }
+            return self.active_channel
+        
+        self._log("主通道不可用，尝试备用通道...", "WARNING")
+        
+        for fallback in self.fallback_channels:
+            temp = AISceneAnalyzer(
+                model_type=fallback['model_type'],
+                model_name=fallback.get('model_name'),
+                verbose=False
+            )
+            
+            if temp.check_channel_health():
+                self.active_channel = {
+                    'model_type': fallback['model_type'],
+                    'model_name': fallback.get('model_name') or self._get_default_model(fallback['model_type']),
+                    'api_base': fallback.get('api_base') or self._get_default_api_base(fallback['model_type']),
+                    'api_key': fallback.get('api_key'),
+                    'is_fallback': True
+                }
+                return self.active_channel
+        
+        return None
+    
+    def _update_channel_status(self, success: bool, response_time: float = 0):
+        """更新通道状态"""
+        if self.active_channel:
+            channel_key = f"{self.active_channel['model_type']}/{self.active_channel['model_name']}"
+            
+            if channel_key not in self.channel_status:
+                self.channel_status[channel_key] = {
+                    'healthy': True,
+                    'fail_count': 0,
+                    'success_count': 0
+                }
+            
+            status = self.channel_status[channel_key]
+            status['last_check'] = datetime.now().isoformat()
+            
+            if success:
+                status['success_count'] += 1
+                total = status['success_count']
+                status['avg_response_time'] = (
+                    (status['avg_response_time'] * (total - 1) + response_time) / total
+                )
+            else:
+                status['fail_count'] += 1 
                 mode: str = 'detailed') -> Dict:
         """
         AI 分析场景
@@ -217,7 +378,7 @@ class AISceneAnalyzer:
     def _call_llm(self, messages: List[Dict], 
                   temperature: float = 0.7) -> str:
         """
-        调用 LLM 模型
+        调用 LLM 模型（支持超时、重试和故障转移）
         
         Args:
             messages: 消息列表
@@ -228,45 +389,124 @@ class AISceneAnalyzer:
         """
         import requests
         
-        # 构建请求体
-        payload = {
-            "model": self.model_name,
-            "messages": messages,
-            "temperature": temperature,
-            "stream": False
-        }
+        # 获取可用通道
+        available_channel = self.get_available_channel()
         
-        # 请求头
-        headers = {
-            "Content-Type": "application/json"
-        }
+        if not available_channel:
+            self._log("无可用 AI 通道，使用回退方案", "WARNING")
+            raise Exception("AI 通道不可用")
         
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        # 自动重试逻辑
+        last_error = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                start_time = datetime.now()
+                
+                # 构建请求体
+                payload = {
+                    "model": available_channel['model_name'],
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": 2000,
+                    "stream": False
+                }
+                
+                # 请求头
+                headers = {
+                    "Content-Type": "application/json"
+                }
+                
+                if available_channel.get('api_key'):
+                    headers["Authorization"] = f"Bearer {available_channel['api_key']}"
+                
+                # 根据不同模型调整格式
+                if available_channel['model_type'] == 'claude':
+                    payload = self._adapt_for_claude_with_channel(messages, temperature, available_channel)
+                    headers["x-api-key"] = available_channel['api_key']
+                    headers["anthropic-version"] = "2023-06-01"
+                
+                self._log(
+                    f"调用 AI 模型：{available_channel['model_name']} @ "
+                    f"{available_channel['api_base']} (尝试 {attempt + 1}/{self.max_retries + 1})", 
+                    "DEBUG"
+                )
+                
+                # 发送请求（带超时）
+                response = requests.post(
+                    f"{available_channel['api_base']}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=self.timeout  # 使用配置的超时时间
+                )
+                
+                # 计算响应时间
+                response_time = (datetime.now() - start_time).total_seconds()
+                
+                if response.status_code != 200:
+                    raise Exception(f"API 返回错误：{response.status_code} - {response.text[:200]}")
+                
+                result = response.json()
+                
+                if not result.get('choices') or len(result['choices']) == 0:
+                    raise Exception("API 返回空结果")
+                
+                content = result['choices'][0]['message']['content']
+                
+                # 更新通道状态（成功）
+                self._update_channel_status(success=True, response_time=response_time)
+                
+                self._log(f"AI 响应成功，耗时：{response_time:.2f}s", "INFO")
+                
+                return content
+                
+            except requests.exceptions.Timeout:
+                last_error = f"请求超时（{self.timeout}秒）"
+                self._log(f"请求超时：{last_error}", "WARNING")
+                self._update_channel_status(success=False)
+                
+            except requests.exceptions.ConnectionError as e:
+                last_error = f"连接失败：{str(e)}"
+                self._log(f"连接错误：{last_error}", "WARNING")
+                self._update_channel_status(success=False)
+                
+            except Exception as e:
+                last_error = str(e)
+                self._log(f"AI 调用失败：{last_error}", "ERROR")
+                self._update_channel_status(success=False)
+            
+            # 重试前等待
+            if attempt < self.max_retries:
+                wait_time = min(2 ** attempt, 5)  # 指数退避，最多 5 秒
+                self._log(f"{wait_time}秒后重试...", "INFO")
+                time.sleep(wait_time)
+                
+                # 重试前重新检查通道
+                available_channel = self.get_available_channel()
+                if not available_channel:
+                    break
         
-        # 根据不同模型调整格式
-        if self.model_type == 'claude':
-            payload = self._adapt_for_claude(messages, temperature)
-            headers["x-api-key"] = self.api_key
-            headers["anthropic-version"] = "2023-06-01"
-        
-        self._log(f"调用 AI 模型：{self.model_name} @ {self.api_base}", "DEBUG")
-        
-        # 发送请求
-        response = requests.post(
-            f"{self.api_base}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=30
+        # 所有重试失败
+        error_msg = f"AI 调用失败（{self.max_retries + 1}次尝试）：{last_error}"
+        self._log(error_msg, "ERROR")
+        raise Exception(error_msg)
+    
+    def _adapt_for_claude_with_channel(self, messages: List[Dict], 
+                                        temperature: float,
+                                        channel: Dict) -> Dict:
+        """适配 Claude API 格式（带通道信息）"""
+        system_message = next(
+            (m for m in messages if m['role'] == 'system'), 
+            None
         )
+        user_messages = [m for m in messages if m['role'] != 'system']
         
-        if response.status_code != 200:
-            raise Exception(f"API 调用失败：{response.status_code} - {response.text}")
-        
-        result = response.json()
-        content = result['choices'][0]['message']['content']
-        
-        return content
+        return {
+            "model": channel['model_name'],
+            "max_tokens": 2000,
+            "temperature": temperature,
+            "system": system_message['content'] if system_message else "",
+            "messages": user_messages
+        }
     
     def _adapt_for_claude(self, messages: List[Dict], 
                           temperature: float) -> Dict:

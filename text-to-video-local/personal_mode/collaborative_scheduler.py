@@ -146,12 +146,16 @@ class CollaborativeScheduler:
                     model_name=ai_model_name,
                     api_key=ai_api_key,
                     api_base=ai_api_base,
+                    timeout=ai_timeout,
+                    max_retries=ai_max_retries,
+                    enable_health_check=ai_health_check,
                     verbose=verbose
                 )
                 self._log(
                     f"已启用 AI 辅助场景判断（{ai_model_type}/{ai_model_name or 'default'}）", 
                     "INFO"
                 )
+                self._log(f"AI 超时：{ai_timeout}秒，重试：{ai_max_retries}次", "DEBUG")
             except Exception as e:
                 self._log(f"初始化 AI 分析器失败：{e}", "WARNING")
         elif enable_ai_assist and not AI_SCENE_ANALYZER_AVAILABLE:

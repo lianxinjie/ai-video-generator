@@ -167,6 +167,24 @@ logger = logging.getLogger(__name__)
     help='AI API Base URL（本地模型或自定义 API 需要）'
 )
 @click.option(
+    '--ai-timeout',
+    type=int,
+    default=10,
+    help='AI 请求超时时间（秒，默认 10 秒）'
+)
+@click.option(
+    '--ai-max-retries',
+    type=int,
+    default=2,
+    help='AI 请求最大重试次数（默认 2 次）'
+)
+@click.option(
+    '--ai-health-check',
+    is_flag=True,
+    default=True,
+    help='启用 AI 通道健康检查（默认启用）'
+)
+@click.option(
     '--show-mode-info',
     is_flag=True,
     help='显示两种模式的详细说明后退出'
@@ -196,6 +214,9 @@ def main(
     ai_model_name: str,
     ai_api_key: str,
     ai_api_base: str,
+    ai_timeout: int,
+    ai_max_retries: int,
+    ai_health_check: bool,
     show_mode_info: bool
 ):
     """
@@ -351,6 +372,9 @@ def main(
             ai_model_name=ai_model_name,
             ai_api_key=ai_api_key,
             ai_api_base=ai_api_base,
+            ai_timeout=ai_timeout,
+            ai_max_retries=ai_max_retries,
+            ai_health_check=ai_health_check,
             character_voice=character_voice,
             bgm_file=bgm_file,
             bgm_volume=bgm_volume
@@ -388,6 +412,9 @@ def run_collaborative_mode(
     ai_model_name: str,
     ai_api_key: str,
     ai_api_base: str,
+    ai_timeout: int,
+    ai_max_retries: int,
+    ai_health_check: bool,
     character_voice: Optional[str],
     bgm_file: Optional[str],
     bgm_volume: float
@@ -425,6 +452,9 @@ def run_collaborative_mode(
             ai_model_name=ai_model_name,
             ai_api_key=ai_api_key,
             ai_api_base=ai_api_base,
+            ai_timeout=ai_timeout,
+            ai_max_retries=ai_max_retries,
+            ai_health_check=ai_health_check,
             auto_approve_changes=auto_approve_changes,
             cloud_platforms=cloud_platforms,
             verbose=True
@@ -444,6 +474,9 @@ def run_collaborative_mode(
         print(f"  场景优化：{'启用' if enable_scene_refine else '禁用'}")
         print(f"  场景检测：{'启用' if enable_scene_detection else '禁用'}")
         print(f"  AI 辅助：{'启用' if enable_ai_assist else '禁用'} ({ai_model_type})")
+        print(f"  AI 超时：{ai_timeout}秒")
+        print(f"  AI 重试：{ai_max_retries}次")
+        print(f"  健康检查：{'启用' if ai_health_check else '禁用'}")
         print(f"  自动确认：{'是' if auto_approve_changes else '否（用户确认）'}")
         print("="*70 + "\n")
         
