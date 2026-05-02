@@ -137,6 +137,36 @@ logger = logging.getLogger(__name__)
     help='启用智能场景检测（基于关键词分析判定新增场景，协同模式专属）'
 )
 @click.option(
+    '--enable-ai-assist',
+    is_flag=True,
+    default=True,
+    help='启用 AI 辅助场景判断（基于 LLM 语义理解，协同模式专属）'
+)
+@click.option(
+    '--ai-model-type',
+    type=click.Choice(['local', 'openai', 'qwen', 'claude']),
+    default='local',
+    help='AI 模型类型（协同模式专属，默认 local 使用 Ollama）'
+)
+@click.option(
+    '--ai-model-name',
+    type=str,
+    default=None,
+    help='AI 模型名称（如 qwen2.5:7b, gpt-4, qwen-turbo 等）'
+)
+@click.option(
+    '--ai-api-key',
+    type=str,
+    default=None,
+    help='AI API Key（云端模型需要）'
+)
+@click.option(
+    '--ai-api-base',
+    type=str,
+    default=None,
+    help='AI API Base URL（本地模型或自定义 API 需要）'
+)
+@click.option(
     '--show-mode-info',
     is_flag=True,
     help='显示两种模式的详细说明后退出'
@@ -161,6 +191,11 @@ def main(
     enable_scene_refine: bool,
     auto_approve_changes: bool,
     enable_scene_detection: bool,
+    enable_ai_assist: bool,
+    ai_model_type: str,
+    ai_model_name: str,
+    ai_api_key: str,
+    ai_api_base: str,
     show_mode_info: bool
 ):
     """
@@ -311,6 +346,11 @@ def main(
             enable_scene_refine=enable_scene_refine,
             auto_approve_changes=auto_approve_changes,
             enable_scene_detection=enable_scene_detection,
+            enable_ai_assist=enable_ai_assist,
+            ai_model_type=ai_model_type,
+            ai_model_name=ai_model_name,
+            ai_api_key=ai_api_key,
+            ai_api_base=ai_api_base,
             character_voice=character_voice,
             bgm_file=bgm_file,
             bgm_volume=bgm_volume
@@ -343,6 +383,11 @@ def run_collaborative_mode(
     enable_scene_refine: bool,
     auto_approve_changes: bool,
     enable_scene_detection: bool,
+    enable_ai_assist: bool,
+    ai_model_type: str,
+    ai_model_name: str,
+    ai_api_key: str,
+    ai_api_base: str,
     character_voice: Optional[str],
     bgm_file: Optional[str],
     bgm_volume: float
@@ -375,6 +420,11 @@ def run_collaborative_mode(
             enable_scene_analysis=enable_scene_analysis,
             enable_interactive_refine=enable_scene_refine,
             enable_scene_detection=enable_scene_detection,
+            enable_ai_assist=enable_ai_assist,
+            ai_model_type=ai_model_type,
+            ai_model_name=ai_model_name,
+            ai_api_key=ai_api_key,
+            ai_api_base=ai_api_base,
             auto_approve_changes=auto_approve_changes,
             cloud_platforms=cloud_platforms,
             verbose=True
@@ -393,6 +443,7 @@ def run_collaborative_mode(
         print(f"  场景分析：{'启用' if enable_scene_analysis else '禁用'}")
         print(f"  场景优化：{'启用' if enable_scene_refine else '禁用'}")
         print(f"  场景检测：{'启用' if enable_scene_detection else '禁用'}")
+        print(f"  AI 辅助：{'启用' if enable_ai_assist else '禁用'} ({ai_model_type})")
         print(f"  自动确认：{'是' if auto_approve_changes else '否（用户确认）'}")
         print("="*70 + "\n")
         
@@ -412,8 +463,19 @@ def run_collaborative_mode(
                 print(f"    ... 还有 {len(script_segments) - 3} 段")
             print()
         
+        # AI 辅助场景分析（核心功能）
+        if enable_ai_assist and scheduler.ai_analyzer:
+            print("="*70)
+            print("【AI 辅助场景分析】开始智能判断场景拆分...")
+            print("="*70 + "\n")
+            
+            # 使用 AI 辅助分析（自动选择最优方案：关键词 vs AI）
+            optimized_segments = scheduler.ai_assisted_scene_analysis(prompt)
+            
+            print(f"\n✓ AI 辅助场景分析完成：{len(optimized_segments)} 个场景\n")
+        
         # 场景智能优化（AI 分析 + 用户交互）
-        if enable_scene_refine and scheduler.scene_refiner:
+        elif enable_scene_refine and scheduler.scene_refiner:
             print("="*70)
             print("【智能场景优化】开始分析场景并优化任务分配...")
             print("="*70 + "\n")

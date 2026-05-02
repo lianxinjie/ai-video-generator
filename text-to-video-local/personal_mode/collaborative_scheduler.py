@@ -34,6 +34,13 @@ try:
 except ImportError:
     SCENE_REFINER_AVAILABLE = False
 
+# 集成 AI 场景分析器
+try:
+    from ai_scene_analyzer import AISceneAnalyzer
+    AI_SCENE_ANALYZER_AVAILABLE = True
+except ImportError:
+    AI_SCENE_ANALYZER_AVAILABLE = False
+
 
 class CollaborativeScheduler:
     """智能协同调度器"""
@@ -48,12 +55,17 @@ class CollaborativeScheduler:
         cloud_platforms: List[str] = None,
         enable_scene_analysis: bool = True,
         enable_interactive_refine: bool = True,
-        enable_scene_detection: bool = True,  # 新增：启用智能场景检测
+        enable_scene_detection: bool = True,
+        enable_ai_assist: bool = True,  # 新增：启用 AI 辅助判断
+        ai_model_type: str = 'local',  # AI 模型类型：'local', 'openai', 'qwen', 'claude'
+        ai_model_name: str = None,
+        ai_api_key: str = None,
+        ai_api_base: str = None,
         auto_approve_changes: bool = False,
         verbose: bool = True
     ):
         """
-        初始化协同调度器
+        初始化协同调度器（支持 AI 辅助场景判断）
         
         Args:
             project_dir: 项目目录
@@ -64,7 +76,12 @@ class CollaborativeScheduler:
             cloud_platforms: 支持的云端平台列表
             enable_scene_analysis: 启用智能场景分析
             enable_interactive_refine: 启用交互式场景优化
-            enable_scene_detection: 启用智能场景检测（基于关键词判定新增场景）
+            enable_scene_detection: 启用智能场景检测（基于关键词）
+            enable_ai_assist: 启用 AI 辅助判断（基于 LLM）
+            ai_model_type: AI 模型类型（'local', 'openai', 'qwen', 'claude'）
+            ai_model_name: AI 模型名称
+            ai_api_key: AI API Key
+            ai_api_base: AI API Base URL
             auto_approve_changes: 自动确认优化建议
             verbose: 是否输出详细信息
         """
@@ -120,6 +137,26 @@ class CollaborativeScheduler:
         elif enable_interactive_refine and not SCENE_REFINER_AVAILABLE:
             self._log("未找到场景整理器，使用基础场景分析", "WARNING")
         
+        # 初始化 AI 场景分析器（智能辅助判断）
+        self.ai_analyzer = None
+        if enable_ai_assist and AI_SCENE_ANALYZER_AVAILABLE:
+            try:
+                self.ai_analyzer = AISceneAnalyzer(
+                    model_type=ai_model_type,
+                    model_name=ai_model_name,
+                    api_key=ai_api_key,
+                    api_base=ai_api_base,
+                    verbose=verbose
+                )
+                self._log(
+                    f"已启用 AI 辅助场景判断（{ai_model_type}/{ai_model_name or 'default'}）", 
+                    "INFO"
+                )
+            except Exception as e:
+                self._log(f"初始化 AI 分析器失败：{e}", "WARNING")
+        elif enable_ai_assist and not AI_SCENE_ANALYZER_AVAILABLE:
+            self._log("未找到 AI 分析器，使用关键词方案", "WARNING")
+        
         # 计算总段数
         self.total_segments = int(total_duration / segment_duration)
         
@@ -140,6 +177,134 @@ class CollaborativeScheduler:
         
         # 场景分析报告（优化后）
         self.scene_report: Optional[Dict] = None
+    
+    def ai_assisted_scene_analysis(self, full_prompt: str) -> List[Dict]:
+        """
+        AI 辅助场景分析（智能路由：关键词 vs AI）
+        
+        Args:
+            full_prompt: 完整提示词
+            
+        Returns:
+            场景分段列表
+        """
+        self._log("\n【智能场景分析】开始 AI 辅助分析...", "INFO")
+        
+        # 方案 1: AI 分析（如果可用）
+        if self.ai_analyzer and self.scene_refiner and self.scene_refiner.scene_detector:
+            self._log("使用混合方案：关键词预筛选 + AI 精确定界", "INFO")
+            
+            # Step 1: 关键词快速分析
+            keyword_result = self.scene_refiner.scene_detector.detect_scene_keywords(full_prompt)
+            overall_score = keyword_result.get('overall', {}).get('total_score', 0)
+            detected_types = keyword_result.get('overall', {}).get('detected_types', 0)
+            
+            self._log(
+                f"关键词分析：总体分数 {overall_score:.2f}, "
+                f"检测到 {detected_types} 个场景类别", 
+                "INFO"
+            )
+            
+            # Step 2: 智能决策
+            use_ai = False
+            reason = ""
+            
+            if overall_score >= 0.7 and detected_types >= 2:
+                # 高置信度，不需要 AI
+                use_ai = False
+                reason = "关键词分析置信度高"
+            elif overall_score < 0.3:
+                # 太低，AI 可能也帮不上
+                use_ai = False
+                reason = "场景特征不明显，使用基础拆分"
+            elif self.ai_analyzer.requests_available:
+                # 中等置信度，AI 辅助判断
+                use_ai = True
+                reason = "中等置信度，AI 辅助提升准确率"
+            
+            self._log(f"决策：{'使用 AI' if use_ai else '不使用 AI'} - {reason}", "INFO")
+            
+            if use_ai:
+                # 调用 AI 分析
+                try:
+                    ai_result = self.ai_analyzer.analyze(full_prompt, mode='detailed')
+                    
+                    self._log(
+                        f"AI 分析完成：{ai_result.get('total_scenes', 0)} 个场景", 
+                        "INFO"
+                    )
+                    
+                    # 转换为标准格式
+                    segments = self._convert_ai_result_to_segments(ai_result, full_prompt)
+                    
+                    return segments
+                    
+                except Exception as e:
+                    self._log(f"AI 分析失败：{e}，回退到关键词方案", "WARNING")
+            
+            # 回退到关键词方案
+            return self.keyword_based_scene_detection(full_prompt)
+        
+        # 方案 2: 仅有场景整理器
+        elif self.scene_refiner and self.scene_refiner.scene_detector:
+            self._log("使用方案 2: 关键词智能检测", "INFO")
+            return self.keyword_based_scene_detection(full_prompt)
+        
+        # 方案 3: 基础拆分
+        else:
+            self._log("使用方案 3: 基础规则拆分", "WARNING")
+            return self._fallback_scene_split(full_prompt)
+    
+    def keyword_based_scene_detection(self, full_prompt: str) -> List[Dict]:
+        """基于关键词的场景检测"""
+        if not self.scene_refiner or not self.scene_refiner.scene_detector:
+            return self._fallback_scene_split(full_prompt)
+        
+        return self.scene_refiner.scene_detector.analyze_and_split(full_prompt)
+    
+    def _convert_ai_result_to_segments(self, ai_result: Dict, 
+                                        full_prompt: str) -> List[Dict]:
+        """转换 AI 分析结果为标准分段格式"""
+        segments = []
+        
+        scenes = ai_result.get('scenes', [])
+        
+        for scene in scenes:
+            segments.append({
+                'segment_index': len(segments),
+                'text': scene.get('text', ''),
+                'start_position': scene.get('start_position', 0),
+                'end_position': scene.get('end_position', 0),
+                'importance_score': scene.get('importance', 0.5),
+                'detected_categories': scene.get('scene_type', ['custom']),
+                'keywords': [],  # AI 模式下暂不提取关键词
+                'transition_type': scene.get('transition_to_next', 'custom'),
+                'reason': scene.get('reason', 'AI 分析判定'),
+                'confidence': scene.get('confidence', 0.8),
+                'suggested_duration': scene.get('suggested_duration'),
+                'source': 'ai_analyzer'
+            })
+        
+        return segments
+    
+    def _fallback_scene_split(self, full_prompt: str) -> List[Dict]:
+        """回退方案：简单按标点拆分"""
+        import re
+        
+        # 按标点符号拆分
+        raw_segments = [s.strip() for s in re.split(r'[,.,]! ', full_prompt) if s.strip()]
+        
+        segments = []
+        for i, text in enumerate(raw_segments):
+            segments.append({
+                'segment_index': i,
+                'text': text,
+                'importance_score': 0.5,
+                'detected_categories': [],
+                'source': 'fallback'
+            })
+        
+        return segments
     
     def optimize_scenes(self, full_prompt: str, raw_segments: List[Dict]) -> List[Dict]:
         """
