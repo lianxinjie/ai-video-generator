@@ -58,6 +58,123 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/api/analyze', methods=['POST'])
+def api_analyze_scenes():
+    """
+    API: 智能分析并切分场景
+    
+    请求参数:
+    - prompt: 文本提示词
+    - duration: 总时长
+    - mode: 分析模式 (keyword/ai)
+    """
+    try:
+        prompt = request.form.get('prompt', '')
+        if not prompt:
+            return jsonify({'error': '提示词不能为空'}), 400
+        
+        duration = float(request.form.get('duration', 10))
+        mode = request.form.get('mode', 'auto')
+        
+        # 调用场景分析器
+        sys.path.insert(0, 'personal_mode')
+        from collaborative_scheduler import CollaborativeScheduler
+        
+        scheduler = CollaborativeScheduler(
+            total_duration=duration,
+            segment_duration=2.0,
+            enable_scene_analysis=(mode != 'keyword'),
+            enable_scene_detection=True
+        )
+        
+        # 执行场景分析
+        segments = scheduler.ai_assisted_scene_analysis(prompt)
+        
+        # 返回场景列表
+        return jsonify({
+            'success': True,
+            'total_scenes': len(segments),
+            'total_duration': sum(s.get('duration', 0) for s in segments),
+            'scenes': segments
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scenes', methods=['POST'])
+def api_save_scenes():
+    """
+    API: 保存修改后的场景
+    
+    请求参数:
+    - scenes: 场景列表（JSON）
+    - task_id: 任务 ID（如果已创建）
+    """
+    try:
+        data = request.json
+        scenes = data.get('scenes', [])
+        
+        if not scenes:
+            return jsonify({'error': '场景列表不能为空'}), 400
+        
+        # 保存场景到临时文件
+        task_id = data.get('task_id') or str(uuid.uuid4())
+        scenes_file = app.config['OUTPUT_FOLDER'] / task_id / 'scenes.json'
+        scenes_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(scenes_file, 'w', encoding='utf-8') as f:
+            json.dump({'scenes': scenes}, f, ensure_ascii=False, indent=2)
+        
+        # 更新任务
+        if task_id in tasks:
+            tasks[task_id]['scenes'] = scenes
+            tasks[task_id]['scenes_confirmed'] = True
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'message': '场景已保存'
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scenes/<task_id>', methods=['GET'])
+def api_get_scenes(task_id):
+    """API: 获取任务场景列表"""
+    try:
+        # 先从内存中查找
+        if task_id in tasks and 'scenes' in tasks[task_id]:
+            return jsonify({
+                'success': True,
+                'scenes': tasks[task_id]['scenes']
+            })
+        
+        # 从文件加载
+        scenes_file = app.config['OUTPUT_FOLDER'] / task_id / 'scenes.json'
+        if scenes_file.exists():
+            with open(scenes_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            return jsonify({
+                'success': True,
+                'scenes': data.get('scenes', [])
+            })
+        
+        return jsonify({'error': '场景不存在'}), 404
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/scenes/confirm')
+def scenes_confirm():
+    """场景确认页面"""
+    return render_template('scenes_confirm.html')
+
+
 @app.route('/api/generate', methods=['POST'])
 def api_generate():
     """
@@ -73,6 +190,7 @@ def api_generate():
     - voiceover: 是否启用配音
     - character_voice: 配音语音
     - bgm_file: 背景音乐文件
+    - scenes: 场景列表（可选，如果提供则跳过自动分析）
     """
     try:
         # 获取参数
@@ -86,6 +204,12 @@ def api_generate():
         ref_strength = float(request.form.get('ref_strength', 0.6))
         voiceover = request.form.get('voiceover', 'false').lower() == 'true'
         character_voice = request.form.get('character_voice', 'zh-CN-XiaoxiaoNeural')
+        
+        # 检查是否已提供场景
+        scenes = None
+        scenes_json = request.form.get('scenes')
+        if scenes_json:
+            scenes = json.loads(scenes_json)
         
         # 生成任务 ID
         task_id = str(uuid.uuid4())
@@ -118,6 +242,12 @@ def api_generate():
         output_dir = app.config['OUTPUT_FOLDER'] / task_id
         output_dir.mkdir(parents=True, exist_ok=True)
         
+        # 保存场景（如果有）
+        if scenes:
+            scenes_file = output_dir / 'scenes.json'
+            with open(scenes_file, 'w', encoding='utf-8') as f:
+                json.dump({'scenes': scenes}, f, ensure_ascii=False, indent=2)
+        
         # 构建命令行
         cmd = [
             sys.executable,
@@ -142,13 +272,19 @@ def api_generate():
         if bgm_path:
             cmd.extend(['--bgm-file', str(bgm_path)])
         
+        # 如果是 collaborative 模式，启用场景分析
+        if mode == 'collaborative':
+            cmd.append('--enable-scene-detection')
+            cmd.append('--enable-scene-refine')
+        
         # 启动任务（后台运行）
         tasks[task_id] = {
             'status': 'running',
             'progress': 0,
             'prompt': prompt,
             'mode': mode,
-            'start_time': str(uuid.uuid4())
+            'start_time': str(uuid.uuid4()),
+            'scenes': scenes
         }
         
         def run_task():
