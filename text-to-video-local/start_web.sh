@@ -7,10 +7,16 @@ echo "  AI 视频生成器 - Web 服务"
 echo "================================================================"
 echo ""
 
-# 检查 Flask 是否安装
+# 检查并安装依赖
+echo "📦 检查依赖..."
 if ! python3 -c "import flask" 2>/dev/null; then
-    echo "⚠ 检测到 Flask 未安装，正在安装..."
+    echo "  → 安装 Flask..."
     pip3 install flask
+fi
+
+if ! python3 -c "from PIL import Image" 2>/dev/null; then
+    echo "  → 安装 Pillow (图片处理)..."
+    pip3 install pillow
 fi
 
 # 启动 Web 服务

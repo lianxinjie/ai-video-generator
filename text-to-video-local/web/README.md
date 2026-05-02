@@ -8,11 +8,13 @@
 ./start_web.sh
 ```
 
+启动脚本会自动安装所需依赖。
+
 ### 方式 2：手动启动
 
 ```bash
 # 安装依赖
-pip install flask
+pip install flask pillow
 
 # 启动服务
 python3 web/app.py
