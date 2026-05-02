@@ -35,10 +35,127 @@ class VideoSynthesizer:
             "fps": 24,
             "video_codec": "libx264",
             "audio_codec": "aac",
-            "crf": 23,  # 质量 0-51，越小质量越高
-            "preset": "medium",  # 编码速度预设
-            "pixel_format": "yuv420p"  # 兼容性最好的像素格式
+            "crf": 23,
+            "preset": "medium",
+            "pixel_format": "yuv420p"
         }
+    
+    def concatenate_audios(
+        self,
+        audio_files: List[str],
+        output_file: str
+    ) -> Optional[str]:
+        """
+        拼接多个音频文件
+        
+        Args:
+            audio_files: 音频文件列表
+            output_file: 输出文件
+            
+        Returns:
+            输出文件路径
+        """
+        if not audio_files:
+            logger.error("音频文件列表为空")
+            return None
+        
+        # 创建 FFmpeg concat 文件
+        list_file = self.temp_dir / "audio_list.txt"
+        with open(list_file, 'w', encoding='utf-8') as f:
+            for audio_file in audio_files:
+                f.write(f"file '{audio_file}'\n")
+        
+        # FFmpeg 命令
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(list_file),
+            "-c", "copy",
+            output_file
+        ]
+        
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, timeout=60)
+            logger.info(f"音频拼接完成：{output_file}")
+            return output_file
+        except subprocess.CalledProcessError as e:
+            logger.error(f"音频拼接失败：{e}")
+            return None
+        except Exception as e:
+            logger.error(f"处理失败：{e}")
+            return None
+    
+    def mix_audio(
+        self,
+        audio1: str,
+        audio2: str,
+        output: str,
+        volume1: float = 1.0,
+        volume2: float = 0.3,
+        loop_background: bool = True
+    ) -> Optional[str]:
+        """
+        混合两个音频文件（配音 +BGM）
+        
+        Args:
+            audio1: 主音频（配音）
+            audio2: 背景音频（BGM）
+            output: 输出文件
+            volume1: 主音频音量
+            volume2: 背景音频音量
+            loop_background: 是否循环背景音频以匹配主音频长度
+            
+        Returns:
+            输出文件路径
+        """
+        try:
+            # 获取两个音频的时长
+            probe_cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", 
+                        "-of", "csv=p=0", audio1]
+            duration1 = float(subprocess.check_output(probe_cmd).decode().strip())
+            
+            probe_cmd2 = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+                         "-of", "csv=p=0", audio2]
+            duration2 = float(subprocess.check_output(probe_cmd2).decode().strip())
+            
+            # FFmpeg amix 命令
+            if loop_background and duration2 < duration1:
+                # BGM 比配音短，需要循环
+                filter_complex = (
+                    f"[1:a]aloop=loop=-1:size=2e+09,atrim=0:{duration1}[bgm];"
+                    f"[0:a][bgm]amix=inputs=2:duration=longest:dropout_transition=2"
+                )
+            else:
+                # 音频 2 够长或者不需要循环
+                filter_complex = (
+                    f"[1:a]volume={volume2}[bgm];"
+                    f"[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2"
+                )
+            
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-i", audio1,
+                "-i", audio2,
+                "-filter_complex", filter_complex,
+                "-c:a", "aac",
+                "-b:a", "192k",
+                output
+            ]
+            
+            subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+            logger.info(f"音频混合完成：{output}")
+            return output
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"音频混合失败：{e}")
+            logger.error(f"stderr: {e.stderr.decode()}")
+            return None
+        except Exception as e:
+            logger.error(f"处理失败：{e}")
+            return None
     
     def create_video_from_images(
         self,

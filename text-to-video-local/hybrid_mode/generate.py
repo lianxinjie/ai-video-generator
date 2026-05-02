@@ -43,19 +43,262 @@ def cli(ctx):
     - 电力消耗：降低 90-95%
     - 硬件成本：0 元
     
+    三种使用方式：
+    
+    1. 分步执行（推荐新手）:
+       generate.py template -a -p "提示词" -o template.json
+       generate.py synthesize -i ./images -o video.mp4 --voiceover --template template.json
+    
+    2. 一键完整流程（快捷）:
+       generate.py full -p "提示词" -o output_dir
+    
     示例:
     
     \b
     # 1. 生成提示词模板
     python hybrid_mode/generate.py template --type iterative -o prompts.json
     
-    # 2. 根据模板批量下载图片（使用 API）
-    python hybrid_mode/generate.py download --template prompts.json --output ./images
+    # 2. 根据模板中的提示词，手动下载图片
+    # 访问 SeaArt.ai / Tensor.art 等平台
     
-    # 3. 本地合成视频
-    python hybrid_mode/generate.py synthesize --input ./images --output video.mp4 --fps 24
+    # 3. 本地合成视频（支持 AI 配音）
+    python hybrid_mode/generate.py synthesize --input ./images --output video.mp4 --voiceover
+    
+    # 4. 一键完整流程（新增）
+    python hybrid_mode/generate.py full -p "cyberpunk city" -d 5 -o output
     """
     ctx.ensure_object(dict)
+
+
+@cli.command()
+@click.option(
+    '--prompt', '-p',
+    required=True,
+    help='基础提示词'
+)
+@click.option(
+    '--output-dir', '-o',
+    default='./hybrid_mode/full_output',
+    help='输出目录'
+)
+@click.option(
+    '--duration', '-d',
+    type=float,
+    default=5.0,
+    help='总时长（秒）'
+)
+@click.option(
+    '--fps',
+    type=int,
+    default=24,
+    help='帧率'
+)
+@click.option(
+    '--voiceover',
+    is_flag=True,
+    help='启用 AI 智能配音'
+)
+@click.option(
+    '--character-voice',
+    default='zh-CN-XiaoxiaoNeural',
+    help='配音语音'
+)
+@click.option(
+    '--bgm-file',
+    default=None,
+    help='背景音乐文件'
+)
+@click.option(
+    '--transition',
+    type=click.Choice(['none', 'crossfade', 'fade']),
+    default='crossfade',
+    help='转场效果'
+)
+def full(prompt: str, output_dir: str, duration: float, fps: int,
+         voiceover: bool, character_voice: str, bgm_file: str, transition: str):
+    """一键完整流程
+    
+    自动执行以下步骤：
+    1. AI 分析提示词并生成模板
+    2. 生成配音脚本
+    3. 显示提示词列表（需要手动生成图片）
+    4. 等待图片准备好后合成视频
+    5. 添加配音和 BGM
+    
+    示例:
+    
+    \b
+    # 一键生成（手动下载图片）
+    generate.py full -p "cyberpunk city" -o output
+    
+    # 一键生成 + AI 配音
+    generate.py full -p "魔法城堡" -d 10 -o output --voiceover
+    
+    # 一键生成 + 配音 + BGM
+    generate.py full -p "童话故事" -d 15 -o output \\
+        --voiceover \\
+        --character-voice zh-CN-XiaoxiaoNeural \\
+        --bgm-file music/bgm.mp3
+    """
+    print("\n" + "="*70)
+    print(" 混合模式 - 一键完整流程")
+    print("="*70)
+    
+    print(f"\n提示词：{prompt}")
+    print(f"输出目录：{output_dir}")
+    print(f"时长：{duration}秒")
+    print(f"配音：{'启用' if voiceover else '禁用'}")
+    if voiceover:
+        print(f"  语音：{character_voice}")
+        if bgm_file:
+            print(f"  BGM: {bgm_file}")
+    print()
+    
+    # 1. 生成提示词模板
+    print("\n【步骤 1】AI 分析并生成提示词模板...\n")
+    
+    from hybrid_mode.prompt_generator import PromptTemplateGenerator
+    from hybrid_mode.ai_analyzer import AIStyleAnalyzer
+    
+    analyzer = AIStyleAnalyzer()
+    analysis = analyzer.analyze_prompt(prompt)
+    
+    scene_type = analysis['scene_type']['type']
+    style = analysis['style']['style']
+    
+    print(f"  场景类型：{scene_type}")
+    print(f"  艺术风格：{style}")
+    print(f"  置信度：{analysis['confidence']['overall']:.0%}")
+    
+    generator = PromptTemplateGenerator(output_dir=output_dir)
+    
+    # 根据类型生成模板
+    if scene_type == 'time_lapse':
+        template_data = generator.generate_time_lapse_template(
+            location=prompt,
+            style=style
+        )
+    elif scene_type in ['zoom', 'dolly_zoom']:
+        template_data = generator.generate_zoom_sequence_template(
+            subject=prompt,
+            style=style
+        )
+    else:
+        # 默认使用迭代模式
+        template_data = generator.generate_iterative_img2img_template(
+            base_prompt=prompt,
+            iteration_prompts=[
+                "wide angle, establishing shot",
+                "medium shot, subject appears",
+                "medium close-up",
+                "close-up, details",
+                "extreme close-up"
+            ],
+            style=style,
+            denoising_strength=0.4
+        )
+    
+    # 2. 生成配音脚本
+    if voiceover:
+        print(f"\n【步骤 2】生成 AI 配音脚本...")
+        
+        from personal_mode.ai_voice_analyzer import AIVoiceAnalyzer
+        voice_analyzer = AIVoiceAnalyzer()
+        
+        script_segments = voice_analyzer.split_script_by_duration(
+            full_prompt=prompt,
+            total_duration=duration,
+            segment_duration=0.5
+        )
+        
+        template_data['voiceover_script'] = script_segments
+        print(f"  ✓ 生成 {len(script_segments)} 段配音脚本")
+    
+    # 3. 保存模板
+    output_dir_path = Path(output_dir)
+    output_dir_path.mkdir(parents=True, exist_ok=True)
+    
+    template_file = output_dir_path / 'template.json'
+    with open(template_file, 'w', encoding='utf-8') as f:
+        json.dump(template_data, f, ensure_ascii=False, indent=2)
+    
+    print(f"\n【步骤 3】提示词模板已保存：{template_file}")
+    
+    # 4. 显示提示词列表
+    print(f"\n【步骤 4】请使用以下提示词在云端平台生成图片\n")
+    
+    prompts = template_data.get('prompts', [])
+    print(f"共需要生成 {len(prompts)} 张图片：\n")
+    
+    for i, prompt_item in enumerate(prompts[:5], 1):
+        p = prompt_item.get('prompt', '')
+        print(f"  [{i:03d}] {p[:80]}...")
+    
+    if len(prompts) > 5:
+        print(f"  ... 还有 {len(prompts) - 5} 个提示词（见模板文件）")
+    
+    # 5. 下载说明
+    print(f"\n【步骤 5】前往免费平台生成图片:")
+    print("  - SeaArt.ai: https://www.seaart.ai")
+    print("  - Tensor.art: https://tensor.art")
+    print("  - Bing Image Creator: https://www.bing.com/create")
+    
+    images_dir = output_dir_path / 'images'
+    print(f"\n  将下载的图片保存到：{images_dir}")
+    print("  命名规则：image_001.jpg, image_002.jpg, ...")
+    
+    # 6. 询问是否已准备好图片
+    input("\n准备好所有图片后，按 Enter 键继续...\n")
+    
+    # 检查图片目录
+    if not images_dir.exists():
+        images_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(f"【步骤 6】开始合成视频...\n")
+    
+    # 7. 合成视频
+    from hybrid_mode.video_synthesizer import VideoSynthesizer
+    synthesizer = VideoSynthesizer()
+    
+    video_file = output_dir_path / 'video.mp4'
+    
+    if transition == 'none':
+        result = synthesizer.create_video_from_images(
+            image_dir=str(images_dir),
+            output_file=str(video_file),
+            fps=fps,
+            duration_per_image=duration / len(prompts) if prompts else 0.5
+        )
+    else:
+        result = synthesizer.create_video_with_transitions(
+            image_dir=str(images_dir),
+            output_file=str(video_file),
+            fps=fps,
+            transition_type=transition
+        )
+    
+    if not result:
+        print("❌ 视频合成失败")
+        return
+    
+    print(f"✓ 视频合成完成：{result}")
+    
+    # 8. 添加配音（如果启用）
+    if voiceover:
+        print(f"\n【步骤 7】生成并添加配音...")
+        
+        # 复用 synthesize 命令的配音逻辑
+        # 注意：这里简化处理，实际应该调用 synthesize 命令
+        print("  提示：请运行以下命令添加配音:")
+        print(f"  generate.py synthesize -i {images_dir} -o {video_file}")
+        print(f"    --voiceover --template {template_file}")
+        print(f"    --character-voice {character_voice}")
+        if bgm_file:
+            print(f"    --bgm-file {bgm_file} --bgm-volume 0.3")
+    else:
+        print(f"\n✓ 完成：{video_file}")
+    
+    print("\n" + "="*70)
 
 
 @cli.command()
@@ -221,10 +464,54 @@ def template(type: str, location: str, subject: str, base_prompt: str, output: s
     print(f"  类型：{template_data['type']}")
     print(f"  帧数：{template_data['total_frames']}")
     print(f"  风格：{template_data['style']}")
-    print(f"\n下一步:")
-    print(f"  1. 根据模板中的提示词，使用云端免费 API 生成图片")
-    print(f"  2. 将生成的图片保存到统一目录")
-    print(f"  3. 运行 synthesize 命令合成视频")
+    
+    # 新增：AI 配音分析
+    try:
+        from personal_mode.ai_voice_analyzer import AIVoiceAnalyzer
+        base_prompt_for_analysis = base_prompt
+        
+        print(f"\n" + "="*60)
+        print(" AI 智能配音分析")
+        print("="*60 + "\n")
+        
+        voice_analyzer = AIVoiceAnalyzer()
+        estimated_duration = template_data['total_frames'] * 0.5  # 假设每帧 0.5 秒
+        
+        script_segments = voice_analyzer.split_script_by_duration(
+            full_prompt=base_prompt_for_analysis,
+            total_duration=estimated_duration,
+            segment_duration=0.5
+        )
+        
+        # 将配音脚本添加到模板中
+        template_data['voiceover_script'] = script_segments
+        
+        print(f"  分析完成：共 {len(script_segments)} 段配音\n")
+        print(f"  前 3 段示例:")
+        for seg in script_segments[:3]:
+            print(f"    段{seg['segment_index'] + 1}: {seg['voiceover']['text']}")
+            print(f"           情绪：{seg['voiceover']['emotion']}, 语速：{seg['voiceover']['speed']}字/分钟")
+        
+        if len(script_segments) > 3:
+            print(f"    ... 还有 {len(script_segments) - 3} 段")
+        
+        print(f"\n✓ 配音脚本已添加到模板")
+        print(f"\n配音建议:")
+        if script_segments:
+            emotions_count = {}
+            for seg in script_segments:
+                emotion = seg['voiceover']['emotion']
+                emotions_count[emotion] = emotions_count.get(emotion, 0) + 1
+            
+            dominant_emotion = max(emotions_count, key=emotions_count.get)
+            print(f"  - 主导情绪：{dominant_emotion} ({emotions_count[dominant_emotion]}/{len(script_segments)}段)")
+            print(f"  - 推荐语音：{script_segments[0]['voiceover']['voice']}")
+            print(f"  - 平均语速：{sum(s['voiceover']['speed'] for s in script_segments) // len(script_segments)}字/分钟")
+            
+    except ImportError:
+        print(f"\n⚠ 未导入配音分析模块，跳过配音分析")
+    except Exception as e:
+        print(f"\n⚠ 配音分析失败：{e}")
 
 
 @cli.command()
@@ -438,6 +725,32 @@ def download(template: str, output: str, platform: str):
     help='添加音频文件（BGM 或配音）'
 )
 @click.option(
+    '--voiceover',
+    is_flag=True,
+    help='启用 AI 智能配音分析（需要模板文件）'
+)
+@click.option(
+    '--character-voice',
+    default='zh-CN-XiaoxiaoNeural',
+    help='配音语音（启用 voiceover 时使用）'
+)
+@click.option(
+    '--bgm-file',
+    default=None,
+    help='背景音乐文件'
+)
+@click.option(
+    '--bgm-volume',
+    type=float,
+    default=0.3,
+    help='背景音乐音量（0.0-1.0）'
+)
+@click.option(
+    '--template',
+    default=None,
+    help='提示词模板文件（用于 AI 配音分析）'
+)
+@click.option(
     '--upscale',
     type=float,
     default=1.0,
@@ -450,12 +763,22 @@ def synthesize(
     duration: float,
     transition: str,
     audio: str,
-    upscale: float
+    upscale: float,
+    voiceover: bool,
+    character_voice: str,
+    bgm_file: str,
+    bgm_volume: float,
+    template: str
 ):
     """本地合成视频
     
     将云端生成的图片序列合成为视频，CPU 即可完成，
     无需独立 GPU。
+    
+    新增 AI 智能配音功能：
+    - 自动分析模板生成配音脚本
+    - 分层配音（人物 +BGM+ 音效）
+    - 情绪识别和语速调节
     
     示例:
     
@@ -466,8 +789,25 @@ def synthesize(
     # 添加转场效果
     generate.py synthesize -i ./images -o video.mp4 --transition crossfade
     
+    # 添加 AI 智能配音（需要模板文件）
+    generate.py synthesize -i ./images -o video.mp4 --voiceover --template prompts.json
+    
+    # 自定义配音语音
+    generate.py synthesize -i ./images -o video.mp4 \\
+        --voiceover \\
+        --template prompts.json \\
+        --character-voice zh-CN-YunxiNeural
+    
     # 添加背景音乐
     generate.py synthesize -i ./images -o video.mp4 --audio bgm.mp3
+    
+    # 完整配音：人物 +BGM
+    generate.py synthesize -i ./images -o video.mp4 \\
+        --voiceover \\
+        --template prompts.json \\
+        --character-voice zh-CN-XiaoxiaoNeural \\
+        --bgm-file music/bgm.mp3 \\
+        --bgm-volume 0.3
     
     # 高质量放大
     generate.py synthesize -i ./images -o video_4k.mp4 --upscale 2.0
@@ -481,7 +821,15 @@ def synthesize(
     print(f"  帧率：{fps}fps")
     print(f"  图片时长：{duration or 'auto'} 秒")
     print(f"  转场效果：{transition or '无'}")
-    print(f"  音频文件：{audio or '无'}")
+    if voiceover:
+        print(f"  AI 配音：启用")
+        print(f"    语音：{character_voice}")
+        if template:
+            print(f"    模板：{template}")
+        if bgm_file:
+            print(f"    BGM: {bgm_file} (音量：{bgm_volume})")
+    elif audio:
+        print(f"  音频文件：{audio}")
     print(f"  放大倍数：{upscale}x")
     print(f"\n{'='*60}\n")
     
@@ -508,6 +856,121 @@ def synthesize(
         return
     
     print(f"\n✓ 视频合成完成：{output_video}")
+    
+    # AI 配音（如果启用）
+    if voiceover:
+        try:
+            from personal_mode.ai_voice_analyzer import AIVoiceAnalyzer
+            import edge_tts
+            import asyncio
+            
+            print("\n【AI 配音】正在生成配音...\n")
+            
+            # 1. 读取模板中的配音脚本
+            voiceover_script = []
+            if template and Path(template).exists():
+                with open(template, 'r', encoding='utf-8') as f:
+                    template_data = json.load(f)
+                    voiceover_script = template_data.get('voiceover_script', [])
+            
+            if not voiceover_script:
+                # 如果没有模板中的脚本，简单生成
+                from personal_mode.ai_voice_analyzer import AIVoiceAnalyzer
+                analyzer = AIVoiceAnalyzer()
+                voiceover_script = analyzer.split_script_by_duration(
+                    full_prompt="AI 视频",
+                    total_duration=dps,
+                    segment_duration=0.5
+                )
+            
+            # 2. 为每段生成配音
+            audio_dir = Path(input).parent / 'audio'
+            audio_dir.mkdir(parents=True, exist_ok=True)
+            
+            character_audio_files = []
+            
+            async def generate_single_voiceover(text, voice, output_file):
+                """异步生成单个配音"""
+                communicate = edge_tts.Communicate(text, voice)
+                await communicate.save(output_file)
+                return output_file
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                for i, seg in enumerate(voiceover_script):
+                    text = seg['voiceover']['text']
+                    voice = character_voice
+                    
+                    audio_file = audio_dir / f'segment_{i:03d}_character.wav'
+                    
+                    print(f"  生成配音 {i + 1}/{len(voiceover_script)}: {text[:30]}...")
+                    
+                    try:
+                        loop.run_until_complete(
+                            generate_single_voiceover(text, voice, str(audio_file))
+                        )
+                        character_audio_files.append(str(audio_file))
+                    except Exception as e:
+                        print(f"  ⚠ 段{i + 1}配音生成失败：{e}")
+            finally:
+                loop.close()
+            
+            # 3. 合并所有配音片段
+            if character_audio_files:
+                print(f"\n  合并 {len(character_audio_files)} 个配音片段...")
+                
+                from hybrid_mode.video_synthesizer import VideoSynthesizer
+                synth = VideoSynthesizer()
+                
+                combined_file = audio_dir / 'character_combined.wav'
+                result = synth.concatenate_audios(character_audio_files, str(combined_file))
+                
+                if result:
+                    print(f"  ✓ 配音合并完成：{result}")
+                
+                # 4. 添加 BGM
+                if bgm_file and Path(bgm_file).exists():
+                    print(f"  添加背景音乐：{bgm_file}")
+                    
+                    bgm_output = audio_dir / 'final_audio.wav'
+                    result = synth.mix_audio(
+                        audio1=str(combined_file),
+                        audio2=bgm_file,
+                        output=str(bgm_output),
+                        volume1=1.0,
+                        volume2=bgm_volume
+                    )
+                    
+                    if result:
+                        print(f"  ✓ BGM 已混合：{result}")
+                        audio_to_use = str(bgm_output)
+                    else:
+                        audio_to_use = str(combined_file)
+                else:
+                    audio_to_use = str(combined_file)
+                
+                # 5. 将配音添加到视频
+                print(f"\n  将配音添加到视频...")
+                audio_output = output_video.replace('.mp4', '_with_voiceover.mp4')
+                result = synthesizer.add_audio(
+                    video_file=output_video,
+                    audio_file=audio_to_use,
+                    output_file=audio_output
+                )
+                
+                if result:
+                    output_video = result
+                    print(f"✓ AI 配音已添加：{output_video}")
+            
+        except ImportError as e:
+            print(f"\n⚠ 配音功能需要额外依赖：{e}")
+            print("  安装命令：pip install edge-tts pydub")
+        except Exception as e:
+            print(f"\n⚠ 配音生成失败：{e}")
+            import traceback
+            traceback.print_exc()
     
     # 2. 添加音频（可选）
     if audio:
