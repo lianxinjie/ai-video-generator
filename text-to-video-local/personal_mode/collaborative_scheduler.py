@@ -27,6 +27,13 @@ try:
 except ImportError:
     SCENE_ANALYZER_AVAILABLE = False
 
+# 集成智能场景整理器
+try:
+    from scene_refiner import SceneRefiner
+    SCENE_REFINER_AVAILABLE = True
+except ImportError:
+    SCENE_REFINER_AVAILABLE = False
+
 
 class CollaborativeScheduler:
     """智能协同调度器"""
@@ -39,7 +46,9 @@ class CollaborativeScheduler:
         local_ratio: float = 0.5,
         enable_auto_adjust: bool = True,
         cloud_platforms: List[str] = None,
-        enable_scene_analysis: bool = True,  # 新增：启用智能场景分析
+        enable_scene_analysis: bool = True,  # 启用智能场景分析
+        enable_interactive_refine: bool = True,  # 启用交互式场景优化
+        auto_approve_changes: bool = False,  # 自动确认优化建议
         verbose: bool = True
     ):
         """
@@ -52,6 +61,9 @@ class CollaborativeScheduler:
             local_ratio: 本地生成比例（0.0-1.0，0.5=50% 本地）
             enable_auto_adjust: 启用自动调整
             cloud_platforms: 支持的云端平台列表
+            enable_scene_analysis: 启用智能场景分析
+            enable_interactive_refine: 启用交互式场景优化
+            auto_approve_changes: 自动确认优化建议（无需用户确认）
             verbose: 是否输出详细信息
         """
         self.project_dir = Path(project_dir)
@@ -64,6 +76,8 @@ class CollaborativeScheduler:
         ]
         self.verbose = verbose
         self.enable_scene_analysis = enable_scene_analysis
+        self.enable_interactive_refine = enable_interactive_refine
+        self.auto_approve_changes = auto_approve_changes
         
         # 初始化 AI 场景分析器（集成混合模式功能）
         self.scene_analyzer = None
@@ -75,6 +89,17 @@ class CollaborativeScheduler:
                 self._log(f"初始化场景分析器失败：{e}", "WARNING")
         elif enable_scene_analysis and not SCENE_ANALYZER_AVAILABLE:
             self._log("未找到混合模式 AI 分析器，使用简化场景分析", "WARNING")
+        
+        # 初始化场景整理器（智能优化）
+        self.scene_refiner = None
+        if enable_interactive_refine and SCENE_REFINER_AVAILABLE:
+            try:
+                self.scene_refiner = SceneRefiner(verbose=verbose)
+                self._log("已启用智能场景整理器（AI+ 用户交互优化）", "INFO")
+            except Exception as e:
+                self._log(f"初始化场景整理器失败：{e}", "WARNING")
+        elif enable_interactive_refine and not SCENE_REFINER_AVAILABLE:
+            self._log("未找到场景整理器，使用基础场景分析", "WARNING")
         
         # 计算总段数
         self.total_segments = int(total_duration / segment_duration)
@@ -93,6 +118,54 @@ class CollaborativeScheduler:
         
         # 初始化项目目录
         self._init_project_dir()
+        
+        # 场景分析报告（优化后）
+        self.scene_report: Optional[Dict] = None
+    
+    def optimize_scenes(self, full_prompt: str, raw_segments: List[Dict]) -> List[Dict]:
+        """
+        优化场景分割和分配
+        
+        Args:
+            full_prompt: 完整提示词
+            raw_segments: 原始分段列表
+            
+        Returns:
+            优化后的分段列表
+        """
+        if not self.scene_refiner:
+            self._log("场景整理器未启用，跳过优化", "INFO")
+            return raw_segments
+        
+        self._log("\n开始智能场景优化...", "INFO")
+        
+        # 分析场景边界
+        boundaries = self.scene_refiner.analyze_scene_boundaries(full_prompt)
+        
+        if boundaries:
+            self._log(f"检测到 {len(boundaries)} 个场景边界", "INFO")
+            for i, boundary in enumerate(boundaries[:5], 1):
+                self._log(f"  边界{i}: {boundary['marker']} @ 位置{boundary['position']}", "INFO")
+            if len(boundaries) > 5:
+                self._log(f"  ... 还有 {len(boundaries) - 5} 个边界", "INFO")
+        
+        # 交互式优化（AI 分析 + 用户确认）
+        optimized_segments, scene_report = self.scene_refiner.interactive_refine(
+            segments=raw_segments,
+            auto_approve=self.auto_approve_changes
+        )
+        
+        # 保存优化报告
+        self.scene_report = scene_report
+        
+        # 显示优化结果
+        if len(optimized_segments) != len(raw_segments):
+            self._log(
+                f"场景优化完成：{len(raw_segments)} 段 → {len(optimized_segments)} 段", 
+                "INFO"
+            )
+        
+        return optimized_segments
     
     def _init_project_dir(self):
         """初始化项目目录结构"""

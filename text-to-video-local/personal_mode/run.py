@@ -119,6 +119,18 @@ logger = logging.getLogger(__name__)
     help='启用智能场景分析（协同模式专属）'
 )
 @click.option(
+    '--enable-scene-refine',
+    is_flag=True,
+    default=True,
+    help='启用智能场景优化（协同模式专属，默认启用）'
+)
+@click.option(
+    '--auto-approve-changes',
+    is_flag=True,
+    default=False,
+    help='自动确认场景优化建议，无需用户确认（协同模式专属）'
+)
+@click.option(
     '--show-mode-info',
     is_flag=True,
     help='显示两种模式的详细说明后退出'
@@ -140,6 +152,8 @@ def main(
     cloud_platforms: str,
     auto_adjust: bool,
     enable_scene_analysis: bool,
+    enable_scene_refine: bool,
+    auto_approve_changes: bool,
     show_mode_info: bool
 ):
     """
@@ -286,7 +300,9 @@ def main(
             local_ratio=local_ratio,
             cloud_platforms=cloud_platforms.split(','),
             auto_adjust=auto_adjust,
-            enable_scene_analysis=enable_scene_analysis,  # 新增参数
+            enable_scene_analysis=enable_scene_analysis,
+            enable_scene_refine=enable_scene_refine,
+            auto_approve_changes=auto_approve_changes,
             character_voice=character_voice,
             bgm_file=bgm_file,
             bgm_volume=bgm_volume
@@ -315,7 +331,9 @@ def run_collaborative_mode(
     local_ratio: float,
     cloud_platforms: List[str],
     auto_adjust: bool,
-    enable_scene_analysis: bool,  # 新增参数
+    enable_scene_analysis: bool,
+    enable_scene_refine: bool,
+    auto_approve_changes: bool,
     character_voice: Optional[str],
     bgm_file: Optional[str],
     bgm_volume: float
@@ -345,7 +363,9 @@ def run_collaborative_mode(
             segment_duration=segment_duration,
             local_ratio=local_ratio,
             enable_auto_adjust=auto_adjust,
-            enable_scene_analysis=enable_scene_analysis,  # 新增参数
+            enable_scene_analysis=enable_scene_analysis,
+            enable_interactive_refine=enable_scene_refine,
+            auto_approve_changes=auto_approve_changes,
             cloud_platforms=cloud_platforms,
             verbose=True
         )
@@ -361,6 +381,8 @@ def run_collaborative_mode(
         print(f"  可用云平台：{', '.join(cloud_platforms)}")
         print(f"  自动调整：{'启用' if auto_adjust else '禁用'}")
         print(f"  场景分析：{'启用' if enable_scene_analysis else '禁用'}")
+        print(f"  场景优化：{'启用' if enable_scene_refine else '禁用'}")
+        print(f"  自动确认：{'是' if auto_approve_changes else '否（用户确认）'}")
         print("="*70 + "\n")
         
         # AI 分析配音脚本
@@ -377,6 +399,26 @@ def run_collaborative_mode(
                 print(f"    段{seg['segment_index'] + 1}: {seg['voiceover']['text'][:30]}...")
             if len(script_segments) > 3:
                 print(f"    ... 还有 {len(script_segments) - 3} 段")
+            print()
+        
+        # 场景智能优化（AI 分析 + 用户交互）
+        if enable_scene_refine and scheduler.scene_refiner:
+            print("="*70)
+            print("【智能场景优化】开始分析场景并优化任务分配...")
+            print("="*70 + "\n")
+            
+            # 使用配音脚本的分段进行优化
+            optimized_segments = scheduler.optimize_scenes(
+                full_prompt=prompt,
+                raw_segments=script_segments
+            )
+            
+            # 更新调度器的分段（如果优化后数量变化）
+            if len(optimized_segments) != len(script_segments):
+                print(f"\n✓ 场景优化完成：{len(script_segments)} 段 → {len(optimized_segments)} 段")
+                scheduler.total_segments = len(optimized_segments)
+                # TODO: 将优化后的分段应用到任务生成流程
+            
             print()
         
         # 协同生成循环
