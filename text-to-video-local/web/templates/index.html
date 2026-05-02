@@ -277,6 +277,22 @@
             font-size: 14px;
             color: #666;
         }
+    
+        /* 场景查看区域 */
+        .scenes-panel { display: none; margin-top: 30px; padding: 20px; background: #f8f9ff; border-radius: 10px; }
+        .scene-list { max-height: 500px; overflow-y: auto; margin: 15px 0; }
+        .scene-card { background: white; border: 2px solid #e0e0e0; border-radius: 10px; padding: 15px; margin-bottom: 15px; transition: all 0.3s; cursor: pointer; }
+        .scene-card:hover { border-color: #667eea; box-shadow: 0 3px 10px rgba(102, 126, 234, 0.2); }
+        .scene-card.editing { border-color: #667eea; background: #f8f9ff; }
+        .scene-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .scene-number { background: #667eea; color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 14px; }
+        .scene-prompt { font-size: 14px; color: #333; margin-bottom: 10px; }
+        .scene-meta { display: flex; gap: 10px; font-size: 12px; color: #666; flex-wrap: wrap; }
+        .scene-edit-form { display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0; }
+        .scene-card.editing .scene-edit-form { display: block; }
+        .scene-card.editing .scene-prompt, .scene-card.editing .scene-meta { display: none; }
+        .btn-small { padding: 6px 12px; font-size: 13px; border: none; border-radius: 6px; cursor: pointer; }
+
     </style>
 </head>
 <body>
@@ -382,10 +398,30 @@
                 </div>
                 
                 <!-- 提交按钮 -->
-                <button type="submit" class="btn" id="submitBtn">
+                <div style="display: flex; gap: 15px; margin-top: 20px;">
+                    <button type="button" class="btn" id="analyzeBtn" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); flex: 1;" onclick="analyzeScenes()">🔍 先分析场景</button>
+                    <button type="submit" class="btn" id="submitBtn" style="flex: 1;">
                     🎬 开始生成视频
                 </button>
             </form>
+
+        <!-- 场景查看和编辑区域 -->
+        <div class="scenes-panel" id="scenesPanel" style="display: none; margin-top: 30px; padding: 20px; background: #f8f9ff; border-radius: 10px;">
+            <h3 style="color: #667eea; margin-bottom: 15px;">🎬 智能场景分析结果</h3>
+            
+            <div class="scenes-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 15px; background: white; border-radius: 10px;">
+                <div class="scenes-summary" id="scenesSummary">共 0 个场景，总时长 0 秒</div>
+                <button class="btn-small btn-secondary" onclick="addNewScene()">+ 添加场景</button>
+            </div>
+            
+            <div id="scenesList" class="scene-list" style="max-height: 500px; overflow-y: auto; margin: 15px 0;"></div>
+            
+            <div class="scenes-actions" style="display: flex; gap: 15px; padding: 20px; background: white; border-radius: 10px; margin-top: 15px;">
+                <button class="btn btn-secondary" onclick="exportScenes()" style="flex: 1;">📥 导出场景</button>
+                <button class="btn btn-secondary" onclick="importScenes()" style="flex: 1;">📤 导入场景</button>
+                <button class="btn btn-success" onclick="confirmAndGenerate()" style="flex: 2;">✓ 确认并开始生成</button>
+            </div>
+        </div>
             
             <!-- 状态面板 -->
             <div class="status-panel" id="statusPanel">
@@ -551,6 +587,227 @@
             document.getElementById('submitBtn').disabled = false;
             document.getElementById('submitBtn').textContent = '🎬 开始生成视频';
         }
+    
+        // 场景相关功能
+        let currentScenes = [];
+        let analysisTaskId = null;
+        
+        // 分析场景
+        async function analyzeScenes() {
+            const prompt = document.getElementById('prompt').value;
+            const duration = document.getElementById('duration').value;
+            const mode = document.getElementById('mode').value;
+            
+            if (!prompt) {
+                alert('请输入提示词');
+                return;
+            }
+            
+            const btn = document.getElementById('analyzeBtn');
+            btn.disabled = true;
+            btn.innerHTML = '⏳ 正在分析...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('prompt', prompt);
+                formData.append('duration', duration);
+                formData.append('mode', mode);
+                
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentScenes = data.scenes;
+                    analysisTaskId = 'analysis_' + Date.now();
+                    
+                    // 显示场景面板
+                    displayScenesPanel();
+                    
+                    btn.innerHTML = '✅ 分析完成';
+                } else {
+                    alert('分析失败：' + (data.error || '未知错误'));
+                    btn.innerHTML = '🔍 先分析场景';
+                }
+            } catch (error) {
+                alert('分析失败：' + error.message);
+                btn.innerHTML = '🔍 先分析场景';
+            }
+            
+            btn.disabled = false;
+        }
+        
+        // 显示场景面板
+        function displayScenesPanel() {
+            const panel = document.getElementById('scenesPanel');
+            const list = document.getElementById('scenesList');
+            const summary = document.getElementById('scenesSummary');
+            
+            panel.style.display = 'block';
+            
+            const totalDuration = currentScenes.reduce((sum, s) => sum + (s.duration || 5), 0);
+            summary.textContent = `共 ${currentScenes.length} 个场景，总时长 ${totalDuration.toFixed(1)} 秒`;
+            
+            list.innerHTML = currentScenes.map((scene, index) => `
+                <div class="scene-card" id="scene-${index}" onclick="event.target.closest('.scene-edit-form') || toggleSceneEdit(${index})">
+                    <div class="scene-header">
+                        <span class="scene-number">场景 ${index + 1}</span>
+                        <span class="scene-duration">${(scene.duration || 5).toFixed(1)}秒</span>
+                    </div>
+                    <div class="scene-prompt">${scene.prompt || '无提示词'}</div>
+                    <div class="scene-meta">
+                        ${scene.scene_type ? `<span>类型：${scene.scene_type}</span>` : ''}
+                        ${scene.generation_location ? `<span>位置：${scene.generation_location}</span>` : ''}
+                        ${scene.voiceover ? `<span>配音：✓</span>` : ''}
+                    </div>
+                    <div class="scene-edit-form" onclick="event.stopPropagation()">
+                        <label>提示词:</label>
+                        <textarea id="edit-prompt-${index}">${scene.prompt || ''}</textarea>
+                        <label>时长（秒）:</label>
+                        <input type="number" id="edit-duration-${index}" value="${scene.duration || 5}" step="0.5" min="0.5">
+                        <div class="scene-actions" style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button class="btn-small btn-primary" onclick="saveSceneEdit(${index})">保存</button>
+                            <button class="btn-small btn-secondary" onclick="cancelSceneEdit(${index})">取消</button>
+                            <button class="btn-small btn-danger" onclick="deleteScene(${index})">删除</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            
+            // 滚动到场景面板
+            panel.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        // 切换编辑模式
+        function toggleSceneEdit(index) {
+            const card = document.getElementById(`scene-${index}`);
+            card.classList.toggle('editing');
+        }
+        
+        // 保存编辑
+        function saveSceneEdit(index) {
+            const newPrompt = document.getElementById(`edit-prompt-${index}`).value;
+            const newDuration = parseFloat(document.getElementById(`edit-duration-${index}`).value);
+            
+            currentScenes[index].prompt = newPrompt;
+            currentScenes[index].duration = newDuration;
+            
+            cancelSceneEdit(index);
+            displayScenesPanel();
+        }
+        
+        // 取消编辑
+        function cancelSceneEdit(index) {
+            const card = document.getElementById(`scene-${index}`);
+            card.classList.remove('editing');
+        }
+        
+        // 添加场景
+        function addNewScene() {
+            currentScenes.push({
+                prompt: '新场景',
+                duration: 5.0,
+                scene_type: 'default',
+                generation_location: 'local'
+            });
+            displayScenesPanel();
+        }
+        
+        // 删除场景
+        function deleteScene(index) {
+            if (confirm(`确定删除场景 ${index + 1} 吗？`)) {
+                currentScenes.splice(index, 1);
+                displayScenesPanel();
+            }
+        }
+        
+        // 确认并开始生成
+        async function confirmAndGenerate() {
+            if (currentScenes.length === 0) {
+                alert('至少需要一个场景');
+                return;
+            }
+            
+            // 先保存场景
+            try {
+                const saveResponse = await fetch('/api/scenes', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        scenes: currentScenes
+                    })
+                });
+                
+                const saveData = await saveResponse.json();
+                
+                if (saveData.success) {
+                    // 然后提交生成任务
+                    const formData = new FormData(document.getElementById('generateForm'));
+                    formData.append('scenes', JSON.stringify(currentScenes));
+                    
+                    const generateResponse = await fetch('/api/generate', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const generateData = await generateResponse.json();
+                    
+                    if (generateData.status === 'running') {
+                        alert('场景已确认！视频生成已开始...');
+                        
+                        // 隐藏场景面板，显示进度
+                        document.getElementById('scenesPanel').style.display = 'none';
+                        document.getElementById('statusPanel').style.display = 'block';
+                        
+                        // 开始轮询状态
+                        pollTaskStatus(generateData.task_id);
+                    }
+                }
+            } catch (error) {
+                alert('生成失败：' + error.message);
+            }
+        }
+        
+        // 导出场景
+        function exportScenes() {
+            const dataStr = JSON.stringify({scenes: currentScenes}, null, 2);
+            const blob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'scenes.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // 导入场景
+        function importScenes() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const data = JSON.parse(event.target.result);
+                            currentScenes = data.scenes || [];
+                            displayScenesPanel();
+                            alert(`已导入 ${currentScenes.length} 个场景`);
+                        } catch (error) {
+                            alert('导入失败：' + error.message);
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            };
+            input.click();
+        }
+
     </script>
 </body>
 </html>
