@@ -56,8 +56,8 @@ class CollaborativeScheduler:
         enable_scene_analysis: bool = True,
         enable_interactive_refine: bool = True,
         enable_scene_detection: bool = True,
-        enable_ai_assist: bool = True,  # 新增：启用 AI 辅助判断
-        ai_model_type: str = 'local',  # AI 模型类型：'local', 'openai', 'qwen', 'claude'
+        enable_ai_assist: bool = True,  # 新增:启用 AI 辅助判断
+        ai_model_type: str = 'local',  # AI 模型类型:'local', 'openai', 'qwen', 'claude'
         ai_model_name: str = None,
         ai_api_key: str = None,
         ai_api_base: str = None,
@@ -89,14 +89,14 @@ class CollaborativeScheduler:
         
         Args:
             project_dir: 项目目录
-            total_duration: 总时长（秒）
-            segment_duration: 每段时长（秒）
-            local_ratio: 本地生成比例（0.0-1.0，0.5=50% 本地）
+            total_duration: 总时长(秒)
+            segment_duration: 每段时长(秒)
+            local_ratio: 本地生成比例(0.0-1.0,0.5=50% 本地)
             enable_auto_adjust: 启用自动调整
             cloud_platforms: 支持的云端平台列表
             enable_scene_analysis: 启用智能场景分析
             enable_interactive_refine: 启用交互式场景优化
-            auto_approve_changes: 自动确认优化建议（无需用户确认）
+            auto_approve_changes: 自动确认优化建议(无需用户确认)
             verbose: 是否输出详细信息
         """
         self.project_dir = Path(project_dir)
@@ -184,7 +184,7 @@ class CollaborativeScheduler:
     
     def ai_assisted_scene_analysis(self, full_prompt: str) -> List[Dict]:
         """
-        AI 辅助场景分析（智能路由：关键词 vs AI）
+        AI 辅助场景分析(智能路由:关键词 vs AI)
         
         Args:
             full_prompt: 完整提示词
@@ -292,7 +292,7 @@ class CollaborativeScheduler:
         return segments
     
     def _fallback_scene_split(self, full_prompt: str) -> List[Dict]:
-        """回退方案：简单按标点拆分"""
+        """回退方案:简单按标点拆分"""
         import re
         
         # 按标点符号拆分
@@ -312,7 +312,7 @@ class CollaborativeScheduler:
     
     def optimize_scenes(self, full_prompt: str, raw_segments: List[Dict]) -> List[Dict]:
         """
-        优化场景分割和分配（包含智能场景检测）
+        优化场景分割和分配(包含智能场景检测)
         
         Args:
             full_prompt: 完整提示词
@@ -414,27 +414,27 @@ class CollaborativeScheduler:
     
     def analyze_scene_complexity(self, prompt: str, segment_index: int, base_prompt: str = None) -> Dict:
         """
-        分析场景复杂度，决定使用本地还是云端生成
+        分析场景复杂度,决定使用本地还是云端生成
         
-        新增智能场景转换功能（集成混合模式 AI 分析器）：
-        1. 5 种场景类型识别（time_lapse/zoom/pan/weather/iterative）
-        2. 6 种艺术风格识别（cyberpunk/fantasy/scifi/natural/horror/custom）
+        新增智能场景转换功能(集成混合模式 AI 分析器):
+        1. 5 种场景类型识别(time_lapse/zoom/pan/weather/iterative)
+        2. 6 种艺术风格识别(cyberpunk/fantasy/scifi/natural/horror/custom)
         3. 镜头序列规划建议
         4. 转场效果推荐
         
-        复杂度评分维度：
+        复杂度评分维度:
         1. 提示词长度和细节程度
-        2. 动态元素数量（人物、动物、车辆等）
-        3. 场景变化（天气、光线、时间）
+        2. 动态元素数量(人物,动物,车辆等)
+        3. 场景变化(天气,光线,时间)
         4. 艺术风格复杂度
         
         Args:
             prompt: 提示词
             segment_index: 段索引
-            base_prompt: 基础提示词（用于整体场景分析）
+            base_prompt: 基础提示词(用于整体场景分析)
             
         Returns:
-            复杂度分析报告（包含场景类型、风格等）
+            复杂度分析报告(包含场景类型,风格等)
         """
         
         # 使用智能场景分析器（如果可用）
@@ -568,9 +568,9 @@ class CollaborativeScheduler:
         为指定段分配任务
         
         Args:
-            segment_index: 段索引（从 0 开始）
+            segment_index: 段索引(从 0 开始)
             prompt: 该段提示词
-            base_prompt: 基础提示词（用于智能场景分析，可选）
+            base_prompt: 基础提示词(用于智能场景分析,可选)
             
         Returns:
             任务分配信息
@@ -625,7 +625,7 @@ class CollaborativeScheduler:
         Args:
             segment_index: 段索引
             method: 生成方法 ('local' 或 'cloud')
-            duration: 耗时（秒）
+            duration: 耗时(秒)
             success: 是否成功
         """
         if segment_index not in self.segments:
@@ -704,7 +704,7 @@ class CollaborativeScheduler:
         获取下一个待处理任务
         
         Returns:
-            任务信息，如果没有待处理任务则返回 None
+            任务信息,如果没有待处理任务则返回 None
         """
         for i in range(self.total_segments):
             if i not in self.segments:
@@ -814,7 +814,7 @@ class CollaborativeScheduler:
         with open(report_file, 'w', encoding='utf-8') as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
         
-        self._log(f"生成报告：{report_file}", "INFO")
+        self._log(f"生成报告:{report_file}", "INFO")
         return str(report_file)
 
 
@@ -831,16 +831,16 @@ if __name__ == '__main__':
     # 模拟任务分配
     test_prompts = [
         "简单的蓝天背景",
-        "一只猫在草地上奔跑，细节丰富",
-        "赛博朋克城市，霓虹灯闪烁，复杂场景",
-        "宁静的湖面，倒映着远山",
-        "激烈的战斗场景，爆炸和火焰",
+        "一只猫在草地上奔跑,细节丰富",
+        "赛博朋克城市,霓虹灯闪烁,复杂场景",
+        "宁静的湖面,倒映着远山",
+        "激烈的战斗场景,爆炸和火焰",
     ]
     
     for i, prompt in enumerate(test_prompts):
         task = scheduler.assign_task(i, prompt)
         print(f"\n段 {i + 1}: {task['method']} - {task['complexity_score']:.2f}")
-        print(f"原因：{scheduler.segments[i]['reason']}")
+        print(f"原因:{scheduler.segments[i]['reason']}")
     
     # 查看进度
     scheduler.print_progress()
