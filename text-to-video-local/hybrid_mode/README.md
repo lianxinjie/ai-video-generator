@@ -1,5 +1,18 @@
 # Hybrid Mode - 混合模式
 
+## 🆕 新增功能 (v2.1)
+
+**AI 智能配音** - 三层智能配音系统现已集成！
+
+- ✅ **人物配音**（小分段 0.75 秒）：自动台词生成
+- ✅ **场景音效**（中分段 2.5 秒）：环境音/动作音/情绪音
+- ✅ **背景音乐**（整段循环）：BGM 智能混音
+- ✅ **一键流程**：`generate.py full --voiceover`
+
+详细文档：[VOICEOVER_GUIDE.md](VOICEOVER_GUIDE.md)
+
+---
+
 ## 方案对比
 
 ### 原有个人电脑模式（本地 GPU 生成）
@@ -238,8 +251,50 @@ else:
 
 ---
 
+## 配音功能
+
+混合模式支持**三层智能配音**系统：
+
+### 快速使用
+
+```bash
+# 1. 生成模板（自动分析配音脚本）
+python hybrid_mode/generate.py template \
+    -a -p "赛博朋克城市" -o template.json
+
+# 2. 合成视频（添加 AI 配音）
+python hybrid_mode/generate.py synthesize \
+    -i ./images \
+    -o video.mp4 \
+    --voiceover \
+    --template template.json \
+    --character-voice zh-CN-XiaoxiaoNeural
+
+# 3. 一键完整流程（推荐）
+python hybrid_mode/generate.py full \
+    -p "魔法城堡，奇幻冒险" \
+    -d 10 \
+    -o output \
+    --voiceover \
+    --character-voice zh-CN-YunxiNeural \
+    --bgm-file music/fantasy.mp3
+```
+
+### 配音功能
+
+- ✅ **人物配音**：AI 自动生成台词（小分段 0.75 秒）
+- ✅ **场景音效**：环境音/动作音/情绪音（中分段 2.5 秒）
+- ✅ **背景音乐**：智能混音和音量平衡
+- ✅ **情绪识别**：自动匹配语音和语速
+- ✅ **智能分工**：简单本地生成，复杂 AI 生成
+
+📖 **详细文档**: [配音功能使用指南 (VOICEOVER_GUIDE.md)](VOICEOVER_GUIDE.md)
+
+---
+
 ## 下一步
 
 1. 运行 `python hybrid_mode/generate.py --help` 查看完整选项
 2. 查看 `templates/` 目录获取预设模板
 3. 使用 AI 对话生成自定义提示词模板
+4. 尝试添加 AI 配音：`--voiceover` 参数
