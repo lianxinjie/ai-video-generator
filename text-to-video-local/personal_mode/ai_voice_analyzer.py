@@ -190,7 +190,7 @@ class AIVoiceAnalyzer:
             # 计算建议播放时长
             suggested_duration = self._calculate_speech_duration(
                 voiceover,
-                segment_emotion['recommended_speed']
+                segment_emotion['recommended_speed']['default']  # 取 default 值
             )
             
             result.append({

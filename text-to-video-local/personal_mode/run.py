@@ -113,6 +113,12 @@ logger = logging.getLogger(__name__)
     help='启用自动调整生成比例（协同模式专属）'
 )
 @click.option(
+    '--enable-scene-analysis',
+    is_flag=True,
+    default=False,
+    help='启用智能场景分析（协同模式专属）'
+)
+@click.option(
     '--show-mode-info',
     is_flag=True,
     help='显示两种模式的详细说明后退出'
@@ -133,6 +139,7 @@ def main(
     local_ratio: float,
     cloud_platforms: str,
     auto_adjust: bool,
+    enable_scene_analysis: bool,
     show_mode_info: bool
 ):
     """
@@ -279,6 +286,7 @@ def main(
             local_ratio=local_ratio,
             cloud_platforms=cloud_platforms.split(','),
             auto_adjust=auto_adjust,
+            enable_scene_analysis=enable_scene_analysis,  # 新增参数
             character_voice=character_voice,
             bgm_file=bgm_file,
             bgm_volume=bgm_volume
@@ -307,6 +315,7 @@ def run_collaborative_mode(
     local_ratio: float,
     cloud_platforms: List[str],
     auto_adjust: bool,
+    enable_scene_analysis: bool,  # 新增参数
     character_voice: Optional[str],
     bgm_file: Optional[str],
     bgm_volume: float
@@ -336,6 +345,7 @@ def run_collaborative_mode(
             segment_duration=segment_duration,
             local_ratio=local_ratio,
             enable_auto_adjust=auto_adjust,
+            enable_scene_analysis=enable_scene_analysis,  # 新增参数
             cloud_platforms=cloud_platforms,
             verbose=True
         )
@@ -350,6 +360,7 @@ def run_collaborative_mode(
         print(f"  初始本地比例：{scheduler.local_ratio:.0%}")
         print(f"  可用云平台：{', '.join(cloud_platforms)}")
         print(f"  自动调整：{'启用' if auto_adjust else '禁用'}")
+        print(f"  场景分析：{'启用' if enable_scene_analysis else '禁用'}")
         print("="*70 + "\n")
         
         # AI 分析配音脚本

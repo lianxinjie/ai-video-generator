@@ -3,9 +3,11 @@
 
 核心功能：
 1. 实时分析场景复杂度，智能分配本地/AI 任务
-2. 监控双方生成速度，动态调整分工比例
-3. 支持多云端平台，自动选择最优
-4. 断点续传和失败重试
+2. 智能场景类型识别（集成混合模式功能）
+3. 艺术风格识别和匹配
+4. 监控双方生成速度，动态调整分工比例
+5. 支持多云端平台，自动选择最优
+6. 断点续传和失败重试
 """
 
 import os
@@ -15,6 +17,15 @@ import random
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
+
+# 集成混合模式的智能场景转换功能
+try:
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from hybrid_mode.ai_analyzer import AIStyleAnalyzer
+    SCENE_ANALYZER_AVAILABLE = True
+except ImportError:
+    SCENE_ANALYZER_AVAILABLE = False
 
 
 class CollaborativeScheduler:
@@ -28,6 +39,7 @@ class CollaborativeScheduler:
         local_ratio: float = 0.5,
         enable_auto_adjust: bool = True,
         cloud_platforms: List[str] = None,
+        enable_scene_analysis: bool = True,  # 新增：启用智能场景分析
         verbose: bool = True
     ):
         """
@@ -51,6 +63,18 @@ class CollaborativeScheduler:
             'seaart', 'tensor', 'bing', 'aliyun', 'liblib', 'raphael'
         ]
         self.verbose = verbose
+        self.enable_scene_analysis = enable_scene_analysis
+        
+        # 初始化 AI 场景分析器（集成混合模式功能）
+        self.scene_analyzer = None
+        if enable_scene_analysis and SCENE_ANALYZER_AVAILABLE:
+            try:
+                self.scene_analyzer = AIStyleAnalyzer()
+                self._log("已启用智能场景转换功能（混合模式 AI 分析器）", "INFO")
+            except Exception as e:
+                self._log(f"初始化场景分析器失败：{e}", "WARNING")
+        elif enable_scene_analysis and not SCENE_ANALYZER_AVAILABLE:
+            self._log("未找到混合模式 AI 分析器，使用简化场景分析", "WARNING")
         
         # 计算总段数
         self.total_segments = int(total_duration / segment_duration)
@@ -122,9 +146,15 @@ class CollaborativeScheduler:
         except Exception as e:
             self._log(f"保存断点失败：{e}", "WARNING")
     
-    def analyze_scene_complexity(self, prompt: str, segment_index: int) -> Dict:
+    def analyze_scene_complexity(self, prompt: str, segment_index: int, base_prompt: str = None) -> Dict:
         """
         分析场景复杂度，决定使用本地还是云端生成
+        
+        新增智能场景转换功能（集成混合模式 AI 分析器）：
+        1. 5 种场景类型识别（time_lapse/zoom/pan/weather/iterative）
+        2. 6 种艺术风格识别（cyberpunk/fantasy/scifi/natural/horror/custom）
+        3. 镜头序列规划建议
+        4. 转场效果推荐
         
         复杂度评分维度：
         1. 提示词长度和细节程度
@@ -135,11 +165,31 @@ class CollaborativeScheduler:
         Args:
             prompt: 提示词
             segment_index: 段索引
+            base_prompt: 基础提示词（用于整体场景分析）
             
         Returns:
-            复杂度分析报告
+            复杂度分析报告（包含场景类型、风格等）
         """
-        # 复杂度关键词
+        
+        # 使用智能场景分析器（如果可用）
+        scene_analysis = None
+        style_analysis = None
+        
+        if self.scene_analyzer and base_prompt:
+            try:
+                # 调用混合模式的 AI 分析器
+                full_analysis = self.scene_analyzer.analyze_prompt(base_prompt)
+                scene_analysis = full_analysis.get('scene_type', {})
+                style_analysis = full_analysis.get('style', {})
+                self._log(
+                    f"智能场景分析：{scene_analysis.get('type', 'unknown')} + "
+                    f"{style_analysis.get('style', 'unknown')}", 
+                    "INFO"
+                )
+            except Exception as e:
+                self._log(f"场景分析失败：{e}", "WARNING")
+        
+        # 原有的复杂度分析方法（向后兼容）
         complex_keywords = [
             # 动态元素
             'running', 'jumping', 'flying', 'dancing', 'fighting',
@@ -186,6 +236,14 @@ class CollaborativeScheduler:
         position_bonus = (middle_segment - distance_from_middle) * 0.02
         complexity_score += position_bonus
         
+        # 如果有智能场景分析结果，调整复杂度评分
+        if scene_analysis:
+            scene_type = scene_analysis.get('type', 'custom')
+            # 某些场景类型天生更复杂
+            complex_scene_types = ['weather_change', 'iterative_img2img']
+            if scene_type in complex_scene_types:
+                complexity_score = min(1.0, complexity_score + 0.1)
+        
         # 限制分数范围
         complexity_score = max(0.0, min(1.0, complexity_score))
         
@@ -207,7 +265,8 @@ class CollaborativeScheduler:
                 method = 'local' if random.random() < self.local_ratio else 'cloud'
                 reason = '初始分配（无历史数据）'
         
-        return {
+        # 构建返回结果
+        result = {
             'segment_index': segment_index,
             'prompt': prompt,
             'complexity_score': complexity_score,
@@ -216,14 +275,36 @@ class CollaborativeScheduler:
             'local_keywords': simple_count,
             'complex_keywords': complex_count
         }
+        
+        # 如果有智能场景分析结果，添加到返回中
+        if scene_analysis:
+            result['scene_type'] = scene_analysis
+            result['style'] = style_analysis
+            result['analysis_source'] = 'ai_analyzer'  # 标记使用了 AI 分析器
+            
+            # 根据场景类型提供额外建议
+            scene_type = scene_analysis.get('type', 'custom')
+            if scene_type == 'time_lapse':
+                result['suggestion'] = '时间流逝场景，建议保持建筑和构图一致，仅变化时间和光线'
+            elif scene_type == 'zoom_sequence':
+                result['suggestion'] = '视角推进场景，建议保持主体一致，逐步拉近镜头'
+            elif scene_type == 'pan_sequence':
+                result['suggestion'] = '空间移动场景，建议保持风格一致，变化场景位置'
+            elif scene_type == 'iterative_img2img':
+                result['suggestion'] = '迭代图生图场景，建议使用相同 seed 和重绘幅度 0.3-0.5'
+        else:
+            result['analysis_source'] = 'keyword_matching'  # 标记使用关键词匹配
+        
+        return result
     
-    def assign_task(self, segment_index: int, prompt: str) -> Dict:
+    def assign_task(self, segment_index: int, prompt: str, base_prompt: str = None) -> Dict:
         """
-        为指定段分配生成任务
+        为指定段分配任务
         
         Args:
             segment_index: 段索引（从 0 开始）
             prompt: 该段提示词
+            base_prompt: 基础提示词（用于智能场景分析，可选）
             
         Returns:
             任务分配信息
@@ -235,8 +316,8 @@ class CollaborativeScheduler:
                 self._log(f"段 {segment_index + 1} 已完成，跳过", "INFO")
                 return self.segments[segment_index]
         
-        # 分析场景复杂度
-        analysis = self.analyze_scene_complexity(prompt, segment_index)
+        # 分析场景复杂度（使用智能场景分析）
+        analysis = self.analyze_scene_complexity(prompt, segment_index, base_prompt)
         
         # 创建任务记录
         task = {
@@ -245,6 +326,9 @@ class CollaborativeScheduler:
             'status': 'pending',
             'method': analysis['recommended_method'],
             'complexity_score': analysis['complexity_score'],
+            'scene_type': analysis.get('scene_type', {}).get('type', 'unknown'),
+            'style': analysis.get('style', {}).get('style', 'unknown'),
+            'suggestion': analysis.get('suggestion', ''),
             'assigned_time': datetime.now().isoformat(),
             'start_time': None,
             'end_time': None,
@@ -256,9 +340,13 @@ class CollaborativeScheduler:
         self.segments[segment_index] = task
         self._save_checkpoint()
         
+        # 显示详细信息
+        scene_info = f"{task['scene_type']} + {task['style']}" if task['scene_type'] != 'unknown' else ''
         self._log(
             f"段 {segment_index + 1}/{self.total_segments} -> "
-            f"{analysis['recommended_method'].upper()} ({analysis['reason']})",
+            f"{analysis['recommended_method'].upper()} "
+            f"({analysis['reason']})"
+            + (f" [{scene_info}]" if scene_info else ""),
             "INFO"
         )
         
