@@ -1,0 +1,45 @@
+{
+  "hardware": {
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.50GHz",
+    "cpu_cores": 2,
+    "cpu_threads": 2,
+    "gpu_available": false,
+    "gpu_count": 0,
+    "gpu_models": null,
+    "gpu_memory_total": null,
+    "ram_total": 7.78,
+    "ram_available": 0.35,
+    "disk_total": 19.52,
+    "disk_available": 15.99,
+    "disk_type": "hdd",
+    "network_available": true,
+    "download_speed_mbps": 5.0,
+    "cuda_version": "",
+    "cudnn_version": "",
+    "python_version": "3.11.2",
+    "pytorch_installed": false,
+    "pytorch_version": "",
+    "pytorch_cuda": ""
+  },
+  "recommendation": {
+    "mode": "cpu_limited",
+    "confidence": "low",
+    "suitable_models": [],
+    "download_priority": [],
+    "estimated_time_minutes": 0.0,
+    "installation_steps": [
+      "1. 安装 PyTorch CPU 版本：pip install torch torchvision torchaudio",
+      "4. 安装依赖：pip install -r requirements.txt",
+      "6. 测试运行：python3 generation.py --check"
+    ],
+    "warnings": [
+      "⚠ 系统资源严重不足 (<8GB 内存)",
+      "⚠ 不建议运行视频生成任务"
+    ],
+    "optimization_tips": [
+      "✓ 升级硬件或使用云端 GPU 服务"
+    ],
+    "docker_command": "docker run -v ./outputs:/app/outputs video-gen:cpu",
+    "direct_install_command": "python3 generation.py -m modelscope --device cpu -p \"测试视频\" -o output.mp4"
+  }
+}
