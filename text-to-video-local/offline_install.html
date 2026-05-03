@@ -1,4 +1,3 @@
-<!--AEIOU_START-->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -32,12 +31,10 @@
             transition: all 0.3s;
         }
         .btn:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(102,126,234,0.6); }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-success { background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); }
         .progress-bar {
             height: 35px; background: #e2e8f0;
             border-radius: 18px; overflow: hidden; margin: 25px 0;
-            box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);
         }
         .progress-fill {
             height: 100%; background: linear-gradient(90deg, #48bb78, #38a169);
@@ -46,9 +43,8 @@
         }
         .log-box {
             background: #1a202c; color: #48bb78; padding: 25px;
-            border-radius: 12px; font-family: 'Consolas', monospace; font-size: 14px;
+            border-radius: 12px; font-family: monospace; font-size: 14px;
             max-height: 400px; overflow-y: auto; margin-top: 20px;
-            border: 2px solid #2d3748;
         }
         .hidden { display: none; }
         .alert {
@@ -56,138 +52,93 @@
             background: #f0f4ff; border-left: 5px solid #667eea;
         }
         .alert h3 { color: #667eea; margin-bottom: 10px; }
-        .alert p { color: #4a5568; line-height: 1.8; }
-        .step-list { list-style: none; margin: 20px 0; }
-        .step-list li {
-            padding: 15px; margin: 10px 0; background: white;
-            border-radius: 8px; display: flex; align-items: center; gap: 15px;
-            border: 2px solid #e2e8f0;
+        .platform-card {
+            background: white; padding: 25px; border-radius: 12px;
+            border: 2px solid #e2e8f0; text-align: center; margin: 20px 0; cursor: pointer;
+            transition: all 0.3s;
         }
-        .step-icon {
-            width: 35px; height: 35px; border-radius: 50%;
-            background: #667eea; color: white;
-            display: flex; align-items: center; justify-content: center;
-            font-weight: bold; flex-shrink: 0;
-        }
-        .step-done .step-icon { background: #48bb78; }
-        .step-doing .step-icon { background: #ecc94b; animation: pulse 1s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .download-links {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px; margin: 25px 0;
-        }
-        .download-btn {
-            padding: 20px; background: #f8f9ff; border: 2px solid #667eea;
-            border-radius: 10px; text-align: center; text-decoration: none;
-            color: #667eea; font-weight: bold; transition: all 0.3s;
-        }
-        .download-btn:hover { background: #667eea; color: white; }
-        .platform-icons { font-size: 40px; margin-bottom: 10px; }
-        .feature-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px; margin: 30px 0;
-        }
-        .feature-item {
-            text-align: center; padding: 20px; background: #f8f9ff;
-            border-radius: 10px;
-        }
-        .feature-icon { font-size: 35px; margin-bottom: 10px; }
+        .platform-card:hover { border-color: #667eea; transform: translateY(-3px); }
+        .platform-icon { font-size: 50px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🎬 AI 视频生成器</h1>
-        <div class="subtitle">零依赖 · 无需 Python · 一键安装</div>
+        <div class="subtitle">零依赖 · 一键安装 Python</div>
         
-        <div class="feature-grid">
-            <div class="feature-item">
-                <div class="feature-icon">🚀</div>
-                <div><strong>零依赖</strong><br><small>无需预装任何软件</small></div>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon">💻</div>
-                <div><strong>自动下载</strong><br><small>自动获取 Python</small></div>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon">⚡</div>
-                <div><strong>一键完成</strong><br><small>全自动安装流程</small></div>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon">📊</div>
-                <div><strong>实时进度</strong><br><small>可视化安装进度</small></div>
-            </div>
-        </div>
-        
-        <!-- Step 1: 欢迎 -->
-        <div id="step-welcome">
+        <!-- Step 1: 选择平台 -->
+        <div id="step-select">
             <div class="alert">
-                <h3>💡 使用说明</h3>
-                <p>
-                    本安装器<strong>完全不需要预先安装 Python</strong>！<br>
-                    点击下方按钮后，将自动下载并安装 Python 3.11 及项目所需的所有依赖。
-                </p>
+                <h3>💡 选择您的操作系统</h3>
+                <p>我们将为您下载并安装对应版本的 Python 3.11</p>
             </div>
             
-            <h3 style="margin: 30px 0 20px; color: #2d3748;">开始安装：</h3>
-            <button class="btn" onclick="startInstall()">🚀 开始一键安装</button>
-            
-            <div style="text-align: center; margin-top: 20px; color: #718096; font-size: 14px;">
-                或者选择手动下载：
+            <div class="platform-card" onclick="selectPlatform('windows')">
+                <div class="platform-icon">🪟</div>
+                <h3>Windows</h3>
+                <p style="color: #718096; margin-top: 10px;">Windows 10/11 (64-bit)</p>
             </div>
-            <div class="download-links" style="margin-top: 15px;">
-                <a href="https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe" 
-                   class="download-btn" target="_blank">
-                    <div class="platform-icons">🪟</div>
-                    Windows 下载
-                </a>
-                <a href="https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg" 
-                   class="download-btn" target="_blank">
-                    <div class="platform-icons">🍎</div>
-                    macOS 下载
-                </a>
-                <a href="https://www.python.org/downloads/" 
-                   class="download-btn" target="_blank">
-                    <div class="platform-icons">🐧</div>
-                    Linux 版本
-                </a>
+            
+            <div class="platform-card" onclick="selectPlatform('macos')">
+                <div class="platform-icon">🍎</div>
+                <h3>macOS</h3>
+                <p style="color: #718096; margin-top: 10px;">macOS 10.9 或更高版本</p>
+            </div>
+            
+            <div class="platform-card" onclick="selectPlatform('linux')">
+                <div class="platform-icon">🐧</div>
+                <h3>Linux</h3>
+                <p style="color: #718096; margin-top: 10px;">Ubuntu/Debian/CentOS</p>
             </div>
         </div>
         
-        <!-- Step 2: 进度 -->
-        <div id="step-progress" class="hidden">
-            <div style="text-align: center; margin: 20px 0;">
-                <div style="font-size: 24px; color: #667eea;">⏳ 正在安装，请稍候...</div>
+        <!-- Step 2: 下载引导 -->
+        <div id="step-download" class="hidden">
+            <div class="alert">
+                <h3>📥 Python 3.11 下载与安装</h3>
+                <p>点击下方按钮下载安装包，然后运行安装程序</p>
             </div>
             
-            <ul class="step-list">
-                <li id="step1" class="step-doing">
-                    <div class="step-icon">1</div>
-                    <span>检测系统环境</span>
-                </li>
-                <li id="step2"><div class="step-icon">2</div><span>下载 Python 3.11</span></li>
-                <li id="step3"><div class="step-icon">3</div><span>安装 Python</span></li>
-                <li id="step4"><div class="step-icon">4</div><span>安装项目依赖</span></li>
-                <li id="step5"><div class="step-icon">5</div><span>配置环境变量</span></li>
-            </ul>
-            
-            <div class="progress-bar">
-                <div class="progress-fill" id="progress-fill" style="width: 0%">0%</div>
+            <div style="text-align: center; padding: 30px;">
+                <div style="font-size: 60px; margin-bottom: 20px;">📦</div>
+                <h3 id="platform-title" style="margin-bottom: 20px; color: #2d3748;">下载 Python</h3>
+                
+                <a href="#" id="download-link" class="btn" target="_blank" download>
+                    ⬇️ 下载 Python 3.11
+                </a>
+                
+                <div style="margin-top: 30px; padding: 20px; background: #fffbeb; border-radius: 10px; border: 2px solid #f6ad55;">
+                    <h4 style="color: #744210; margin-bottom: 15px;">⚠️ 安装步骤：</h4>
+                    <ol style="text-align: left; line-height: 2; color: #744210;">
+                        <li>点击上方按钮下载 Python 安装程序</li>
+                        <li>运行下载的安装文件</li>
+                        <li><strong>重要：</strong>勾选 "Add Python to PATH"</li>
+                        <li>点击 "Install Now"</li>
+                        <li>安装完成后点击下方"完成安装"</li>
+                    </ol>
+                </div>
+                
+                <button class="btn btn-success" onclick="finishInstall()" style="margin-top: 20px;">
+                    ✅ 完成安装
+                </button>
+                
+                <button class="btn" onclick="window.location.href='index.html'" style="margin-top: 15px;">
+                    🔙 返回首页
+                </button>
             </div>
-            
-            <div class="log-box" id="log-output"></div>
         </div>
         
         <!-- Step 3: 成功 -->
         <div id="step-success" class="hidden">
             <div style="text-align: center; padding: 40px;">
                 <div style="font-size: 80px; margin-bottom: 20px;">✅</div>
-                <h2 style="color: #48bb78; margin-bottom: 20px;">安装完成！</h2>
-                <p style="color: #4a5568; font-size: 18px; line-height: 1.8;">
-                    Python 和项目依赖已成功安装。<br>
-                    现在可以开始使用了！
+                <h2 style="color: #48bb78; margin-bottom: 20px;">环境已准备好！</h2>
+                <p style="color: #4a5568; font-size: 18px; line-height: 1.8; margin-bottom: 30px;">
+                    Python 已成功安装。<br>
+                    现在可以使用 AI 视频生成器了！
                 </p>
                 
-                <div style="background: #f0fff4; padding: 25px; border-radius: 12px; margin: 30px 0; border: 2px solid #48bb78;">
+                <div style="background: #f0fff4; padding: 25px; border-radius: 12px; margin-bottom: 30px; border: 2px solid #48bb78;">
                     <h3 style="color: #22543d; margin-bottom: 15px;">🚀 启动应用</h3>
                     <p style="color: #2f855a; margin-bottom: 15px;">在命令行中运行：</p>
                     <code style="background: #1a202c; color: #48bb78; padding: 15px 30px; border-radius: 8px; font-size: 18px; display: block;">
@@ -195,140 +146,56 @@
                     </code>
                 </div>
                 
-                <button class="btn btn-success" onclick="window.open('https://github.com/lianxinjie/ai-video-generator', '_blank')">
-                    📖 查看完整文档
+                <button class="btn" onclick="window.location.href='index.html'">
+                    📱 打开主页面
                 </button>
             </div>
         </div>
     </div>
     
     <script>
-        const logs = [];
-        let progress = 0;
-        let currentStep = 1;
+        let selectedPlatform = null;
         
-        function addLog(message) {
-            const time = new Date().toLocaleTimeString('zh-CN');
-            logs.push(`[${time}] ${message}`);
-            updateLogBox();
-        }
-        
-        function updateLogBox() {
-            const logBox = document.getElementById('log-output');
-            logBox.innerHTML = logs.map(log => `<div>${log}</div>`).join('');
-            logBox.scrollTop = logBox.scrollHeight;
-        }
-        
-        function setProgress(pct) {
-            progress = pct;
-            document.getElementById('progress-fill').style.width = pct + '%';
-            document.getElementById('progress-fill').textContent = pct + '%';
-        }
-        
-        function updateStep(step) {
-            for (let i = 1; i <= 5; i++) {
-                const el = document.getElementById('step' + i);
-                el.classList.remove('step-doing', 'step-done');
-                if (i < step) el.classList.add('step-done');
-                if (i === step) el.classList.add('step-doing');
+        const downloads = {
+            'windows': {
+                url: 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe',
+                title: '下载 Python 3.11 (Windows)',
+                file: 'python-3.11.9-amd64.exe'
+            },
+            'macos': {
+                url: 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg',
+                title: '下载 Python 3.11 (macOS)',
+                file: 'python-3.11.9-macos11.pkg'
+            },
+            'linux': {
+                url: 'https://www.python.org/downloads/',
+                title: 'Python 下载页面 (Linux)',
+                file: 'python-linux'
             }
+        };
+        
+        function selectPlatform(platform) {
+            selectedPlatform = platform;
+            const info = downloads[platform];
+            
+            document.getElementById('platform-title').textContent = info.title;
+            document.getElementById('download-link').href = info.url;
+            document.getElementById('download-link').textContent = '⬇️ 下载 Python 3.11';
+            document.getElementById('download-link').download = info.file;
+            
+            document.getElementById('step-select').classList.add('hidden');
+            document.getElementById('step-download').classList.remove('hidden');
         }
         
-        async function sleep(ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
-        }
-        
-        async function startInstall() {
-            // 切换到进度页面
-            document.getElementById('step-welcome').classList.add('hidden');
-            document.getElementById('step-progress').classList.remove('hidden');
+        function finishInstall() {
+            document.getElementById('step-download').classList.add('hidden');
+            document.getElementById('step-success').classList.remove('hidden');
             
-            addLog('🚀 开始安装 AI 视频生成器...');
-            updateStep(1);
-            
-            await sleep(1000);
-            addLog('✓ 检测系统环境...');
-            setProgress(10);
-            
-            await sleep(800);
-            addLog('✓ 操作系统：' + navigator.platform);
-            
-            await sleep(800);
-            addLog('✓ 浏览器：' + navigator.userAgent.split(' ').slice(-1)[0]);
-            
-            setProgress(20);
-            updateStep(2);
-            
-            await sleep(500);
-            addLog('📥 正在下载 Python 3.11...');
-            setProgress(25);
-            
-            // 模拟下载进度
-            for (let i = 25; i <= 45; i += 5) {
-                await sleep(2000);
-                setProgress(i);
-                addLog(`  下载进度：${i - 25}%`);
-            }
-            
-            await sleep(500);
-            addLog('✓ Python 下载完成');
-            setProgress(50);
-            updateStep(3);
-            
-            await sleep(500);
-            addLog('🔧 正在安装 Python 3.11...');
-            setProgress(55);
-            
-            // 模拟安装
-            for (let i = 55; i <= 75; i += 5) {
-                await sleep(1500);
-                setProgress(i);
-                addLog(`  安装进度：${i - 50}%`);
-            }
-            
-            await sleep(500);
-            addLog('✓ Python 安装完成');
-            setProgress(75);
-            updateStep(4);
-            
-            await sleep(500);
-            addLog('📦 正在安装项目依赖 (Flask, Pillow, PSUtil)...');
-            setProgress(80);
-            
-            await sleep(2000);
-            addLog('  ✓ Flask');
-            await sleep(800);
-            addLog('  ✓ Pillow');
-            await sleep(800);
-            addLog('  ✓ PSUtil');
-            
-            setProgress(90);
-            updateStep(5);
-            
-            await sleep(500);
-            addLog('⚙️ 正在配置环境变量...');
-            setProgress(95);
-            
-            await sleep(1000);
-            addLog('✓ 环境变量配置完成');
-            
-            setProgress(100);
-            updateStep(5);
-            document.getElementById('step5').classList.remove('step-doing');
-            document.getElementById('step5').classList.add('step-done');
-            
-            await sleep(1000);
-            addLog('🎉 安装完成！');
-            
+            // 自动打开首页
             setTimeout(() => {
-                document.getElementById('step-progress').classList.add('hidden');
-                document.getElementById('step-success').classList.remove('hidden');
-                
-                // 提示用户
-                alert('✅ 安装完成！\n\n请关闭此页面，然后运行以下命令启动应用：\n\npython quick_start.py');
-            }, 1500);
+                window.location.href = 'index.html';
+            }, 3000);
         }
     </script>
 </body>
 </html>
-<!--AEIOU_END-->
