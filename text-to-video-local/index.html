@@ -241,19 +241,30 @@
                     <div class="install-methods">
                         <div class="method-card recommended">
                             <span class="method-badge badge-rec">⭐ 推荐</span>
-                            <div class="method-icon">💻</div>
-                            <div class="method-title">双击安装文件</div>
-                            <div class="method-desc">最简单，直接双击运行</div>
-                            <div class="file-hint">
-                                <p>请在项目文件夹中找到并双击：</p>
+                            <div class="method-icon">🌐</div>
+                            <div class="method-title">Web 界面安装</div>
+                            <div class="method-desc">实时显示进度，最直观</div>
+                            <div style="padding: 20px; background: #f0f4ff; border-radius: 10px; margin-top: 10px;">
+                                <p style="color: #4a5568; margin-bottom: 15px; font-weight: bold;">
+                                    点击下方按钮，在浏览器中打开安装界面：
+                                </p>
+                                <button class="btn btn-success" onclick="openWebInstaller()" style="width: 100%;">
+                                    🌐 打开 Web 安装界面
+                                </button>
+                                <p style="font-size: 13px; color: #718096; margin-top: 15px; margin-bottom: 0;">
+                                    ✨ 特性：实时进度显示 | 详细日志输出 | 自动启动应用
+                                </p>
+                            </div>
+                            
+                            <div style="margin-top: 20px; padding: 15px; background: white; border-radius: 10px; border: 2px solid #e2e8f0;">
+                                <p style="color: #4a5568; margin-bottom: 10px; font-weight: bold;">
+                                    或者双击文件安装：
+                                </p>
                                 <div class="file-name" id="file-name">start_install.bat</div>
-                                <p style="font-size: 13px; color: #718096; margin-top: 10px;">
+                                <p style="font-size: 13px; color: #718096; margin-top: 10px; margin-bottom: 0;">
                                     📁 打开项目文件夹 → 找到文件 → 双击运行
                                 </p>
                             </div>
-                            <button class="btn btn-success" onclick="openProjectFolder()" style="width: 100%; margin-top: 15px;">
-                                📂 打开项目文件夹
-                            </button>
                         </div>
                         
                         <div class="method-card">
@@ -384,6 +395,14 @@
             }
         }
         
+        function openWebInstaller() {
+            // 启动 web_installer.py
+            alert('正在启动 Web 安装界面...\n\n如果没有自动打开，请手动运行：\npython3 web_installer.py');
+            
+            // 尝试直接打开（假设已经在后台启动）
+            window.open('http://localhost:8081', '_blank');
+        }
+        
         function openProjectFolder() {
             const paths = {
                 'windows': 'explorer .',
@@ -392,9 +411,10 @@
             };
             const cmd = paths[selectedPlatform];
             if (cmd) {
-                // 使用 file:// 协议打开本地文件夹
+                // 创建下载提示
                 const win = window.open('', '_blank');
                 if (win) {
+                    const fileName = document.getElementById('file-name').textContent;
                     win.document.write(`
                         <html>
                         <head><title>打开项目文件夹</title></head>
@@ -402,20 +422,11 @@
                             <h1>📁 打开项目文件夹</h1>
                             <p style="font-size: 18px; margin: 30px 0;">
                                 请找到项目文件夹中的：<br>
-                                <strong style="font-size: 24px; color: #667eea;">${document.getElementById('file-name').textContent}</strong>
+                                <strong style="font-size: 24px; color: #667eea;">${fileName}</strong>
                             </p>
                             <p style="color: #666; margin: 20px 0;">
                                 然后双击它来运行安装程序
                             </p>
-                            <div style="background: #f0f4ff; padding: 20px; border-radius: 10px; margin-top: 20px;">
-                                <h3>💡 如何找到：</h3>
-                                <ol style="text-align: left; line-height: 2;">
-                                    <li>打开文件资源管理器 (Windows) 或 Finder (macOS)</li>
-                                    <li>导航到项目文件夹：<code>ai-video-generator</code></li>
-                                    <li>找到 <code>${document.getElementById('file-name').textContent}</code> 文件</li>
-                                    <li>双击运行</li>
-                                </ol>
-                            </div>
                         </body>
                         </html>
                     `);
