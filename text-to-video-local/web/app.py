@@ -188,7 +188,7 @@ def api_generate():
     
     请求参数:
     - prompt: 文本提示词（必需）
-    - mode: 生成模式 (standard/optimized/collaborative)
+    - mode: 生成模式 (standard/optimized/collaborative/hybrid)
     - duration: 视频时长（秒）
     - ref_images: 参考图片文件（可选）
     - ref_type: 参考图类型 (character/background/mixed)
@@ -255,33 +255,50 @@ def api_generate():
                 json.dump({'scenes': scenes}, f, ensure_ascii=False, indent=2)
         
         # 构建命令行
-        cmd = [
-            sys.executable,
-            'personal_mode/run.py',
-            '-p', prompt,
-            '-m', mode,
-            '-d', str(duration),
-            '-o', str(output_dir / 'output.mp4')
-        ]
+        if mode == 'hybrid':
+            # 混合模式：使用 hybrid_mode/generate.py
+            cmd = [
+                sys.executable,
+                'hybrid_mode/generate.py',
+                'full',
+                '-p', prompt,
+                '-d', str(duration),
+                '-o', str(output_dir / 'hybrid_output')
+            ]
+        else:
+            # 个人电脑模式：使用 personal_mode/run.py
+            cmd = [
+                sys.executable,
+                'personal_mode/run.py',
+                '-p', prompt,
+                '-m', mode,
+                '-d', str(duration),
+                '-o', str(output_dir / 'output.mp4')
+            ]
         
-        # 添加参考图片参数
-        if ref_images_path:
+        # 添加参考图片参数（仅 personal_mode 支持）
+        if ref_images_path and mode != 'hybrid':
             cmd.extend(['--ref-images', str(ref_images_path)])
             cmd.extend(['--ref-type', ref_type])
             cmd.extend(['--ref-strength', str(ref_strength)])
         
-        # 添加配音参数
+        # 添加配音参数（optimized/hybrid 模式支持）
         if voiceover:
-            cmd.append('--voiceover')
-            cmd.extend(['--character-voice', character_voice])
+            if mode in ['optimized', 'hybrid']:
+                cmd.append('--voiceover')
+                cmd.extend(['--character-voice', character_voice])
         
-        if bgm_path:
+        if bgm_path and mode != 'hybrid':
             cmd.extend(['--bgm-file', str(bgm_path)])
         
-        # 如果是 collaborative 模式，启用场景分析
+        # 模式特定参数
         if mode == 'collaborative':
             cmd.append('--enable-scene-detection')
             cmd.append('--enable-scene-refine')
+        elif mode == 'hybrid':
+            # 混合模式自动启用配音
+            if voiceover:
+                cmd.append('--voiceover')
         
         # 启动任务（后台运行）
         tasks[task_id] = {
