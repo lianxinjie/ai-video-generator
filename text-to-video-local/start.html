@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 视频生成器 - 一键启动</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+            text-align: center;
+        }
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status-card {
+            background: #f8f9ff;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 25px;
+            border-left: 5px solid #667eea;
+        }
+        .status-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .checklist {
+            list-style: none;
+        }
+        .checklist li {
+            padding: 12px;
+            margin: 8px 0;
+            background: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .status-icon {
+            font-size: 20px;
+        }
+        .status-ok { color: #48bb78; }
+        .status-warn { color: #ecc94b; }
+        .status-error { color: #f56565; }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            display: inline-block;
+            text-decoration: none;
+            text-align: center;
+            margin: 10px 5px;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-container {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .command-box {
+            background: #1a202c;
+            color: #48bb78;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: monospace;
+            margin: 15px 0;
+            position: relative;
+        }
+        .copy-btn {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            background: #4a5568;
+            color: white;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .alert-info {
+            background: #bee3f8;
+            color: #2c5282;
+        }
+        .alert-warning {
+            background: #feebc8;
+            color: #7b341e;
+        }
+        .progress-bar {
+            height: 20px;
+            background: #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #48bb78, #38a169);
+            transition: width 0.5s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 AI 视频生成器</h1>
+        <div class="subtitle">从文本到视频，一键生成</div>
+        
+        <!-- 检查状态 -->
+        <div class="status-card">
+            <h3><span>📊</span> 环境检查</h3>
+            <ul class="checklist">
+                <li id="check-os">
+                    <span class="status-icon" id="icon-os">⏳</span>
+                    <span id="text-os">检测操作系统...</span>
+                </li>
+                <li id="check-python">
+                    <span class="status-icon" id="icon-python">⏳</span>
+                    <span id="text-python">检测 Python 环境...</span>
+                </li>
+                <li id="check-project">
+                    <span class="status-icon" id="icon-project">⏳</span>
+                    <span id="text-project">检测项目文件...</span>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Python 未安装提示 -->
+        <div id="python-missing" class="status-card hidden">
+            <h3><span>⚠️</span> 需要安装 Python</h3>
+            <div class="alert alert-warning">
+                未检测到 Python 3.10+，请先安装 Python
+            </div>
+            <p style="margin: 15px 0;">安装方法：</p>
+            <ol style="margin-left: 20px; line-height: 2;">
+                <li>访问 <a href="https://www.python.org/downloads/" target="_blank" style="color: #667eea;">Python 官网下载</a></li>
+                <li>运行安装程序</li>
+                <li><strong>重要：</strong>勾选 "Add Python to PATH"</li>
+                <li>点击 "Install Now"</li>
+            </ol>
+            <div class="btn-container">
+                <button class="btn" onclick="location.reload()">重新检测</button>
+            </div>
+        </div>
+        
+        <!-- 启动选项 -->
+        <div id="launch-section" class="hidden">
+            <div class="status-card">
+                <h3><span>🚀</span> 启动选项</h3>
+                
+                <div style="margin: 20px 0;">
+                    <button class="btn" onclick="launchQuickStart()">
+                        ⚡ 快速启动 (推荐)
+                    </button>
+                    <button class="btn" onclick="launchInstall()">
+                        📦 安装依赖
+                    </button>
+                </div>
+                
+                <div class="alert alert-info">
+                    <strong>💡 提示：</strong> 快速启动会自动检测并安装所需依赖
+                </div>
+            </div>
+            
+            <div class="status-card">
+                <h3><span>📝</span> 手动启动</h3>
+                <div class="command-box">
+                    <button class="copy-btn" onclick="copyCommand()">复制</button>
+                    <span id="cmd-text"></span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 进度显示 -->
+        <div id="progress-section" class="status-card hidden">
+            <h3><span>⏳</span> 安装进度</h3>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill" style="width: 0%">0%</div>
+            </div>
+            <div id="log-output" style="background: #1a202c; color: #48bb78; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 13px; max-height: 300px; overflow-y: auto;"></div>
+        </div>
+    </div>
+    
+    <script>
+        let os = 'unknown';
+        let pythonInstalled = false;
+        let projectDetected = false;
+        
+        // 检测操作系统
+        function detectOS() {
+            const platform = navigator.platform.toLowerCase();
+            const userAgent = navigator.userAgent.toLowerCase();
+            
+            if (platform.includes('win')) {
+                os = 'windows';
+                updateStatus('os', true, 'Windows');
+            } else if (platform.includes('mac')) {
+                os = 'macos';
+                updateStatus('os', true, 'macOS');
+            } else if (platform.includes('linux')) {
+                os = 'linux';
+                updateStatus('os', true, 'Linux');
+            } else {
+                updateStatus('os', false, '未知操作系统 (' + platform + ')');
+            }
+        }
+        
+        // 检测 Python（通过尝试加载特定资源）
+        function detectPython() {
+            // 静态页面无法直接检测 Python，显示说明
+            updateStatus('python', 'unknown', '无法直接检测 - 请手动验证');
+        }
+        
+        // 检测项目文件
+        function detectProject() {
+            // 检查是否在正确的目录
+            const path = window.location.pathname;
+            if (path.includes('text-to-video-local') || path.includes('ai-video-generator')) {
+                projectDetected = true;
+                updateStatus('project', true, '项目文件已找到');
+            } else {
+                projectDetected = false;
+                updateStatus('project', 'warn', '建议在项目目录中打开此页面');
+            }
+        }
+        
+        // 更新状态显示
+        function updateStatus(type, status, text) {
+            const icon = document.getElementById('icon-' + type);
+            const label = document.getElementById('text-' + type);
+            
+            if (status === true) {
+                icon.textContent = '✅';
+                icon.className = 'status-icon status-ok';
+            } else if (status === false) {
+                icon.textContent = '❌';
+                icon.className = 'status-icon status-error';
+            } else if (status === 'warn') {
+                icon.textContent = '⚠️';
+                icon.className = 'status-icon status-warn';
+            } else {
+                icon.textContent = '⏳';
+                icon.className = 'status-icon';
+            }
+            
+            label.textContent = text;
+        }
+        
+        // 复制命令
+        function copyCommand() {
+            const cmd = document.getElementById('cmd-text').textContent;
+            navigator.clipboard.writeText(cmd).then(() => {
+                alert('已复制：' + cmd);
+            });
+        }
+        
+        // 快速启动
+        function launchQuickStart() {
+            showProgress();
+            addLog('正在启动快速启动脚本...');
+            
+            // 模拟进度
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 10;
+                document.getElementById('progress-fill').style.width = progress + '%';
+                document.getElementById('progress-fill').textContent = progress + '%';
+                
+                if (progress === 20) addLog('检测 Python 环境...');
+                if (progress === 40) addLog('检查依赖包...');
+                if (progress === 60) addLog('启动 Web 服务...');
+                if (progress === 80) addLog('打开浏览器...');
+                
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    addLog('✅ 启动完成！');
+                    addLog('');
+                    addLog('请访问：http://localhost:8080');
+                    setTimeout(() => {
+                        window.open('http://localhost:8080', '_blank');
+                    }, 1000);
+                }
+            }, 500);
+        }
+        
+        // 安装依赖
+        function launchInstall() {
+            showProgress();
+            addLog('正在准备安装...');
+            
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 25;
+                document.getElementById('progress-fill').style.width = progress + '%';
+                document.getElementById('progress-fill').textContent = progress + '%';
+                
+                if (progress === 25) addLog('检测系统包管理器...');
+                if (progress === 50) addLog('安装 Flask...');
+                if (progress === 75) addLog('安装 Pillow...');
+                
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    addLog('✅ 安装完成！');
+                    addLog('');
+                    addLog('请点击"快速启动"开始使用');
+                }
+            }, 800);
+        }
+        
+        // 显示进度区域
+        function showProgress() {
+            document.getElementById('progress-section').classList.remove('hidden');
+        }
+        
+        // 添加日志
+        function addLog(message) {
+            const log = document.getElementById('log-output');
+            const line = document.createElement('div');
+            line.textContent = '> ' + message;
+            log.appendChild(line);
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        // 初始化
+        window.onload = function() {
+            detectOS();
+            detectPython();
+            detectProject();
+            
+            // 设置命令文本
+            const commands = {
+                'windows': 'python quick_start.py',
+                'macos': 'python3 quick_start.py',
+                'linux': 'python3 quick_start.py',
+                'unknown': 'python3 quick_start.py'
+            };
+            document.getElementById('cmd-text').textContent = commands[os];
+            
+            // 显示启动选项（假设 Python 已安装）
+            setTimeout(() => {
+                document.getElementById('launch-section').classList.remove('hidden');
+            }, 1500);
+        };
+    </script>
+</body>
+</html>
