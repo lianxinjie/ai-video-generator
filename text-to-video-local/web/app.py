@@ -192,14 +192,6 @@ def api_generate():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/task/<task_id>')
-def api_task_status(task_id):
-    """API: 查询任务状态"""
-    if task_id not in tasks:
-        return jsonify({'error': '任务不存在'}), 404
-    
-    return jsonify(tasks[task_id])
-
 
 @app.route('/api/output/<task_id>/<filename>')
 def api_output_file(task_id, filename):
@@ -397,3 +389,96 @@ def api_install_status(task_id):
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ========== 新增 API 路由 ==========
+
+@app.route('/api/tasks', methods=['GET'])
+def api_list_tasks():
+    """API: 列出所有任务"""
+    task_list = []
+    for task_id, task in tasks.items():
+        task_list.append({
+            'task_id': task_id,
+            'status': task.get('status', 'unknown'),
+            'prompt': task.get('prompt', ''),
+            'mode': task.get('mode', ''),
+            'start_time': task.get('start_time', ''),
+            'progress': task.get('progress', 0),
+        })
+    
+    # 按开始时间倒序排列
+    task_list.sort(key=lambda x: x.get('start_time', ''), reverse=True)
+    
+    return jsonify({'tasks': task_list})
+
+
+@app.route('/api/task/<task_id>/cancel', methods=['POST'])
+def api_cancel_task(task_id):
+    """API: 取消任务"""
+    if task_id not in tasks:
+        return jsonify({'error': '任务不存在'}), 404
+    
+    task = tasks[task_id]
+    if task.get('status') != 'running':
+        return jsonify({'error': '任务不在运行中'}), 400
+    
+    try:
+        if task.get('process'):
+            task['process'].terminate()
+            task['status'] = 'cancelled'
+            task['log'] += '\n⚠️ 任务已被用户取消\n'
+            return jsonify({'success': True, 'message': '任务已取消'})
+        else:
+            return jsonify({'error': '无法获取任务进程'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# 增强版 api_task_status - 替换原有简单版本
+@app.route('/api/task/<task_id>', methods=['GET'])
+def api_task_status_enhanced(task_id):
+    """API: 查询任务状态（增强版）"""
+    if task_id not in tasks:
+        return jsonify({'error': '任务不存在'}), 404
+    
+    task = tasks[task_id]
+    
+    # 构建完整状态
+    status = {
+        'task_id': task_id,
+        'status': task.get('status', 'unknown'),
+        'progress': task.get('progress', 0),
+        'prompt': task.get('prompt', ''),
+        'mode': task.get('mode', ''),
+        'start_time': task.get('start_time', ''),
+        'log': task.get('log', ''),
+    }
+    
+    # 硬件信息
+    if 'hardware' in task:
+        status['hardware'] = task['hardware']
+    
+    # 推荐信息
+    if 'recommendation' in task:
+        status['recommendation'] = task['recommendation']
+    
+    # 计算运行时间
+    if task.get('start_time'):
+        try:
+            start = datetime.fromisoformat(task['start_time'])
+            end = datetime.now()
+            duration = (end - start).total_seconds()
+            status['running_time'] = f"{duration:.0f}s"
+            status['running_time_seconds'] = duration
+        except:
+            status['running_time'] = 'N/A'
+    else:
+        status['running_time'] = 'N/A'
+    
+    # 输出文件
+    if task.get('output_file'):
+        status['output_file'] = task['output_file']
+        status['download_task_id'] = task_id
+    
+    return jsonify(status)
