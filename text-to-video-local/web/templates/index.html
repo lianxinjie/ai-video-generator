@@ -5,6 +5,97 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 视频生成器 - Web 界面</title>
     <style>
+        /* 硬件检测 */
+        .hardware-scan-section {
+            background: #f8f9ff;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .scan-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .scan-btn:hover {
+            transform: translateY(-2px);
+        }
+        .scan-result {
+            margin-top: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+        }
+        .hardware-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .hardware-item {
+            background: #f8f9ff;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .hardware-item h4 {
+            color: #667eea;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        .hardware-item p {
+            font-size: 1.1em;
+            color: #333;
+        }
+        .recommendation-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        .tier-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .tier-high { background: #48bb78; }
+        .tier-mid { background: #ed8936; }
+        .tier-low { background: #f56565; }
+        .tier-none { background: #718096; }
+        .warning-box {
+            background: #fff5f5;
+            border-left: 4px solid #f56565;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -313,6 +404,18 @@
                     <div class="help-text">尽可能详细地描述场景、角色、动作和氛围</div>
                 </div>
                 
+                <!-- 硬件检测与推荐 -->
+                <div class="form-group">
+                    <label>🔍 硬件检测与智能推荐</label>
+                    <div class="hardware-scan-section" style="background: #f8f9ff; border: 2px solid #667eea; border-radius: 10px; padding: 20px; margin-bottom: 20px;">
+                        <p>不确定应该使用哪种模式？让系统自动检测您的硬件配置并推荐最优方案！</p>
+                        <button type="button" class="scan-btn" onclick="scanHardware()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 15px 40px; border-radius: 8px; font-size: 1.1em; cursor: pointer; transition: transform 0.2s; margin-top: 15px;">
+                            🚀 开始硬件检测
+                        </button>
+                        <div id="scanResult" class="scan-result" style="display: none; margin-top: 20px;"></div>
+                    </div>
+                </div>
+
                 <!-- 生成模式 -->
                 <div class="form-group">
                     <label>生成模式</label>
@@ -815,3 +918,93 @@
     </script>
 </body>
 </html>
+
+<script>
+// 硬件检测功能
+async function scanHardware() {
+    const resultDiv = document.getElementById('scanResult');
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>正在检测硬件配置，请稍候...</p></div>';
+    
+    try {
+        const response = await fetch('/api/scanner/report', { method: 'GET' });
+        const data = await response.json();
+        
+        if (data.success) {
+            displayScanResult(data.summary);
+        } else {
+            resultDiv.innerHTML = `<div class="warning-box">检测失败：${data.error}</div>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<div class="warning-box">检测失败：${error.message}</div>`;
+    }
+}
+
+function displayScanResult(summary) {
+    const resultDiv = document.getElementById('scanResult');
+    const modeMap = {
+        'hybrid_high_end': 'GPU 主导+CPU 辅助 (高端配置)',
+        'hybrid_mid_range': '平衡模式 (中端配置)',
+        'hybrid_low_end': '极简模式 (入门配置)',
+        'cpu_capable': '纯 CPU 模式',
+        'cpu_limited': '资源不足',
+        'standard': '标准模式',
+        'optimized': '超优模式 (推荐)',
+        'collaborative': '协同模式',
+        'hybrid': '混合模式'
+    };
+    
+    resultDiv.innerHTML = `
+        <h3>📊 检测结果</h3>
+        <div class="hardware-grid">
+            <div class="hardware-item">
+                <h4>CPU</h4>
+                <p>${summary.cpu}</p>
+            </div>
+            <div class="hardware-item">
+                <h4>GPU</h4>
+                <p>${summary.gpu}</p>
+            </div>
+            <div class="hardware-item">
+                <h4>显存</h4>
+                <p>${summary.gpu_memory}</p>
+            </div>
+            <div class="hardware-item">
+                <h4>内存</h4>
+                <p>${summary.ram}</p>
+            </div>
+            <div class="hardware-item">
+                <h4>可用磁盘</h4>
+                <p>${summary.disk_available}</p>
+            </div>
+        </div>
+        <div class="recommendation-box">
+            <h3>🎯 推荐模式：${modeMap[summary.recommended_mode] || summary.recommended_mode}</h3>
+            ${summary.warnings.length > 0 ? `
+                <div class="warning-box">
+                    <strong>⚠️ 注意：</strong>
+                    <ul>${summary.warnings.map(w => `<li>${w}</li>`).join('')}</ul>
+                </div>
+            ` : ''}
+            ${summary.optimization_tips.length > 0 ? `
+                <h4>💡 优化建议：</h4>
+                <ul style="list-style: none; padding: 0;">
+                    ${summary.optimization_tips.map(t => `<li style="padding: 5px 0; padding-left: 20px; position: relative;">✓ ${t}</li>`).join('')}
+                </ul>
+            ` : ''}
+            <h4>📦 可用模型：${summary.suitable_models.join(', ') || '无推荐模型'}</h4>
+        </div>
+        <div style="margin-top: 20px; text-align: center;">
+            <button class="scan-btn" onclick="applyRecommendation('${summary.recommended_mode}')">✅ 使用推荐配置</button>
+        </div>
+    `;
+}
+
+function applyRecommendation(mode) {
+    const actualMode = mode.includes('cpu') || mode.includes('low') ? 'optimized' : 
+                       mode.includes('high') ? 'standard' : 'optimized';
+    selectMode(actualMode);
+    document.querySelector('.mode-cards').scrollIntoView({ behavior: 'smooth' });
+    alert('已应用推荐配置');
+}
+</script>
