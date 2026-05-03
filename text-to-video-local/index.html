@@ -396,10 +396,14 @@
         }
         
         function openWebInstaller() {
-            // 启动 web_installer.py
-            alert('正在启动 Web 安装界面...\n\n如果没有自动打开，请手动运行：\npython3 web_installer.py');
+            const instructions = {
+                'windows': 'run_web_install.bat',
+                'macos': 'python3 install_web.py',
+                'linux': 'python3 install_web.py'
+            };
             
-            // 尝试直接打开（假设已经在后台启动）
+            alert('正在启动 Web 安装界面...\n\n浏览器应该会自动打开：http://localhost:8081\n\n如果没有：\n1. 请确保已运行 ' + instructions[selectedPlatform] + '\n2. 手动访问 http://localhost:8081');
+            
             window.open('http://localhost:8081', '_blank');
         }
         
