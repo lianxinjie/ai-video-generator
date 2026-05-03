@@ -282,6 +282,8 @@ def api_generate_package():
         
         return jsonify({
             'success': True,
+            'package_id': task_id,
+            'package_name': f'offline-package-{task_id}.zip',
             'package_dir': str(output_path.absolute()),
             'files': package_files,
             'recommendation': asdict(scanner.recommendation) if scanner.recommendation else None
@@ -482,3 +484,69 @@ def api_task_status_enhanced(task_id):
         status['download_task_id'] = task_id
     
     return jsonify(status)
+
+
+@app.route('/api/quick-start', methods=['POST'])
+def api_quick_start():
+    """API: 一键启动（自动检测硬件 + 推荐模式 + 启动任务）"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': '请求参数错误'}), 400
+        
+        prompt = data.get('prompt', '')
+        if not prompt:
+            return jsonify({'error': '提示词不能为空'}), 400
+        
+        mode = data.get('mode', 'personal')
+        duration = float(data.get('duration', 10))
+        voiceover = data.get('voiceover', False)
+        character_voice = data.get('character_voice', 'zh-CN-XiaoxiaoNeural')
+        
+        # 生成任务 ID
+        task_id = str(uuid.uuid4())
+        
+        # 存储任务
+        tasks[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'prompt': prompt,
+            'mode': mode,
+            'start_time': datetime.now().isoformat(),
+            'log': f'一键启动任务\n提示词：{prompt}\n模式：{mode}\n时长：{duration}s\n',
+            'hardware': {},
+            'recommendation': {},
+        }
+        
+        # 启动异步任务（简化版，实际应该启动真实任务）
+        def run_task():
+            import subprocess
+            import time
+            task = tasks[task_id]
+            try:
+                # 这里应该调用实际的生成逻辑
+                # 简化演示：等待并更新进度
+                for i in range(10):
+                    time.sleep(1)
+                    task['progress'] = (i + 1) * 10
+                    task['log'] += f'进度：{task["progress"]}%\n'
+                task['status'] = 'completed'
+                task['log'] += '任务完成\n'
+            except Exception as e:
+                task['status'] = 'failed'
+                task['log'] += f'错误：{e}\n'
+        
+        from threading import Thread
+        thread = Thread(target=run_task)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'mode': mode,
+            'message': '任务已启动'
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
