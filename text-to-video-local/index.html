@@ -112,6 +112,28 @@
             background: #1a202c; color: #48bb78; padding: 15px; border-radius: 8px;
             font-family: monospace; font-size: 13px; max-height: 250px; overflow-y: auto; margin: 15px 0;
         }
+        .file-hint {
+            background: #f0f4ff;
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .file-hint p {
+            color: #4a5568;
+            margin: 10px 0;
+        }
+        .file-name {
+            font-family: monospace;
+            background: #e2e8f0;
+            padding: 5px 15px;
+            border-radius: 5px;
+            display: inline-block;
+            margin: 10px 0;
+            color: #2d3748;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -219,11 +241,19 @@
                     <div class="install-methods">
                         <div class="method-card recommended">
                             <span class="method-badge badge-rec">⭐ 推荐</span>
-                            <div class="method-icon">🚀</div>
-                            <div class="method-title">一键自动安装</div>
-                            <div class="method-desc">自动检测系统并安装，最简单</div>
-                            <button class="btn btn-success" onclick="installPythonOneClick()" style="width: 100%;">一键安装</button>
-                            <div style="margin-top: 10px; font-size: 12px; color: #718096;">自动下载安装脚本并执行</div>
+                            <div class="method-icon">💻</div>
+                            <div class="method-title">双击安装文件</div>
+                            <div class="method-desc">最简单，直接双击运行</div>
+                            <div class="file-hint">
+                                <p>请在项目文件夹中找到并双击：</p>
+                                <div class="file-name" id="file-name">start_install.bat</div>
+                                <p style="font-size: 13px; color: #718096; margin-top: 10px;">
+                                    📁 打开项目文件夹 → 找到文件 → 双击运行
+                                </p>
+                            </div>
+                            <button class="btn btn-success" onclick="openProjectFolder()" style="width: 100%; margin-top: 15px;">
+                                📂 打开项目文件夹
+                            </button>
                         </div>
                         
                         <div class="method-card">
@@ -237,26 +267,12 @@
                         
                         <div class="method-card">
                             <span class="method-badge badge-alt">命令行</span>
-                            <div class="method-icon">💻</div>
+                            <div class="method-icon">📝</div>
                             <div class="method-title">包管理器安装</div>
                             <div class="method-desc">使用系统包管理器安装</div>
                             <div class="command-box" id="pkg-manager-cmd">
                                 <button class="copy-btn" onclick="copyPackageManager()">复制</button>
                                 <span id="pkg-cmd-text"></span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div id="oneclick-progress" class="hidden" style="margin-top: 20px;">
-                        <div style="padding: 20px; background: white; border-radius: 10px;">
-                            <h4 style="color: #667eea; margin-bottom: 15px;">🚀 一键安装进度</h4>
-                            <div class="progress-bar">
-                                <div class="progress-fill" id="oc-progress-fill" style="width: 0%">0%</div>
-                            </div>
-                            <div class="log-box" id="oc-log-output"></div>
-                            <div style="margin-top: 15px; text-align: center;">
-                                <button class="btn btn-secondary" onclick="refreshPage()">刷新页面</button>
-                                <button class="btn btn-success" id="btn-oc-finish" onclick="finishInstall()" style="margin-left: 10px; display: none;">完成</button>
                             </div>
                         </div>
                     </div>
@@ -339,9 +355,10 @@
             document.getElementById('platform-' + platform).classList.add('selected');
             document.getElementById('btnStep2').disabled = false;
             updatePackageManagerCmd();
+            updateFileName();
         }
         
-        function updatePackageManagerCmd() {
+        function updateFileManagerCmd() {
             if (!selectedPlatform) return;
             const cmds = {
                 'windows': 'winget install Python.Python.3.11',
@@ -351,6 +368,58 @@
             const cmdEl = document.getElementById('pkg-cmd-text');
             if (cmdEl) {
                 cmdEl.textContent = cmds[selectedPlatform];
+            }
+        }
+        
+        function updateFileName() {
+            if (!selectedPlatform) return;
+            const names = {
+                'windows': 'start_install.bat',
+                'macos': 'start_install.command',
+                'linux': 'start_install.sh'
+            };
+            const el = document.getElementById('file-name');
+            if (el) {
+                el.textContent = names[selectedPlatform];
+            }
+        }
+        
+        function openProjectFolder() {
+            const paths = {
+                'windows': 'explorer .',
+                'macos': 'open .',
+                'linux': 'xdg-open .'
+            };
+            const cmd = paths[selectedPlatform];
+            if (cmd) {
+                // 使用 file:// 协议打开本地文件夹
+                const win = window.open('', '_blank');
+                if (win) {
+                    win.document.write(`
+                        <html>
+                        <head><title>打开项目文件夹</title></head>
+                        <body style="font-family: Arial; padding: 40px; text-align: center;">
+                            <h1>📁 打开项目文件夹</h1>
+                            <p style="font-size: 18px; margin: 30px 0;">
+                                请找到项目文件夹中的：<br>
+                                <strong style="font-size: 24px; color: #667eea;">${document.getElementById('file-name').textContent}</strong>
+                            </p>
+                            <p style="color: #666; margin: 20px 0;">
+                                然后双击它来运行安装程序
+                            </p>
+                            <div style="background: #f0f4ff; padding: 20px; border-radius: 10px; margin-top: 20px;">
+                                <h3>💡 如何找到：</h3>
+                                <ol style="text-align: left; line-height: 2;">
+                                    <li>打开文件资源管理器 (Windows) 或 Finder (macOS)</li>
+                                    <li>导航到项目文件夹：<code>ai-video-generator</code></li>
+                                    <li>找到 <code>${document.getElementById('file-name').textContent}</code> 文件</li>
+                                    <li>双击运行</li>
+                                </ol>
+                            </div>
+                        </body>
+                        </html>
+                    `);
+                }
             }
         }
         
@@ -389,81 +458,9 @@
             navigator.clipboard.writeText(cmd).then(() => alert('已复制：' + cmd));
         }
         
-        function installPythonOneClick() {
-            const scriptMap = {
-                'windows': 'install_python.bat',
-                'macos': 'install_python.sh',
-                'linux': 'install_python.sh'
-            };
-            
-            if (!selectedPlatform) {
-                alert('请先选择操作系统');
-                goToStep(1);
-                return;
-            }
-            
-            const script = scriptMap[selectedPlatform];
-            document.getElementById('oneclick-progress').classList.remove('hidden');
-            
-            addLog('正在准备一键安装...');
-            setProgress(10);
-            
-            setTimeout(() => {
-                addLog('检测到操作系统：' + selectedPlatform.toUpperCase());
-                setProgress(20);
-            }, 800);
-            
-            setTimeout(() => {
-                addLog('下载安装脚本：' + script);
-                setProgress(40);
-            }, 1600);
-            
-            setTimeout(() => {
-                const link = document.createElement('a');
-                link.href = script;
-                link.download = script;
-                link.click();
-                addLog('✅ 下载完成');
-                setProgress(60);
-            }, 2400);
-            
-            setTimeout(() => {
-                addLog('');
-                addLog('📋 请运行下载的文件:');
-                if (selectedPlatform === 'windows') {
-                    addLog('   双击 install_python.bat');
-                } else {
-                    addLog('   bash install_python.sh');
-                }
-                setProgress(80);
-            }, 3200);
-            
-            setTimeout(() => {
-                addLog('');
-                addLog('✅ 准备就绪！请运行下载的脚本');
-                addLog('安装完成后点击"完成"或刷新页面');
-                setProgress(100);
-                document.getElementById('btn-oc-finish').style.display = 'inline-block';
-            }, 4000);
-        }
-        
-        function addLog(msg) {
-            const log = document.getElementById('oc-log-output');
-            const line = document.createElement('div');
-            line.textContent = '> ' + msg;
-            log.appendChild(line);
-            log.scrollTop = log.scrollHeight;
-        }
-        
-        function setProgress(pct) {
-            document.getElementById('oc-progress-fill').style.width = pct + '%';
-            document.getElementById('oc-progress-fill').textContent = pct + '%';
-        }
-        
         function finishInstall() {
             document.getElementById('python-installed').classList.remove('hidden');
             document.getElementById('python-not-installed').classList.add('hidden');
-            document.getElementById('oneclick-progress').classList.add('hidden');
             document.getElementById('btnStep4').disabled = false;
         }
         
@@ -471,7 +468,9 @@
         
         window.onload = function() {
             const os = detectOS();
-            if (os) selectPlatform(os);
+            if (os) {
+                selectPlatform(os);
+            }
         };
     </script>
 </body>
