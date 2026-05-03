@@ -226,3 +226,174 @@ if __name__ == '__main__':
     print("\n按 Ctrl+C 停止服务\n")
     
     app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+
+
+# ========== 硬件扫描与一键安装 API (新增) ==========
+
+@app.route('/api/scanner/report', methods=['GET'])
+def api_scanner_report():
+    """API: 获取扫描报告"""
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from scanner import SystemScanner
+        from dataclasses import asdict
+        
+        scanner = SystemScanner()
+        scanner.scan_all()
+        scanner.analyze()
+        
+        hw = scanner.hardware
+        rec = scanner.recommendation
+        
+        summary = {
+            'cpu': f"{hw.cpu_model} ({hw.cpu_cores}核)",
+            'gpu': hw.gpu_models[0] if hw.gpu_models else '无独立 GPU',
+            'gpu_memory': f"{sum(hw.gpu_memory_total):.1f}GB" if hw.gpu_memory_total else 'N/A',
+            'ram': f"{hw.ram_total}GB",
+            'disk_available': f"{hw.disk_available}GB",
+            'recommended_mode': rec.mode if rec else 'unknown',
+            'confidence': rec.confidence if rec else 'low',
+            'suitable_models': rec.suitable_models if rec else [],
+            'warnings': rec.warnings if rec else [],
+            'optimization_tips': rec.optimization_tips if rec else []
+        }
+        
+        return jsonify({'success': True, 'summary': summary})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scanner/generate-package', methods=['POST'])
+def api_generate_package():
+    """API: 生成个性化离线安装包"""
+    try:
+        import uuid
+        data = request.get_json() or {}
+        task_id = data.get('task_id', str(uuid.uuid4()))
+        package_dir = data.get('package_dir', f'web/outputs/offline-package-{task_id}')
+        
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from scanner import SystemScanner
+        from dataclasses import asdict
+        
+        scanner = SystemScanner()
+        scanner.scan_all()
+        scanner.analyze()
+        
+        output_path = Path(package_dir)
+        scanner.generate_offline_package(str(output_path))
+        
+        package_files = []
+        for file in output_path.glob('*'):
+            if file.is_file():
+                package_files.append({'name': file.name, 'size': file.stat().st_size})
+        
+        return jsonify({
+            'success': True,
+            'package_dir': str(output_path.absolute()),
+            'files': package_files,
+            'recommendation': asdict(scanner.recommendation) if scanner.recommendation else None
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/api/scanner/download-package', methods=['GET'])
+def api_download_package():
+    """API: 下载离线安装包"""
+    try:
+        import zipfile
+        from io import BytesIO
+        from flask import send_file
+        
+        package_name = request.args.get('package', '')
+        if not package_name:
+            return jsonify({'error': '缺少 package 参数'}), 400
+        
+        package_path = Path(package_name)
+        if not package_path.exists():
+            return jsonify({'error': f'安装包不存在：{package_name}'}), 404
+        
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file in package_path.rglob('*'):
+                if file.is_file():
+                    arcname = file.relative_to(package_path)
+                    zipf.write(file, arcname)
+        
+        zip_buffer.seek(0)
+        return send_file(zip_buffer, mimetype='application/zip', as_attachment=True, download_name=f'{Path(package_name).name}.zip')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scanner/install', methods=['POST'])
+def api_install():
+    """API: 执行一键安装"""
+    try:
+        import uuid
+        data = request.get_json() or {}
+        package_dir = data.get('package_dir')
+        
+        if not package_dir:
+            return jsonify({'error': '缺少 package_dir 参数'}), 400
+        
+        install_script = Path(package_dir) / 'install.sh'
+        if not install_script.exists():
+            return jsonify({'error': '安装脚本不存在'}), 404
+        
+        task_id = str(uuid.uuid4())
+        
+        def run_install():
+            import subprocess
+            log_file = Path(f'{package_dir}.install.log')
+            with open(log_file, 'w') as f:
+                try:
+                    result = subprocess.run(
+                        ['bash', str(install_script)],
+                        stdout=f, stderr=subprocess.STDOUT,
+                        cwd=package_dir,
+                        timeout=600
+                    )
+                    tasks[task_id] = {
+                        'status': 'completed' if result.returncode == 0 else 'failed',
+                        'log_file': str(log_file),
+                        'returncode': result.returncode
+                    }
+                except subprocess.TimeoutExpired:
+                    tasks[task_id] = {'status': 'failed', 'error': '安装超时 (10 分钟)'}
+                except Exception as e:
+                    tasks[task_id] = {'status': 'failed', 'error': str(e)}
+        
+        tasks[task_id] = {'status': 'running', 'progress': 0, 'log': '正在启动安装...'}
+        threading.Thread(target=run_install, daemon=True).start()
+        
+        return jsonify({'success': True, 'task_id': task_id, 'message': '安装任务已启动'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scanner/install-status/<task_id>', methods=['GET'])
+def api_install_status(task_id):
+    """API: 查询安装进度"""
+    try:
+        if task_id not in tasks:
+            return jsonify({'error': '任务不存在'}), 404
+        
+        task = tasks[task_id]
+        result = {
+            'task_id': task_id,
+            'status': task.get('status', 'unknown'),
+            'progress': task.get('progress', 0),
+            'log': task.get('log', '')
+        }
+        
+        if task.get('log_file') and Path(task['log_file']).exists():
+            with open(task['log_file'], 'r') as f:
+                result['log'] = f.read()[-10000:]
+            result['returncode'] = task.get('returncode')
+        
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
