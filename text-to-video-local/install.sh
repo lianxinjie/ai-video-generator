@@ -1,7 +1,8 @@
 #!/bin/bash
 #===============================================================================
-# AI Video Generator - 智能一键安装脚本
-# 根据系统扫描结果自动选择最优安装方案
+# AI Video Generator - 智能一键安装脚本 (增强版)
+# 支持：Linux / macOS / WSL / Git Bash
+# 改进：GPU 检测、错误处理、Homebrew 检查
 #===============================================================================
 
 set -e
@@ -11,7 +12,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # 日志函数
 log_info() {
@@ -30,6 +31,9 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# 错误处理
+trap 'log_error "安装失败，请检查日志"; exit 1' ERR
+
 # 打印横幅
 print_banner() {
     echo "==============================================="
@@ -38,352 +42,273 @@ print_banner() {
     echo ""
 }
 
-# 检查 Python
-check_python() {
-    log_info "检查 Python 环境..."
-    
-    if ! command -v python3 &> /dev/null; then
-        log_error "未找到 Python3，请先安装 Python 3.10+"
-        exit 1
-    fi
-    
-    PYTHON_VERSION=$(python3 --version 2>&1)
-    log_success "Python: $PYTHON_VERSION"
-    
-    # 检查版本 >= 3.10
-    PYTHON_MINOR=$(python3 -c "import sys; print(sys.version_info.minor)")
-    if [ "$PYTHON_MINOR" -lt 10 ]; then
-        log_warn "Python 版本 < 3.10，可能不兼容某些功能"
-    fi
-}
+# ========== 步骤 1: 系统检测 ==========
+echo ""
+log_info "步骤 1/8: 系统检测"
+echo "-----------------------------------------------"
 
-# 检查 pip
-check_pip() {
-    log_info "检查 pip..."
-    
-    if ! command -v pip3 &> /dev/null; then
-        log_error "未找到 pip3"
-        exit 1
-    fi
-    
-    PIP_VERSION=$(pip3 --version)
-    log_success "pip: $PIP_VERSION"
-}
+# 检测操作系统
+IS_MACOS=false
+IS_LINUX=false
+IS_WSL=false
 
-# 检测系统
-detect_system() {
-    log_info "检测操作系统..."
-    
-    SYSTEM=$(uname -s)
-    
-    case "$SYSTEM" in
-        "Darwin")
-            log_success "macOS"
-            IS_MACOS=true
-            IS_LINUX=false
-            ;;
-        "Linux")
+case "$(uname -s)" in
+    "Darwin")
+        IS_MACOS=true
+        log_success "macOS"
+        ;;
+    "Linux")
+        IS_LINUX=true
+        # 检测 WSL
+        if grep -qi microsoft /proc/version 2>/dev/null; then
+            IS_WSL=true
+            log_success "WSL (Windows Subsystem for Linux)"
+        else
             log_success "Linux"
-            IS_MACOS=false
-            IS_LINUX=true
-            ;;
-        *)
-            log_warn "未知系统: $SYSTEM，尝试继续安装"
-            IS_MACOS=false
-            IS_LINUX=false
-            ;;
-    esac
-}
-
-# 检查 GPU 驱动
-check_gpu() {
-    log_info "检测 GPU..."
-    
-    HAS_GPU=false
-    
-    if $IS_LINUX; then
-        # 检查 NVIDIA
-        if command -v nvidia-smi &> /dev/null; then
-            GPU_INFO=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "")
-            if [ -n "$GPU_INFO" ]; then
-                HAS_GPU=true
-                log_success "检测到 NVIDIA GPU: $GPU_INFO"
-            fi
         fi
-    elif $IS_MACOS; then
-        # 检查 Apple Silicon
-        if sysctl -n machdep.cpu.brand_string 2>/dev/null | grep -q "Apple M"; then
-            HAS_GPU=true
-            log_success "检测到 Apple Silicon (MPS 加速)"
+        ;;
+    *)
+        # Git Bash on Windows
+        if [[ "$OSTYPE" == "msys" ]]; then
+            log_warn "检测到 Git Bash，建议使用 install.bat"
+        else
+            log_warn "未知系统：$(uname -s)"
         fi
-    fi
-    
-    if ! $HAS_GPU; then
-        log_warn "未检测到 GPU，将使用 CPU 模式"
-    fi
-}
+        ;;
+esac
 
-# 检查磁盘空间
-check_disk_space() {
-    log_info "检查磁盘空间..."
+# ========== 步骤 2: 检查 Python ==========
+echo ""
+log_info "步骤 2/8: 检查 Python"
+echo "-----------------------------------------------"
+
+if ! command -v python3 &> /dev/null && ! command -v python &> /dev/null; then
+    log_error "未找到 Python"
+    echo ""
+    if $IS_MACOS; then
+        echo "macOS 安装方法:"
+        echo "  brew install python@3.11"
+    elif $IS_LINUX; then
+        echo "Linux 安装方法:"
+        echo "  sudo apt install python3 python3-pip  # Ubuntu/Debian"
+        echo "  sudo yum install python3 python3-pip  # CentOS/RHEL"
+    fi
+    echo ""
+    exit 1
+fi
+
+PYTHON_CMD=$(command -v python3 &> /dev/null && echo "python3" || echo "python")
+PYTHON_VERSION=$($PYTHON_CMD --version 2>&1)
+log_success "$PYTHON_VERSION"
+
+# 检查版本 >= 3.10
+PYTHON_MINOR=$($PYTHON_CMD -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo "9")
+if [ "$PYTHON_MINOR" -lt 10 ]; then
+    log_warn "Python 版本 < 3.10，可能不兼容某些功能"
+fi
+
+# ========== 步骤 3: 检查 pip ==========
+echo ""
+log_info "步骤 3/8: 检查 pip"
+echo "-----------------------------------------------"
+
+if ! command -v pip3 &> /dev/null && ! command -v pip &> /dev/null; then
+    log_error "未找到 pip"
+    exit 1
+fi
+
+PIP_CMD=$(command -v pip3 &> /dev/null && echo "pip3" || echo "pip")
+log_success "$($PIP_CMD --version)"
+
+# ========== 步骤 4: macOS Homebrew 检查 ==========
+if $IS_MACOS; then
+    echo ""
+    log_info "步骤 4/8: 检查 Homebrew (macOS)"
+    echo "-----------------------------------------------"
     
-    # 获取可用空间 (GB)
-    if $IS_MACOS || $IS_LINUX; then
-        DISK_AVAIL=$(df -h . | awk 'NR==2 {print $4}' | sed 's/G//g' | sed 's/M//g' | cut -d'.' -f1)
+    if ! command -v brew &> /dev/null; then
+        log_warn "Homebrew 未安装"
+        echo ""
+        echo "建议安装 Homebrew:"
+        echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+        echo ""
     else
-        DISK_AVAIL=50  # 默认值
+        log_success "Homebrew 已安装"
+        
+        # 检查并安装 FFmpeg
+        if ! command -v ffmpeg &> /dev/null; then
+            log_info " FFmpeg 未安装，正在安装..."
+            brew install ffmpeg || log_warn "FFmpeg 安装失败，可手动安装"
+        else
+            log_success "FFmpeg 已安装"
+        fi
+    fi
+fi
+
+# ========== 步骤 5: GPU 检测 ==========
+echo ""
+log_info "步骤 5/8: 检测 GPU"
+echo "-----------------------------------------------"
+
+HAS_GPU=false
+GPU_TYPE=""
+
+if $IS_LINUX; then
+    # 检查 NVIDIA GPU
+    if command -v nvidia-smi &> /dev/null; then
+        NVIDIA_OUTPUT=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "")
+        if [ -n "$NVIDIA_OUTPUT" ] && ! echo "$NVIDIA_OUTPUT" | grep -q "NVIDIA-SMI has failed"; then
+            HAS_GPU=true
+            GPU_TYPE="NVIDIA"
+            log_success "检测到 NVIDIA GPU: $NVIDIA_OUTPUT"
+        fi
     fi
     
+    # 检查 NVIDIA 驱动是否加载
+    if [ -d "/proc/driver/nvidia" ]; then
+        log_success "NVIDIA 驱动已加载"
+    fi
+    
+elif $IS_MACOS; then
+    # 检查 Apple Silicon
+    if sysctl -n machdep.cpu.brand_string 2>/dev/null | grep -q "Apple M[1-9]"; then
+        HAS_GPU=true
+        GPU_TYPE="Apple Silicon"
+        log_success "检测到 Apple Silicon (MPS 加速)"
+    else
+        # Intel Mac
+        log_info "Intel Mac (无 GPU 加速)"
+    fi
+fi
+
+if ! $HAS_GPU; then
+    log_warn "未检测到 GPU，将使用 CPU 模式"
+fi
+
+# ========== 步骤 6: 检查磁盘空间 ==========
+echo ""
+log_info "步骤 6/8: 检查磁盘空间"
+echo "-----------------------------------------------"
+
+if $IS_MACOS || $IS_LINUX || $IS_WSL; then
+    DISK_AVAIL=$(df -h . | awk 'NR==2 {print $4}' | sed 's/G//g' | sed 's/M//g' | cut -d'.' -f1)
     log_info "可用磁盘空间：${DISK_AVAIL}GB"
     
-    if [ "$DISK_AVAIL" -lt 30 ]; then
+    if [ "${DISK_AVAIL:-0}" -lt 30 ]; then
         log_warn "磁盘空间不足 30GB，可能无法下载所有模型"
     else
         log_success "磁盘空间充足"
     fi
-}
+fi
 
-# 创建虚拟环境
-create_venv() {
-    log_info "创建虚拟环境..."
-    
-    if [ -d "venv" ]; then
-        log_warn "虚拟环境已存在，将覆盖"
-        rm -rf venv
-    fi
-    
-    python3 -m venv venv
-    log_success "虚拟环境创建完成"
-    
-    # 激活虚拟环境
-    if $IS_MACOS || $IS_LINUX; then
-        source venv/bin/activate
-    else
-        source venv/Scripts/activate
-    fi
-    
-    log_success "虚拟环境已激活"
-}
+# ========== 步骤 7: 创建虚拟环境 ==========
+echo ""
+log_info "步骤 7/8: 创建虚拟环境"
+echo "-----------------------------------------------"
+
+if [ -d "venv" ]; then
+    log_warn "虚拟环境已存在，将覆盖"
+    rm -rf venv
+fi
+
+$PYTHON_CMD -m venv venv
+log_success "虚拟环境创建完成"
+
+# 激活虚拟环境
+if $IS_MACOS || $IS_LINUX || $IS_WSL; then
+    source venv/bin/activate
+else
+    source venv/Scripts/activate
+fi
+log_success "虚拟环境已激活"
+
+# 升级 pip
+pip install --upgrade pip -q
+log_success "pip 已升级"
+
+# ========== 步骤 8: 安装依赖 ==========
+echo ""
+log_info "步骤 8/8: 安装依赖"
+echo "-----------------------------------------------"
 
 # 安装 PyTorch
-install_pytorch() {
-    log_info "安装 PyTorch..."
-    
-    # 尝试从扫描报告读取 GPU 状态
-    HAS_GPU_REPORT=false
-    if [ -f "scan_report.json" ]; then
-        if grep -q '"gpu_available": true' scan_report.json; then
-            HAS_GPU_REPORT=true
-        fi
-    fi
-    
-    if $HAS_GPU || $HAS_GPU_REPORT; then
-        log_info "检测到 GPU，安装 PyTorch GPU 版本..."
-        
-        # 根据系统选择安装命令
-        if $IS_LINUX; then
-            pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-        elif $IS_MACOS; then
-            # macOS 使用 MPS
-            pip3 install torch torchvision torchaudio
-        else
-            pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-        fi
-        
-        log_success "PyTorch GPU 版本安装完成"
-    else
-        log_info "安装 PyTorch CPU 版本..."
-        pip3 install torch torchvision torchaudio
-        log_success "PyTorch CPU 版本安装完成"
-    fi
-}
+log_info "安装 PyTorch..."
 
-# 安装依赖
-install_dependencies() {
-    log_info "安装依赖包..."
-    
-    # 检查使用哪个 requirements 文件
-    if [ -f "requirements-optimized.txt" ]; then
-        REQ_FILE="requirements-optimized.txt"
-        log_info "使用优化配置文件：$REQ_FILE"
-    elif [ -f "requirements.txt" ]; then
-        REQ_FILE="requirements.txt"
-    else
-        log_error "未找到 requirements 文件"
-        exit 1
+if [ "$HAS_GPU" = true ]; then
+    if [ "$GPU_TYPE" = "NVIDIA" ]; then
+        log_info "检测到 NVIDIA GPU，安装 CUDA 版本..."
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+    elif [ "$GPU_TYPE" = "Apple Silicon" ]; then
+        log_info "检测到 Apple Silicon，安装 MPS 版本..."
+        pip install torch torchvision torchaudio
     fi
-    
-    pip3 install -r "$REQ_FILE"
-    
-    log_success "依赖安装完成"
-}
+else
+    log_info "安装 CPU 版本..."
+    pip install torch torchvision torchaudio
+fi
 
-# 下载模型
-download_models() {
+# 验证 PyTorch
+python -c "import torch; print(f'PyTorch {torch.__version__}')" && log_success "PyTorch 安装成功" || log_warn "PyTorch 验证失败"
+
+# 安装项目依赖
+if [ -f "requirements-optimized.txt" ]; then
+    REQ_FILE="requirements-optimized.txt"
+    log_info "使用优化配置：$REQ_FILE"
+elif [ -f "requirements.txt" ]; then
+    REQ_FILE="requirements.txt"
+    log_info "使用标准配置：$REQ_FILE"
+else
+    log_error "未找到 requirements 文件"
+    exit 1
+fi
+
+pip install -r "$REQ_FILE" && log_success "依赖安装完成" || log_warn "依赖安装部分失败"
+
+# ========== 下载模型 (可选) ==========
+echo ""
+read -p "是否下载模型？(Y/N, 默认 Y): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]] || [ -z "$REPLY" ]; then
     log_info "下载模型..."
-    
-    # 检查是否有扫描报告
-    if [ -f "scan_report.json" ]; then
-        log_info "从扫描报告读取推荐模型..."
-        python3 download_models.py --from-scan --parallel 2
+    if [ -f "download_models.py" ]; then
+        python download_models.py || log_warn "模型下载失败"
     else
-        # 默认下载 ModelScope
-        log_info "使用默认模型配置..."
-        python3 download_models.py -m modelscope --parallel 1
+        log_warn "未找到 download_models.py"
     fi
-}
+else
+    log_info "跳过模型下载"
+fi
 
-# 测试运行
-test_installation() {
-    log_info "测试安装..."
-    
-    echo ""
-    python3 generation.py --check
-    
-    if [ $? -eq 0 ]; then
-        log_success "测试通过！"
-    else
-        log_warn "测试失败，但安装可能仍然可用"
-    fi
-}
+# ========== 测试安装 ==========
+echo ""
+log_info "测试安装..."
+echo "-----------------------------------------------"
 
-# 主函数
-main() {
-    print_banner
-    
-    # 参数解析
-    SKIP_SCAN=false
-    SKIP_MODELS=false
-    
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --skip-scan)
-                SKIP_SCAN=true
-                shift
-                ;;
-            --skip-models)
-                SKIP_MODELS=true
-                shift
-                ;;
-            --help|-h)
-                echo "用法：bash install.sh [选项]"
-                echo ""
-                echo "选项:"
-                echo "  --skip-scan     跳过系统扫描"
-                echo "  --skip-models   跳过模型下载"
-                echo "  --help, -h      显示帮助"
-                exit 0
-                ;;
-            *)
-                log_error "未知参数：$1"
-                exit 1
-                ;;
-        esac
-    done
-    
-    START_TIME=$(date +%s)
-    
-    # 步骤 1: 系统检测
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log_info "步骤 1/6: 系统检测"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    check_python
-    check_pip
-    detect_system
-    check_gpu
-    check_disk_space
-    
-    # 步骤 2: 系统扫描
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log_info "步骤 2/6: 系统扫描"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    if ! $SKIP_SCAN; then
-        if [ -f "scanner.py" ]; then
-            log_info "运行系统扫描..."
-            python3 scanner.py --generate-package --package-dir offline-package
-        else
-            log_warn "未找到 scanner.py，跳过扫描"
-        fi
-    else
-        log_info "跳过系统扫描"
-    fi
-    
-    # 步骤 3: 创建环境
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log_info "步骤 3/6: 创建虚拟环境"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    create_venv
-    
-    # 步骤 4: 安装 PyTorch
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log_info "步骤 4/6: 安装 PyTorch"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    install_pytorch
-    
-    # 步骤 5: 安装依赖
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log_info "步骤 5/6: 安装依赖包"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    install_dependencies
-    
-    # 步骤 6: 下载模型
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log_info "步骤 6/6: 下载模型"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    if ! $SKIP_MODELS; then
-        download_models
-    else
-        log_info "跳过模型下载"
-    fi
-    
-    # 测试
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log_info "执行安装测试"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    test_installation
-    
-    # 完成
-    END_TIME=$(date +%s)
-    DURATION=$((END_TIME - START_TIME))
-    
-    echo ""
-    echo "==============================================="
-    log_success "安装完成！"
-    echo "==============================================="
-    echo ""
-    echo "总耗时：$((DURATION / 60)) 分 $((DURATION % 60)) 秒"
-    echo ""
-    echo "使用方法:"
-    echo "  1. 激活虚拟环境:"
-    if $IS_MACOS || $IS_LINUX; then
-        echo "     source venv/bin/activate"
-    else
-        echo "     venv\\Scripts\\activate"
-    fi
-    echo ""
-    echo "  2. 测试运行:"
-    echo "     python3 generation.py --check"
-    echo ""
-    echo "  3. 生成视频:"
-    echo "     python3 generation.py -m modelscope -p \"一只猫在草地上奔跑\" -o output.mp4"
-    echo ""
-    echo "==============================================="
-    echo ""
-}
+python generation.py --check 2>&1 | head -20 || log_warn "测试失败，但安装可能仍然可用"
 
-# 执行
-main "$@"
+# ========== 完成 ==========
+echo ""
+echo "==============================================="
+log_success "安装完成！"
+echo "==============================================="
+echo ""
+echo "使用方法:"
+echo ""
+echo "  1. 激活虚拟环境:"
+if $IS_MACOS || $IS_LINUX || $IS_WSL; then
+    echo "     source venv/bin/activate"
+else
+    echo "     source venv/Scripts/activate"
+fi
+echo ""
+echo "  2. 测试运行:"
+echo "     python generation.py --check"
+echo ""
+echo "  3. 启动 Web 界面:"
+echo "     python web/app.py"
+echo ""
+echo "  4. 生成视频:"
+echo "     python generation.py -m modelscope -p \"一只猫在草地上奔跑\" -o output.mp4"
+echo ""
+echo "==============================================="
+echo ""
