@@ -165,7 +165,7 @@
             </div>
             <div class="btn-container">
                 <button class="btn btn-secondary" onclick="goToStep(0)" style="margin-right: 10px;">上一步</button>
-                <button class="btn" id="btnStep2" disabled>下一步</button>
+                <button class="btn" id="btnStep2" onclick="goToStep(2)" disabled>下一步</button>
             </div>
         </div>
         
@@ -195,12 +195,11 @@
             </div>
         </div>
         
-        <!-- Step 3: 安装 Python（优化版 - 三种方式） -->
+        <!-- Step 3: 安装 Python -->
         <div id="step3" class="step-container">
             <div class="step">
                 <h2><span class="step-number">3</span>安装 Python</h2>
                 
-                <!-- Python 已安装 -->
                 <div id="python-installed" class="hidden">
                     <div style="text-align: center; padding: 30px;">
                         <div style="font-size: 60px; margin-bottom: 20px;">✅</div>
@@ -209,7 +208,6 @@
                     </div>
                 </div>
                 
-                <!-- Python 未安装 -->
                 <div id="python-not-installed" class="hidden">
                     <div class="alert alert-warning">
                         <strong>⚠️ 未检测到 Python</strong><br>
@@ -219,35 +217,24 @@
                     <h3 style="margin: 20px 0 15px;">选择安装方式：</h3>
                     
                     <div class="install-methods">
-                        <!-- 方式 1: 一键安装 -->
                         <div class="method-card recommended">
                             <span class="method-badge badge-rec">⭐ 推荐</span>
                             <div class="method-icon">🚀</div>
                             <div class="method-title">一键自动安装</div>
                             <div class="method-desc">自动检测系统并安装，最简单</div>
-                            <button class="btn btn-success" onclick="installPythonOneClick()" style="width: 100%;">
-                                一键安装
-                            </button>
-                            <div style="margin-top: 10px; font-size: 12px; color: #718096;">
-                                自动下载安装脚本并执行
-                            </div>
+                            <button class="btn btn-success" onclick="installPythonOneClick()" style="width: 100%;">一键安装</button>
+                            <div style="margin-top: 10px; font-size: 12px; color: #718096;">自动下载安装脚本并执行</div>
                         </div>
                         
-                        <!-- 方式 2: 官方网站 -->
                         <div class="method-card">
                             <span class="method-badge badge-alt">传统方式</span>
                             <div class="method-icon">🌐</div>
                             <div class="method-title">官方网站下载</div>
                             <div class="method-desc">从 Python 官网下载安装包</div>
-                            <a href="https://www.python.org/downloads/" target="_blank" class="btn btn-secondary" style="width: 100%; display: inline-block;">
-                                前往下载
-                            </a>
-                            <div style="margin-top: 10px; font-size: 12px; color: #718096;">
-                                Windows 用户请勾选"Add to PATH"
-                            </div>
+                            <a href="https://www.python.org/downloads/" target="_blank" class="btn btn-secondary" style="width: 100%; display: inline-block;">前往下载</a>
+                            <div style="margin-top: 10px; font-size: 12px; color: #718096;">Windows 用户请勾选"Add to PATH"</div>
                         </div>
                         
-                        <!-- 方式 3: 包管理器 -->
                         <div class="method-card">
                             <span class="method-badge badge-alt">命令行</span>
                             <div class="method-icon">💻</div>
@@ -255,12 +242,11 @@
                             <div class="method-desc">使用系统包管理器安装</div>
                             <div class="command-box" id="pkg-manager-cmd">
                                 <button class="copy-btn" onclick="copyPackageManager()">复制</button>
-                                <span></span>
+                                <span id="pkg-cmd-text"></span>
                             </div>
                         </div>
                     </div>
                     
-                    <!-- 一键安装进度 -->
                     <div id="oneclick-progress" class="hidden" style="margin-top: 20px;">
                         <div style="padding: 20px; background: white; border-radius: 10px;">
                             <h4 style="color: #667eea; margin-bottom: 15px;">🚀 一键安装进度</h4>
@@ -276,7 +262,6 @@
                     </div>
                 </div>
             </div>
-            
             <div class="btn-container">
                 <button class="btn btn-secondary" onclick="goToStep(2)" style="margin-right: 10px;">上一步</button>
                 <button class="btn" onclick="checkPython()">重新检测</button>
@@ -338,7 +323,6 @@
         let selectedPlatform = null;
         let pythonInstalled = false;
         
-        // 自动检测操作系统
         function detectOS() {
             const platform = navigator.platform.toLowerCase();
             if (platform.includes('win')) return 'windows';
@@ -354,27 +338,26 @@
             });
             document.getElementById('platform-' + platform).classList.add('selected');
             document.getElementById('btnStep2').disabled = false;
-            updateCommands();
+            updatePackageManagerCmd();
         }
         
-        function updateCommands() {
+        function updatePackageManagerCmd() {
             if (!selectedPlatform) return;
             const cmds = {
-                'windows': { pkg: 'winget install Python.Python.3.11', start: 'python quick_start.py' },
-                'macos': { pkg: 'brew install python@3.11', start: 'python3 quick_start.py' },
-                'linux': { pkg: 'sudo apt install python3 python3-pip', start: 'python3 quick_start.py' }
+                'windows': 'winget install Python.Python.3.11',
+                'macos': 'brew install python@3.11',
+                'linux': 'sudo apt install python3 python3-pip'
             };
-            document.querySelector('#pkg-manager-cmd span').textContent = cmds[selectedPlatform].pkg;
-            document.getElementById('cmd-start').textContent = cmds[selectedPlatform].start;
+            const cmdEl = document.getElementById('pkg-cmd-text');
+            if (cmdEl) {
+                cmdEl.textContent = cmds[selectedPlatform];
+            }
         }
         
         function checkPython() {
             document.getElementById('python-result').classList.remove('hidden');
-            document.getElementById('python-status').innerHTML = `
-                <div style="color: #d69e2e;">
-                    ⚠️ 静态页面无法直接检测 Python 环境<br>
-                    请在下一步选择安装方式
-                </div>`;
+            document.getElementById('python-status').innerHTML = 
+                '<div style="color: #d69e2e;">⚠️ 静态页面无法直接检测 Python 环境<br>请在下一步选择安装方式</div>';
             document.getElementById('check-python').className = 'pending';
             document.getElementById('check-version').className = 'pending';
             document.getElementById('check-pip').className = 'pending';
@@ -386,9 +369,12 @@
             
             if (step === 3) {
                 setTimeout(() => {
-                    document.getElementById('python-not-installed').classList.remove('hidden');
-                    document.getElementById('python-installed').classList.add('hidden');
+                    const installed = document.getElementById('python-installed');
+                    const notInstalled = document.getElementById('python-not-installed');
+                    if (installed) installed.classList.add('hidden');
+                    if (notInstalled) notInstalled.classList.remove('hidden');
                     document.getElementById('btnStep4').disabled = true;
+                    updatePackageManagerCmd();
                 }, 500);
             }
         }
@@ -399,11 +385,10 @@
         }
         
         function copyPackageManager() {
-            const cmd = document.querySelector('#pkg-manager-cmd span').textContent;
+            const cmd = document.getElementById('pkg-cmd-text').textContent;
             navigator.clipboard.writeText(cmd).then(() => alert('已复制：' + cmd));
         }
         
-        // 一键安装 Python
         function installPythonOneClick() {
             const scriptMap = {
                 'windows': 'install_python.bat',
@@ -434,7 +419,6 @@
             }, 1600);
             
             setTimeout(() => {
-                // 创建下载
                 const link = document.createElement('a');
                 link.href = script;
                 link.download = script;
