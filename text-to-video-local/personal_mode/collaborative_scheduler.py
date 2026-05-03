@@ -61,6 +61,9 @@ class CollaborativeScheduler:
         ai_model_name: str = None,
         ai_api_key: str = None,
         ai_api_base: str = None,
+        ai_timeout: int = 10,
+        ai_max_retries: int = 2,
+        ai_health_check: bool = True,
         auto_approve_changes: bool = False,
         verbose: bool = True
     ):
@@ -82,6 +85,9 @@ class CollaborativeScheduler:
             ai_model_name: AI 模型名称
             ai_api_key: AI API Key
             ai_api_base: AI API Base URL
+            ai_timeout: AI 请求超时时间（秒）
+            ai_max_retries: AI 请求最大重试次数
+            ai_health_check: 启用通道健康检查
             auto_approve_changes: 自动确认优化建议
             verbose: 是否输出详细信息
         """
