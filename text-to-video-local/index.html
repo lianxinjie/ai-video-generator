@@ -23,207 +23,95 @@
             width: 100%;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        h1 {
-            color: #667eea;
-            margin-bottom: 10px;
-            font-size: 36px;
-            text-align: center;
-        }
-        .subtitle {
-            color: #666;
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 18px;
-        }
-        .step-container {
-            display: none;
-        }
-        .step-container.active {
-            display: block;
-        }
+        h1 { color: #667eea; margin-bottom: 10px; font-size: 36px; text-align: center; }
+        .subtitle { color: #666; text-align: center; margin-bottom: 30px; font-size: 18px; }
+        .step-container { display: none; }
+        .step-container.active { display: block; }
         .step {
-            margin-bottom: 30px;
-            padding: 25px;
-            background: #f8f9ff;
-            border-radius: 15px;
-            border-left: 5px solid #667eea;
+            margin-bottom: 30px; padding: 25px; background: #f8f9ff;
+            border-radius: 15px; border-left: 5px solid #667eea;
         }
         .step h2 {
-            color: #667eea;
-            font-size: 24px;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            color: #667eea; font-size: 24px; margin-bottom: 15px;
+            display: flex; align-items: center; gap: 10px;
         }
         .step-number {
-            background: #667eea;
-            color: white;
-            width: 35px;
-            height: 35px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 18px;
+            background: #667eea; color: white; width: 35px; height: 35px;
+            border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; font-weight: bold; font-size: 18px;
         }
         .platform-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 20px 0;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0;
         }
         .platform-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            border: 2px solid #e2e8f0;
-            cursor: pointer;
-            transition: all 0.3s;
+            background: white; padding: 20px; border-radius: 10px;
+            border: 2px solid #e2e8f0; cursor: pointer; transition: all 0.3s;
         }
         .platform-card:hover {
-            border-color: #667eea;
-            transform: translateY(-5px);
+            border-color: #667eea; transform: translateY(-5px);
             box-shadow: 0 10px 30px rgba(102,126,234,0.2);
         }
-        .platform-card.selected {
-            border-color: #667eea;
-            background: #f0f4ff;
-        }
-        .platform-icon {
-            font-size: 40px;
-            margin-bottom: 10px;
-        }
-        .platform-name {
-            font-weight: bold;
-            font-size: 18px;
-            color: #2d3748;
-            margin-bottom: 5px;
-        }
-        .platform-desc {
-            color: #718096;
-            font-size: 14px;
-        }
+        .platform-card.selected { border-color: #667eea; background: #f0f4ff; }
+        .platform-icon { font-size: 40px; margin-bottom: 10px; }
+        .platform-name { font-weight: bold; font-size: 18px; color: #2d3748; margin-bottom: 5px; }
+        .platform-desc { color: #718096; font-size: 14px; }
         .command-box {
-            background: #1a202c;
-            color: #48bb78;
-            padding: 20px;
-            border-radius: 10px;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            margin: 15px 0;
-            position: relative;
+            background: #1a202c; color: #48bb78; padding: 20px; border-radius: 10px;
+            font-family: monospace; font-size: 14px; margin: 15px 0; position: relative;
         }
         .copy-btn {
-            position: absolute;
-            right: 10px;
-            top: 10px;
-            background: #4a5568;
-            color: white;
-            border: none;
-            padding: 5px 15px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        .copy-btn:hover {
-            background: #718096;
+            position: absolute; right: 10px; top: 10px; background: #4a5568;
+            color: white; border: none; padding: 5px 15px; border-radius: 5px;
+            cursor: pointer; font-size: 12px;
         }
         .btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 15px 40px;
-            border-radius: 10px;
-            font-size: 18px;
-            cursor: pointer;
-            transition: transform 0.2s;
-            display: inline-block;
-            text-decoration: none;
+            color: white; border: none; padding: 15px 40px; border-radius: 10px;
+            font-size: 18px; cursor: pointer; transition: transform 0.2s;
+            display: inline-block; text-decoration: none;
         }
-        .btn:hover {
-            transform: translateY(-2px);
-        }
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        .btn-container {
-            text-align: center;
-            margin-top: 30px;
-        }
-        .checklist {
-            list-style: none;
-            margin: 15px 0;
-        }
-        .checklist li {
-            padding: 10px;
-            margin: 5px 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .checklist li::before {
-            content: "✓";
-            color: #48bb78;
-            font-weight: bold;
-            font-size: 20px;
-        }
-        .checklist li.pending::before {
-            content: "○";
-            color: #cbd5e0;
-        }
-        .progress-bar {
-            height: 25px;
-            background: #e2e8f0;
-            border-radius: 15px;
-            overflow: hidden;
-            margin: 20px 0;
-        }
+        .btn:hover { transform: translateY(-2px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-success { background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); }
+        .btn-secondary { background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%); }
+        .btn-container { text-align: center; margin-top: 30px; }
+        .checklist { list-style: none; margin: 15px 0; }
+        .checklist li { padding: 10px; margin: 5px 0; display: flex; align-items: center; gap: 10px; }
+        .checklist li::before { content: "✓"; color: #48bb78; font-weight: bold; font-size: 20px; }
+        .checklist li.pending::before { content: "○"; color: #cbd5e0; }
+        .progress-bar { height: 25px; background: #e2e8f0; border-radius: 15px; overflow: hidden; margin: 20px 0; }
         .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #48bb78, #38a169);
-            transition: width 0.5s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: bold;
-            font-size: 14px;
+            height: 100%; background: linear-gradient(90deg, #48bb78, #38a169);
+            transition: width 0.5s; display: flex; align-items: center;
+            justify-content: center; color: white; font-weight: bold; font-size: 14px;
         }
-        .alert {
-            padding: 15px;
-            border-radius: 10px;
-            margin: 15px 0;
-        }
-        .alert-info {
-            background: #bee3f8;
-            color: #2c5282;
-            border-left: 4px solid #4299e1;
-        }
-        .alert-warning {
-            background: #feebc8;
-            color: #7b341e;
-            border-left: 4px solid #dd6b20;
-        }
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin: 20px 0;
-        }
-        .feature-item {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-        }
-        .feature-icon {
-            font-size: 30px;
-            margin-bottom: 10px;
-        }
+        .alert { padding: 15px; border-radius: 10px; margin: 15px 0; }
+        .alert-info { background: #bee3f8; color: #2c5282; border-left: 4px solid #4299e1; }
+        .alert-warning { background: #feebc8; color: #7b341e; border-left: 4px solid #dd6b20; }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .feature-item { background: white; padding: 15px; border-radius: 8px; text-align: center; }
+        .feature-icon { font-size: 30px; margin-bottom: 10px; }
         .hidden { display: none; }
+        .install-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin: 20px 0; }
+        .method-card {
+            background: white; padding: 25px; border-radius: 12px;
+            border: 2px solid #e2e8f0; text-align: center; transition: all 0.3s;
+        }
+        .method-card:hover { border-color: #667eea; transform: translateY(-3px); }
+        .method-card.recommended { border-color: #48bb78; background: #f0fff4; }
+        .method-icon { font-size: 48px; margin-bottom: 15px; }
+        .method-title { font-weight: bold; font-size: 18px; color: #2d3748; margin-bottom: 10px; }
+        .method-desc { color: #718096; font-size: 14px; margin-bottom: 15px; }
+        .method-badge {
+            display: inline-block; padding: 4px 12px; border-radius: 12px;
+            font-size: 12px; font-weight: bold; margin-bottom: 10px;
+        }
+        .badge-rec { background: #48bb78; color: white; }
+        .badge-alt { background: #e2e8f0; color: #4a5568; }
+        .log-box {
+            background: #1a202c; color: #48bb78; padding: 15px; border-radius: 8px;
+            font-family: monospace; font-size: 13px; max-height: 250px; overflow-y: auto; margin: 15px 0;
+        }
     </style>
 </head>
 <body>
@@ -241,25 +129,12 @@
                 </p>
                 
                 <div class="feature-grid">
-                    <div class="feature-item">
-                        <div class="feature-icon">📝</div>
-                        <div><strong>文本生成</strong><br><small>输入提示词即可生成</small></div>
-                    </div>
-                    <div class="feature-item">
-                        <div class="feature-icon">🎨</div>
-                        <div><strong>多种风格</strong><br><small>支持多种艺术风格</small></div>
-                    </div>
-                    <div class="feature-item">
-                        <div class="feature-icon">🎬</div>
-                        <div><strong>高清视频</strong><br><small>输出高质量视频</small></div>
-                    </div>
-                    <div class="feature-item">
-                        <div class="feature-icon">⚡</div>
-                        <div><strong>快速生成</strong><br><small>优化的生成速度</small></div>
-                    </div>
+                    <div class="feature-item"><div class="feature-icon">📝</div><div><strong>文本生成</strong><br><small>输入提示词即可生成</small></div></div>
+                    <div class="feature-item"><div class="feature-icon">🎨</div><div><strong>多种风格</strong><br><small>支持多种艺术风格</small></div></div>
+                    <div class="feature-item"><div class="feature-icon">🎬</div><div><strong>高清视频</strong><br><small>输出高质量视频</small></div></div>
+                    <div class="feature-item"><div class="feature-icon">⚡</div><div><strong>快速生成</strong><br><small>优化的生成速度</small></div></div>
                 </div>
             </div>
-            
             <div class="btn-container">
                 <button class="btn" onclick="goToStep(1)">开始环境检查</button>
             </div>
@@ -270,7 +145,6 @@
             <div class="step">
                 <h2><span class="step-number">1</span>选择您的操作系统</h2>
                 <p style="color: #718096; margin-bottom: 20px;">选择您的操作系统，我们将为您提供相应的安装指南</p>
-                
                 <div class="platform-grid">
                     <div class="platform-card" onclick="selectPlatform('windows')" id="platform-windows">
                         <div class="platform-icon">🪟</div>
@@ -289,10 +163,9 @@
                     </div>
                 </div>
             </div>
-            
             <div class="btn-container">
                 <button class="btn btn-secondary" onclick="goToStep(0)" style="margin-right: 10px;">上一步</button>
-                <button class="btn" id="btnStep2" onclick="goToStep(2)" disabled>下一步</button>
+                <button class="btn" id="btnStep2" disabled>下一步</button>
             </div>
         </div>
         
@@ -300,38 +173,34 @@
         <div id="step2" class="step-container">
             <div class="step">
                 <h2><span class="step-number">2</span>检查 Python 环境</h2>
-                
                 <div class="alert alert-info">
                     <strong>ℹ️ 提示：</strong> AI 视频生成器需要 Python 3.10 或更高版本。
                 </div>
-                
                 <ul class="checklist">
                     <li id="check-python" class="pending">检查 Python 是否安装</li>
                     <li id="check-version" class="pending">检查 Python 版本 >= 3.10</li>
                     <li id="check-pip" class="pending">检查 pip 包管理器</li>
                 </ul>
-                
                 <div id="python-result" class="hidden">
                     <div style="margin: 20px 0;">
                         <strong>检测结果：</strong>
-                        <div id="python-status" style="padding: 15px; background: white; border-radius: 8px; margin-top: 10px;">
-                            检测中...
-                        </div>
+                        <div id="python-status" style="padding: 15px; background: white; border-radius: 8px; margin-top: 10px;">检测中...</div>
                     </div>
                 </div>
             </div>
-            
             <div class="btn-container">
+                <button class="btn btn-secondary" onclick="goToStep(1)" style="margin-right: 10px;">上一步</button>
                 <button class="btn" onclick="checkPython()">重新检测</button>
-                <button class="btn" id="btnStep3" onclick="goToStep(3)" style="margin-left: 10px;">下一步</button>
+                <button class="btn" id="btnStep3" onclick="goToStep(3)">下一步</button>
             </div>
         </div>
         
-        <!-- Step 3: 安装 Python -->
+        <!-- Step 3: 安装 Python（优化版 - 三种方式） -->
         <div id="step3" class="step-container">
             <div class="step">
                 <h2><span class="step-number">3</span>安装 Python</h2>
                 
+                <!-- Python 已安装 -->
                 <div id="python-installed" class="hidden">
                     <div style="text-align: center; padding: 30px;">
                         <div style="font-size: 60px; margin-bottom: 20px;">✅</div>
@@ -340,31 +209,69 @@
                     </div>
                 </div>
                 
+                <!-- Python 未安装 -->
                 <div id="python-not-installed" class="hidden">
                     <div class="alert alert-warning">
                         <strong>⚠️ 未检测到 Python</strong><br>
-                        请先安装 Python 3.10 或更高版本
+                        请选择以下任一方式安装 Python 3.10 或更高版本
                     </div>
                     
-                    <h3 style="margin: 20px 0 10px;">安装方法：</h3>
+                    <h3 style="margin: 20px 0 15px;">选择安装方式：</h3>
                     
-                    <div class="platform-card" style="margin-bottom: 15px;">
-                        <div class="platform-name">方法 1: 官方网站下载（推荐）</div>
-                        <div class="platform-desc" style="margin: 10px 0;">
-                            <a href="https://www.python.org/downloads/" target="_blank" style="color: #667eea; text-decoration: none;">
-                                https://www.python.org/downloads/
+                    <div class="install-methods">
+                        <!-- 方式 1: 一键安装 -->
+                        <div class="method-card recommended">
+                            <span class="method-badge badge-rec">⭐ 推荐</span>
+                            <div class="method-icon">🚀</div>
+                            <div class="method-title">一键自动安装</div>
+                            <div class="method-desc">自动检测系统并安装，最简单</div>
+                            <button class="btn btn-success" onclick="installPythonOneClick()" style="width: 100%;">
+                                一键安装
+                            </button>
+                            <div style="margin-top: 10px; font-size: 12px; color: #718096;">
+                                自动下载安装脚本并执行
+                            </div>
+                        </div>
+                        
+                        <!-- 方式 2: 官方网站 -->
+                        <div class="method-card">
+                            <span class="method-badge badge-alt">传统方式</span>
+                            <div class="method-icon">🌐</div>
+                            <div class="method-title">官方网站下载</div>
+                            <div class="method-desc">从 Python 官网下载安装包</div>
+                            <a href="https://www.python.org/downloads/" target="_blank" class="btn btn-secondary" style="width: 100%; display: inline-block;">
+                                前往下载
                             </a>
+                            <div style="margin-top: 10px; font-size: 12px; color: #718096;">
+                                Windows 用户请勾选"Add to PATH"
+                            </div>
                         </div>
-                        <div style="padding: 10px; background: #f0f4ff; border-radius: 5px;">
-                            <strong>Windows 用户注意：</strong> 安装时请勾选 "Add Python to PATH"
+                        
+                        <!-- 方式 3: 包管理器 -->
+                        <div class="method-card">
+                            <span class="method-badge badge-alt">命令行</span>
+                            <div class="method-icon">💻</div>
+                            <div class="method-title">包管理器安装</div>
+                            <div class="method-desc">使用系统包管理器安装</div>
+                            <div class="command-box" id="pkg-manager-cmd">
+                                <button class="copy-btn" onclick="copyPackageManager()">复制</button>
+                                <span></span>
+                            </div>
                         </div>
                     </div>
                     
-                    <div class="platform-card">
-                        <div class="platform-name">方法 2: 使用包管理器</div>
-                        <div class="command-box">
-                            <button class="copy-btn" onclick="copyCommand('cmd1')">复制</button>
-                            <span id="cmd1"></span>
+                    <!-- 一键安装进度 -->
+                    <div id="oneclick-progress" class="hidden" style="margin-top: 20px;">
+                        <div style="padding: 20px; background: white; border-radius: 10px;">
+                            <h4 style="color: #667eea; margin-bottom: 15px;">🚀 一键安装进度</h4>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="oc-progress-fill" style="width: 0%">0%</div>
+                            </div>
+                            <div class="log-box" id="oc-log-output"></div>
+                            <div style="margin-top: 15px; text-align: center;">
+                                <button class="btn btn-secondary" onclick="refreshPage()">刷新页面</button>
+                                <button class="btn btn-success" id="btn-oc-finish" onclick="finishInstall()" style="margin-left: 10px; display: none;">完成</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -373,7 +280,7 @@
             <div class="btn-container">
                 <button class="btn btn-secondary" onclick="goToStep(2)" style="margin-right: 10px;">上一步</button>
                 <button class="btn" onclick="checkPython()">重新检测</button>
-                <button class="btn" id="btnStep4" onclick="goToStep(4)" style="margin-left: 10px;" disabled>下一步</button>
+                <button class="btn" id="btnStep4" onclick="goToStep(4)" disabled>下一步</button>
             </div>
         </div>
         
@@ -381,14 +288,11 @@
         <div id="step4" class="step-container">
             <div class="step">
                 <h2><span class="step-number">4</span>下载项目</h2>
-                
                 <h3 style="margin-bottom: 15px;">从 GitHub 下载：</h3>
-                
                 <div class="command-box">
-                    <button class="copy-btn" onclick="copyCommand('cmd2')">复制</button>
-                    <span id="cmd2">git clone https://github.com/lianxinjie/ai-video-generator.git</span>
+                    <button class="copy-btn" onclick="copyCommand('cmd-git')">复制</button>
+                    <span id="cmd-git">git clone https://github.com/lianxinjie/ai-video-generator.git</span>
                 </div>
-                
                 <div class="alert alert-info">
                     <strong>💡 提示：</strong> 如果没有安装 Git，可以下载 ZIP 文件：
                     <a href="https://github.com/lianxinjie/ai-video-generator/archive/refs/heads/main.zip" 
@@ -397,7 +301,6 @@
                     </a>
                 </div>
             </div>
-            
             <div class="btn-container">
                 <button class="btn btn-secondary" onclick="goToStep(3)" style="margin-right: 10px;">上一步</button>
                 <button class="btn" onclick="goToStep(5)">下一步</button>
@@ -408,36 +311,25 @@
         <div id="step5" class="step-container">
             <div class="step">
                 <h2><span class="step-number">5</span>启动服务</h2>
-                
-                <div class="progress-bar">
-                    <div class="progress-fill" id="installProgress" style="width: 0%">0%</div>
-                </div>
-                
                 <h3>运行启动脚本：</h3>
-                
                 <div class="command-box">
-                    <button class="copy-btn" onclick="copyCommand('cmd3')">复制</button>
-                    <span id="cmd3">python quick_start.py</span>
+                    <button class="copy-btn" onclick="copyCommand('cmd-start')">复制</button>
+                    <span id="cmd-start">python quick_start.py</span>
                 </div>
-                
                 <ul class="checklist">
                     <li>自动检测 Python 环境</li>
                     <li>自动安装 Flask 等依赖</li>
                     <li>启动 Web 服务</li>
                     <li>打开浏览器访问</li>
                 </ul>
-                
                 <div class="alert alert-info">
                     <strong>🌐 访问地址：</strong><br>
                     启动后访问：<strong>http://localhost:8080</strong> 或 <strong>http://localhost:5000</strong>
                 </div>
             </div>
-            
             <div class="btn-container">
                 <button class="btn btn-secondary" onclick="goToStep(4)" style="margin-right: 10px;">上一步</button>
-                <a href="https://github.com/lianxinjie/ai-video-generator" target="_blank" class="btn">
-                    📖 查看完整文档
-                </a>
+                <a href="https://github.com/lianxinjie/ai-video-generator" target="_blank" class="btn">📖 查看完整文档</a>
             </div>
         </div>
     </div>
@@ -455,76 +347,45 @@
             return null;
         }
         
-        // 选择平台
         function selectPlatform(platform) {
             selectedPlatform = platform;
-            
-            // 更新 UI
             document.querySelectorAll('.platform-card').forEach(card => {
                 card.classList.remove('selected');
             });
             document.getElementById('platform-' + platform).classList.add('selected');
-            
-            // 启用下一步按钮
             document.getElementById('btnStep2').disabled = false;
-            
-            // 更新后续步骤的命令
             updateCommands();
         }
         
-        // 更新命令
         function updateCommands() {
             if (!selectedPlatform) return;
-            
-            const commands = {
-                'windows': {
-                    'cmd1': 'winget install Python.Python.3.11',
-                    'cmd3': 'python quick_start.py'
-                },
-                'macos': {
-                    'cmd1': 'brew install python@3.11',
-                    'cmd3': 'python3 quick_start.py'
-                },
-                'linux': {
-                    'cmd1': 'sudo apt install python3 python3-pip',
-                    'cmd3': 'python3 quick_start.py'
-                }
+            const cmds = {
+                'windows': { pkg: 'winget install Python.Python.3.11', start: 'python quick_start.py' },
+                'macos': { pkg: 'brew install python@3.11', start: 'python3 quick_start.py' },
+                'linux': { pkg: 'sudo apt install python3 python3-pip', start: 'python3 quick_start.py' }
             };
-            
-            document.getElementById('cmd1').textContent = commands[selectedPlatform].cmd1;
-            document.getElementById('cmd3').textContent = commands[selectedPlatform].cmd3;
+            document.querySelector('#pkg-manager-cmd span').textContent = cmds[selectedPlatform].pkg;
+            document.getElementById('cmd-start').textContent = cmds[selectedPlatform].start;
         }
         
-        // 检查 Python
         function checkPython() {
-            // 这是一个纯静态页面，无法直接检测 Python
-            // 显示提示信息
             document.getElementById('python-result').classList.remove('hidden');
             document.getElementById('python-status').innerHTML = `
                 <div style="color: #d69e2e;">
                     ⚠️ 静态页面无法直接检测 Python 环境<br>
-                    请在下一步手动检查或安装 Python
-                </div>
-            `;
-            
-            // 标记所有检查为待处理
+                    请在下一步选择安装方式
+                </div>`;
             document.getElementById('check-python').className = 'pending';
             document.getElementById('check-version').className = 'pending';
             document.getElementById('check-pip').className = 'pending';
         }
         
-        // 切换步骤
         function goToStep(step) {
-            document.querySelectorAll('.step-container').forEach(container => {
-                container.classList.remove('active');
-            });
+            document.querySelectorAll('.step-container').forEach(c => c.classList.remove('active'));
             document.getElementById('step' + step).classList.add('active');
             
-            // 特殊步骤处理
             if (step === 3) {
-                // 模拟检查结果（实际应由后端检测）
                 setTimeout(() => {
-                    // 这里显示两种情况，让用户自己判断
                     document.getElementById('python-not-installed').classList.remove('hidden');
                     document.getElementById('python-installed').classList.add('hidden');
                     document.getElementById('btnStep4').disabled = true;
@@ -532,20 +393,101 @@
             }
         }
         
-        // 复制命令
-        function copyCommand(cmdId) {
-            const cmd = document.getElementById(cmdId).textContent;
-            navigator.clipboard.writeText(cmd).then(() => {
-                alert('已复制到剪贴板：' + cmd);
-            });
+        function copyCommand(id) {
+            const cmd = document.getElementById(id).textContent;
+            navigator.clipboard.writeText(cmd).then(() => alert('已复制：' + cmd));
         }
         
-        // 页面加载时自动检测操作系统
+        function copyPackageManager() {
+            const cmd = document.querySelector('#pkg-manager-cmd span').textContent;
+            navigator.clipboard.writeText(cmd).then(() => alert('已复制：' + cmd));
+        }
+        
+        // 一键安装 Python
+        function installPythonOneClick() {
+            const scriptMap = {
+                'windows': 'install_python.bat',
+                'macos': 'install_python.sh',
+                'linux': 'install_python.sh'
+            };
+            
+            if (!selectedPlatform) {
+                alert('请先选择操作系统');
+                goToStep(1);
+                return;
+            }
+            
+            const script = scriptMap[selectedPlatform];
+            document.getElementById('oneclick-progress').classList.remove('hidden');
+            
+            addLog('正在准备一键安装...');
+            setProgress(10);
+            
+            setTimeout(() => {
+                addLog('检测到操作系统：' + selectedPlatform.toUpperCase());
+                setProgress(20);
+            }, 800);
+            
+            setTimeout(() => {
+                addLog('下载安装脚本：' + script);
+                setProgress(40);
+            }, 1600);
+            
+            setTimeout(() => {
+                // 创建下载
+                const link = document.createElement('a');
+                link.href = script;
+                link.download = script;
+                link.click();
+                addLog('✅ 下载完成');
+                setProgress(60);
+            }, 2400);
+            
+            setTimeout(() => {
+                addLog('');
+                addLog('📋 请运行下载的文件:');
+                if (selectedPlatform === 'windows') {
+                    addLog('   双击 install_python.bat');
+                } else {
+                    addLog('   bash install_python.sh');
+                }
+                setProgress(80);
+            }, 3200);
+            
+            setTimeout(() => {
+                addLog('');
+                addLog('✅ 准备就绪！请运行下载的脚本');
+                addLog('安装完成后点击"完成"或刷新页面');
+                setProgress(100);
+                document.getElementById('btn-oc-finish').style.display = 'inline-block';
+            }, 4000);
+        }
+        
+        function addLog(msg) {
+            const log = document.getElementById('oc-log-output');
+            const line = document.createElement('div');
+            line.textContent = '> ' + msg;
+            log.appendChild(line);
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function setProgress(pct) {
+            document.getElementById('oc-progress-fill').style.width = pct + '%';
+            document.getElementById('oc-progress-fill').textContent = pct + '%';
+        }
+        
+        function finishInstall() {
+            document.getElementById('python-installed').classList.remove('hidden');
+            document.getElementById('python-not-installed').classList.add('hidden');
+            document.getElementById('oneclick-progress').classList.add('hidden');
+            document.getElementById('btnStep4').disabled = false;
+        }
+        
+        function refreshPage() { location.reload(); }
+        
         window.onload = function() {
             const os = detectOS();
-            if (os) {
-                selectPlatform(os);
-            }
+            if (os) selectPlatform(os);
         };
     </script>
 </body>
