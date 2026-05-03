@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 视频生成器 - 安装向导</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .step {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9ff;
+            border-radius: 15px;
+            border-left: 4px solid #667eea;
+        }
+        .step h2 {
+            color: #667eea;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        .dependency-list {
+            list-style: none;
+        }
+        .dependency-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 8px;
+        }
+        .status {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status.installed {
+            background: #c6f6d5;
+            color: #276749;
+        }
+        .status.missing {
+            background: #fed7d7;
+            color: #c53030;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+        .progress-bar {
+            height: 30px;
+            background: #e2e8f0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #48bb78, #38a169);
+            transition: width 0.5s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        .log {
+            background: #1a202c;
+            color: #48bb78;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .checkbox-item input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+        }
+        .checkbox-item label {
+            flex: 1;
+            cursor: pointer;
+        }
+        .hidden { display: none; }
+        .success-icon {
+            font-size: 48px;
+            color: #48bb78;
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 AI 视频生成器</h1>
+        <div class="subtitle">安装向导</div>
+        
+        <!-- Step 1: 检查依赖 -->
+        <div id="step1" class="step">
+            <h2>📦 步骤 1: 检查依赖</h2>
+            <div class="progress-bar">
+                <div id="progressBar" class="progress-fill" style="width: 0%">0%</div>
+            </div>
+            <ul id="dependencyList" class="dependency-list">
+                <li class="dependency-item">
+                    <span>正在检查...</span>
+                </li>
+            </ul>
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn" onclick="checkDependencies()">刷新检测</button>
+                <button id="btnStep2" class="btn hidden" onclick="showStep2()">下一步</button>
+            </div>
+        </div>
+        
+        <!-- Step 2: 选择安装 -->
+        <div id="step2" class="step hidden">
+            <h2>⚙️ 步骤 2: 选择安装</h2>
+            <div class="checkbox-item">
+                <input type="checkbox" id="installFlask" checked>
+                <label for="installFlask">
+                    <strong>Flask</strong> - Web 服务框架（必需）
+                </label>
+            </div>
+            <div class="checkbox-item">
+                <input type="checkbox" id="installPillow" checked>
+                <label for="installPillow">
+                    <strong>Pillow</strong> - 图片处理（推荐）
+                </label>
+            </div>
+            <div class="checkbox-item">
+                <input type="checkbox" id="installPsutil" checked>
+                <label for="installPsutil">
+                    <strong>psutil</strong> - 系统监控（推荐）
+                </label>
+            </div>
+            <div class="checkbox-item">
+                <input type="checkbox" id="installTorch">
+                <label for="installTorch">
+                    <strong>PyTorch</strong> - AI 模型（可选，体积较大）
+                </label>
+            </div>
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn btn-secondary" onclick="showStep1()">上一步</button>
+                <button class="btn" onclick="startInstall()">开始安装</button>
+            </div>
+        </div>
+        
+        <!-- Step 3: 安装进度 -->
+        <div id="step3" class="step hidden">
+            <h2>🔄 步骤 3: 安装进行中</h2>
+            <div class="log" id="installLog">准备安装...</div>
+        </div>
+        
+        <!-- Step 4: 完成 -->
+        <div id="step4" class="step hidden">
+            <div class="success-icon">✅</div>
+            <h2 style="text-align: center;">安装完成！</h2>
+            <p style="text-align: center; color: #666; margin: 20px 0;">
+                所有依赖已安装完成，可以开始使用 AI 视频生成器了！
+            </p>
+            <div style="text-align: center;">
+                <p><strong>刷新页面以访问完整功能 Web 界面</strong></p>
+                <button class="btn" onclick="window.location.reload()">刷新页面</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let dependencies = {};
+        
+        // 页面加载时检查依赖
+        window.onload = function() {
+            checkDependencies();
+        };
+        
+        // 检查依赖
+        async function checkDependencies() {
+            document.getElementById('dependencyList').innerHTML = '<li class="dependency-item">正在检查...</li>';
+            
+            try {
+                const response = await fetch('/api/check-dependencies');
+                dependencies = await response.json();
+                
+                const list = document.getElementById('dependencyList');
+                list.innerHTML = '';
+                
+                let installed = 0;
+                let total = 0;
+                
+                for (const [name, info] of Object.entries(dependencies)) {
+                    if (name === 'progress') continue;
+                    total++;
+                    if (info.installed) installed++;
+                    
+                    const li = document.createElement('li');
+                    li.className = 'dependency-item';
+                    li.innerHTML = `
+                        <span>
+                            <strong>${name.toUpperCase()}</strong>
+                            ${info.required ? '<span style="color: #e53e3e; font-size: 12px;">(必需)</span>' : ''}
+                        </span>
+                        <span class="status ${info.installed ? 'installed' : 'missing'}">
+                            ${info.installed ? '✓ 已安装 ' + (info.version || '') : '✗ 未安装'}
+                        </span>
+                    `;
+                    list.appendChild(li);
+                }
+                
+                // 更新进度条
+                const percentage = Math.round(installed / total * 100);
+                document.getElementById('progressBar').style.width = percentage + '%';
+                document.getElementById('progressBar').textContent = percentage + '%';
+                
+                // 如果所有必需依赖已安装，显示下一步按钮
+                const allRequired = Object.entries(dependencies)
+                    .filter(([k, v]) => v.required)
+                    .every(([k, v]) => v.installed);
+                
+                if (allRequired) {
+                    document.getElementById('btnStep2').classList.remove('hidden');
+                }
+                
+            } catch (error) {
+                document.getElementById('dependencyList').innerHTML = 
+                    '<li class="dependency-item" style="color: red;">检查失败：' + error.message + '</li>';
+            }
+        }
+        
+        // 显示步骤 2
+        function showStep2() {
+            document.getElementById('step1').classList.add('hidden');
+            document.getElementById('step2').classList.remove('hidden');
+        }
+        
+        // 显示步骤 1
+        function showStep1() {
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('step1').classList.remove('hidden');
+        }
+        
+        // 开始安装
+        async function startInstall() {
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('step3').classList.remove('hidden');
+            
+            const packages = [];
+            if (document.getElementById('installFlask').checked) packages.push('flask');
+            if (document.getElementById('installPillow').checked) packages.push('pillow');
+            if (document.getElementById('installPsutil').checked) packages.push('psutil');
+            if (document.getElementById('installTorch').checked) packages.push('torch');
+            
+            const logDiv = document.getElementById('installLog');
+            logDiv.innerHTML = '正在安装...\n\n';
+            
+            try {
+                const response = await fetch('/api/install-dependencies', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({packages: packages})
+                });
+                
+                const result = await response.json();
+                
+                result.output.forEach(line => {
+                    logDiv.textContent += line + '\n';
+                });
+                
+                logDiv.textContent += '\n安装完成！\n';
+                logDiv.scrollTop = logDiv.scrollHeight;
+                
+                // 显示完成步骤
+                setTimeout(() => {
+                    document.getElementById('step3').classList.add('hidden');
+                    document.getElementById('step4').classList.remove('hidden');
+                }, 2000);
+                
+            } catch (error) {
+                logDiv.textContent += '\n错误：' + error.message + '\n';
+            }
+        }
+    </script>
+</body>
+</html>
