@@ -1,329 +1,196 @@
 #!/usr/bin/env python3
 """
-渐进式安装快速启动脚本
-- 零依赖启动
-- Web 界面引导安装
-- 按需安装依赖
+快速启动脚本 - 零依赖启动
+- 自动检测 Flask
+- 无 Flask 时使用内置 HTTP 服务器
+- 有 Flask 时启动完整功能
 """
 
 import os
 import sys
-import subprocess
-import json
-from http.server import HTTPServer, SimpleHTTPRequestHandler
-from pathlib import Path
-import threading
 import webbrowser
+from pathlib import Path
 
-class QuickStartHandler(SimpleHTTPRequestHandler):
-    """处理 Web 请求 - 支持安装向导"""
+def check_flask():
+    """检查 Flask 是否已安装（不导入）"""
+    try:
+        import importlib.util
+        spec = importlib.util.find_spec("flask")
+        return spec is not None
+    except:
+        return False
+
+def install_missing_deps():
+    """自动安装缺失的依赖"""
+    print("\n📦 检测必要依赖...")
     
-    def __init__(self, *args, **kwargs):
-        # 设置根目录为 web 目录
-        os.chdir(Path(__file__).parent / 'web')
-        super().__init__(*args, directory='web')
+    missing = []
+    deps = {
+        'flask': ('Flask', 'web 服务'),
+        'pillow': ('Pillow', '图像处理'),
+        'psutil': ('psutil', '系统监控')
+    }
     
-    def do_GET(self):
-        """处理 GET 请求"""
-        if self.path == '/':
-            # 检查 Flask 是否安装，决定显示哪个页面
-            if self.check_flask():
-                self.path = '/templates/index.html'
-            else:
-                self.path = '/templates/install.html'
-        elif self.path == '/api/status':
-            self.send_json(self.get_status())
-            return
-        elif self.path == '/api/check-dependencies':
-            self.send_json(self.check_dependencies())
-            return
-        
-        return super().do_GET()
-    
-    def do_POST(self):
-        """处理 POST 请求"""
-        if self.path == '/api/install-dependencies':
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
-            self.send_json(self.install_dependencies(data))
-            return
-        
-        return super().do_POST()
-    
-    def check_flask(self):
-        """检查 Flask 是否已安装"""
+    for package, (name, desc) in deps.items():
         try:
-            import flask
-            return True
+            __import__(package.replace('-', '_'))
+            print(f"  ✓ {name}")
         except ImportError:
-            return False
+            print(f"  ✗ {name} - 缺失")
+            missing.append((package, name))
     
-    def send_json(self, data):
-        """发送 JSON 响应"""
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.end_headers()
-        self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
-    
-    def get_status(self):
-        """获取系统状态"""
-        return {
-            'python_version': sys.version,
-            'platform': sys.platform,
-            'flask_installed': self.check_flask(),
-            'dependencies': self.check_dependencies()
-        }
-    
-    def check_dependencies(self):
-        """检查依赖安装状态"""
-        deps = {}
-        
-        # Flask
-        try:
-            import flask
-            deps['flask'] = {'installed': True, 'version': flask.__version__, 'required': True}
-        except ImportError:
-            deps['flask'] = {'installed': False, 'required': True}
-        
-        # Pillow
-        try:
-            from PIL import Image
-            deps['pillow'] = {'installed': True, 'required': False}
-        except ImportError:
-            deps['pillow'] = {'installed': False, 'required': False}
-        
-        # psutil
-        try:
-            import psutil
-            deps['psutil'] = {'installed': True, 'required': False}
-        except ImportError:
-            deps['psutil'] = {'installed': False, 'required': False}
-        
-        # PyTorch (可选)
-        try:
-            import torch
-            deps['torch'] = {'installed': True, 'version': torch.__version__, 'required': False}
-        except ImportError:
-            deps['torch'] = {'installed': False, 'required': False}
-        
-        # 计算进度
-        total = len([d for d in deps.values() if d['required']])
-        installed = sum(1 for d in deps.values() if d['required'] and d['installed'])
-        deps['progress'] = {
-            'installed': installed,
-            'total': total,
-            'percentage': int(installed / total * 100) if total > 0 else 0
-        }
-        
-        return deps
-    
-    def install_dependencies(self, data=None):
-        """安装依赖"""
-        if data is None:
-            data = {}
-        
-        packages = data.get('packages', ['flask', 'pillow', 'psutil'])
-        
-        result = {
-            'success': True,
-            'packages': [],
-            'output': [],
-            'errors': []
-        }
-        
-        for package in packages:
+    if missing:
+        print("\n正在安装缺失的依赖...")
+        import subprocess
+        for package, name in missing:
+            print(f"  安装 {name}...", end=' ', flush=True)
             try:
-                output_lines = []
-                
-                # 根据包选择 index url
-                index_url = ''
-                if package == 'torch':
-                    # 检测是否有 GPU
-                    has_gpu = False
-                    if sys.platform == 'win32':
-                        try:
-                            result_proc = subprocess.run(
-                                ['where', 'nvidia-smi'],
-                                capture_output=True
-                            )
-                            has_gpu = result_proc.returncode == 0
-                        except:
-                            pass
-                    else:
-                        try:
-                            result_proc = subprocess.run(
-                                ['which', 'nvidia-smi'],
-                                capture_output=True
-                            )
-                            has_gpu = result_proc.returncode == 0
-                        except:
-                            pass
-                    
-                    if has_gpu:
-                        index_url = '--index-url https://download.pytorch.org/whl/cu121'
-                    else:
-                        index_url = '--index-url https://download.pytorch.org/whl/cpu'
-                
-                # 执行安装
-                cmd = [sys.executable, '-m', 'pip', 'install', package, '-q']
-                if index_url:
-                    cmd.extend(index_url.split())
-                
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True
-                )
-                stdout, _ = process.communicate()
-                
-                if process.returncode == 0:
-                    result['packages'].append({
-                        'name': package,
-                        'installed': True
-                    })
-                    result['output'].append(f"✓ 安装 {package} 成功")
-                else:
-                    result['packages'].append({
-                        'name': package,
-                        'installed': False,
-                        'error': stdout
-                    })
-                    result['errors'].append(f"✗ 安装 {package} 失败：{stdout}")
-                
-            except Exception as e:
-                result['packages'].append({
-                    'name': package,
-                    'installed': False,
-                    'error': str(e)
-                })
-                result['errors'].append(f"✗ 安装 {package} 异常：{e}")
+                subprocess.check_call([sys.executable, '-m', 'pip', 'install', package], 
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print("✓")
+            except:
+                print("✗ 失败")
         
-        # 重新检查依赖
-        result['dependencies'] = self.check_dependencies()
-        
-        result['success'] = len(result['errors']) == 0
-        
-        return result
+        if not any(m[0] == 'flask' for m in missing):
+            print("\n✅ 依赖安装完成！")
     
-    def log_message(self, format, *args):
-        """自定义日志格式"""
-        print(f"[Web] {self.address_string()} - {args[0]}")
+    return len(missing) == 0
 
-def start_quick_server(port=8080):
-    """启动快速预览服务器"""
-    try:
-        server = HTTPServer(('0.0.0.0', port), QuickStartHandler)
-        
-        print()
-        print("="*70)
-        print("  🌐 快速预览模式")
-        print("="*70)
-        print()
-        print(f"  访问地址：http://localhost:{port}")
-        print(f"  访问地址：http://127.0.0.1:{port}")
-        print()
-        print("  📦 检测到 Flask 未安装")
-        print("  ✅ Web 界面将引导您完成安装")
-        print()
-        print("  按 Ctrl+C 停止服务")
-        print()
-        print("="*70)
-        print()
-        
-        # 自动打开浏览器
-        def open_browser():
-            webbrowser.open(f'http://localhost:{port}')
-        
-        threading.Timer(1.5, open_browser).start()
-        
-        server.serve_forever()
-        
-    except KeyboardInterrupt:
-        print("\n\n服务已停止")
-    except Exception as e:
-        print(f"\n错误：{e}")
-        return False
-    
-    return True
-
-def start_flask_app(port=5000):
+def start_with_flask():
     """启动 Flask 应用"""
+    print("\n🚀 正在启动 Flask 应用...")
+    
+    # 动态导入
+    from flask import Flask, render_template, jsonify, request
+    import threading
+    
+    # 导入应用
+    app_dir = Path(__file__).parent / 'web'
+    sys.path.insert(0, str(app_dir))
+    from app import app
+    
+    # 在新线程中打开浏览器
+    def open_browser():
+        import time
+        time.sleep(2)
+        webbrowser.open('http://localhost:5000')
+    
+    # 启动浏览器打开线程
+    threading.Thread(target=open_browser, daemon=True).start()
+    
+    # 运行 Flask 应用
+    print("✅ 应用已启动！")
+    print("\n🌐 访问地址:")
+    print("   http://localhost:5000")
+    print("   http://127.0.0.1:5000\n")
+    print("按 Ctrl+C 停止服务\n")
+    
+    app.run(host='0.0.0.0', port=5000, debug=False)
+
+def start_without_flask():
+    """在没有 Flask 时启动简单的 HTTP 服务器"""
+    from http.server import HTTPServer, SimpleHTTPRequestHandler
+    import threading
+    
+    print("\n⚠️  Flask 未安装，启动快速预览模式...")
+    
+    class QuickStartHandler(SimpleHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == '/':
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html; charset=utf-8')
+                self.end_headers()
+                
+                html = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AI 视频生成器 - 预览模式</title>
+    <meta http-equiv="refresh" content="0;url=start.html">
+    <style>
+        body { font-family: Arial; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; color: white; text-align: center; }
+        .container { background: rgba(255,255,255,0.95); color: #333; padding: 40px; border-radius: 20px; max-width: 600px; }
+        h1 { color: #667eea; margin-bottom: 20px; }
+        p { margin: 15px 0; font-size: 16px; line-height: 1.6; }
+        .btn { display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 10px; margin: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 AI 视频生成器</h1>
+        <p><strong>预览模式（Flask 未安装）</strong></p>
+        <p>正在跳转到安装向导...</p>
+        <p style="color: #999; font-size: 14px;">如果没有自动跳转，请点击下方按钮：</p>
+        <a href="start.html" class="btn">打开安装向导</a>
+        <h3 style="margin-top: 30px; color: #f6ad55;">⚠️ 提示</h3>
+        <p style="text-align: left; line-height: 2;">
+            1. 点击<a href="https://github.com/chaitin/monkeyCode-sandbox/blob/main/text-to-video-local/offline_install.html" style="color: #667eea;">"🚀 打开离线安装器"</a><br>
+            2. 选择您的操作系统<br>
+            3. 下载并安装 Python<br>
+            4. 刷新页面开始使用完整功能
+        </p>
+    </div>
+    <script>
+        setTimeout(() => {
+            window.location.href = 'start.html';
+        }, 1000);
+    </script>
+</body>
+</html>"""
+                self.wfile.write(html.encode('utf-8'))
+            else:
+                super().do_GET()
+    
+    # 启动服务器
+    server = HTTPServer(('0.0.0.0', 8080), QuickStartHandler)
+    
+    # 后台打开浏览器
+    def open_browser():
+        import time
+        time.sleep(1.5)
+        webbrowser.open('http://localhost:8080')
+    
+    threading.Thread(target=open_browser, daemon=True).start()
+    
+    print("✅ 快速预览模式已启动")
+    print("\n🌐 访问地址:")
+    print("   http://localhost:8080\n")
+    print("💡 提示: 安装 Flask 以获得完整功能:")
+    print(f"   {sys.executable} -m pip install flask\n")
+    print("按 Ctrl+C 停止服务\n")
+    
     try:
-        sys.path.insert(0, 'web')
-        from app import app
-        
-        print()
-        print("="*70)
-        print("  🚀 完整功能模式")
-        print("="*70)
-        print()
-        print(f"  访问地址：http://localhost:{port}")
-        print(f"  访问地址：http://127.0.0.1:{port}")
-        print()
-        print("  ✅ 所有功能已就绪")
-        print()
-        print("  按 Ctrl+C 停止服务")
-        print()
-        print("="*70)
-        print()
-        
-        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
-        return True
-        
-    except Exception as e:
-        print(f"❌ Flask 启动失败：{e}")
-        return False
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n服务已停止")
 
 def main():
     """主函数"""
-    print("\n" + "="*70)
-    print("  AI 视频生成器 - 快速启动")
+    print("="*70)
+    print("  🎬 AI 视频生成器 - 快速启动")
     print("="*70)
     print()
-    
-    # 系统信息
-    if sys.platform == 'win32':
-        os_name = "Windows"
-    elif sys.platform == 'darwin':
-        os_name = "macOS"
-    else:
-        os_name = "Linux"
-    
-    print(f"操作系统：{os_name}")
+    print(f"操作系统：{os.name.title()}")
     print(f"Python: {sys.version.split()[0]}")
-    print()
+    
+    # 自动安装缺失依赖
+    install_missing_deps()
     
     # 检查 Flask
-    try:
-        import flask
-        has_flask = True
-        print("✅ Flask: 已安装 (" + flask.__version__ + ")")
-    except ImportError:
-        has_flask = False
-        print("⚠️  Flask: 未安装")
-    
-    print()
-    
-    # 启动服务
-    if has_flask:
-        print("正在启动完整功能 Web 服务...")
-        start_flask_app(5000)
-    else:
-        print("正在启动快速预览 Web 服务...")
-        success = start_quick_server(8080)
+    if check_flask():
+        print("\n✅ Flask: 已安装")
+        try:
+            import importlib.metadata
+            version = importlib.metadata.version("flask")
+            print(f"   版本：{version}")
+        except:
+            pass
         
-        if not success:
-            print()
-            print("建议：")
-            print("  1. 手动安装 Flask:")
-            print(f"     {sys.executable} -m pip install flask")
-            print()
-            print("  2. 或使用安装向导:")
-            print("     浏览器访问 http://localhost:8080")
-            print()
+        print("\n启动完整功能模式...")
+        start_with_flask()
+    else:
+        print("\n⚠️  Flask: 未安装")
+        start_without_flask()
     
     return 0
 
