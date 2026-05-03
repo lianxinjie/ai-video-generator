@@ -191,10 +191,13 @@
             document.getElementById('step-download').classList.add('hidden');
             document.getElementById('step-success').classList.remove('hidden');
             
+            // 设置标记，告诉 index.html Python 已安装
+            localStorage.setItem('justInstalled', 'true');
+            
             // 自动打开首页
             setTimeout(() => {
-                window.location.href = 'index.html';
-            }, 3000);
+                window.location.href = 'index.html?installed=true';
+            }, 2000);
         }
     </script>
 </body>

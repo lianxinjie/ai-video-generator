@@ -198,22 +198,40 @@
                 <div class="alert alert-info">
                     <strong>ℹ️ 提示：</strong> AI 视频生成器需要 Python 3.10 或更高版本。
                 </div>
-                <ul class="checklist">
-                    <li id="check-python" class="pending">检查 Python 是否安装</li>
-                    <li id="check-version" class="pending">检查 Python 版本 >= 3.10</li>
-                    <li id="check-pip" class="pending">检查 pip 包管理器</li>
-                </ul>
-                <div id="python-result" class="hidden">
-                    <div style="margin: 20px 0;">
-                        <strong>检测结果：</strong>
-                        <div id="python-status" style="padding: 15px; background: white; border-radius: 8px; margin-top: 10px;">检测中...</div>
+                
+                <div style="text-align: center; padding: 20px; background: #f8f9ff; border-radius: 10px; margin: 20px 0;">
+                    <div style="font-size: 48px; margin-bottom: 15px;">🐍</div>
+                    <h3 style="color: #2d3748; margin-bottom: 15px;">Python 环境检测</h3>
+                    <p style="color: #4a5568; margin-bottom: 20px;">
+                        静态网页无法直接检测本地 Python 环境<br>
+                        请根据实际情况选择
+                    </p>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; max-width: 500px; margin: 0 auto;">
+                        <button class="btn btn-success" id="btn-python-yes" onclick="pythonInstalled = true; updateStep2UI();" style="display: none; width: 100%;">
+                            ✅ 已安装 Python
+                        </button>
+                        <button class="btn btn-secondary" id="btn-python-no" onclick="pythonInstalled = false; updateStep2UI();" style="width: 100%;">
+                            ❌ 未安装 Python
+                        </button>
                     </div>
+                    
+                    <div id="python-status" class="hidden" style="margin-top: 20px;">
+                        ✅ 已确认 Python 环境
+                    </div>
+                </div>
+                
+                <div class="alert" style="background: #fffbeb; border-left: 4px solid #f6ad55; margin-top: 20px;">
+                    <strong>💡 提示：</strong>
+                    <span style="color: #744210;">
+                        如果已安装 Python 但未显示绿色"下一步"按钮，<br>
+                        请刷新页面或点击"❌ 未安装 Python"后再点击"✅ 已安装 Python"
+                    </span>
                 </div>
             </div>
             <div class="btn-container">
                 <button class="btn btn-secondary" onclick="goToStep(1)" style="margin-right: 10px;">上一步</button>
-                <button class="btn" onclick="checkPython()">重新检测</button>
-                <button class="btn" id="btnStep3" onclick="goToStep(3)">下一步</button>
+                <button class="btn btn-success" id="btnStep3" onclick="goToStep(3)" disabled style="width: 200px;">下一步</button>
             </div>
         </div>
         
@@ -350,6 +368,16 @@
         let selectedPlatform = null;
         let pythonInstalled = false;
         
+        // 初始化：检查是否从安装页面回来
+        window.onload = function() {
+            const fromInstall = localStorage.getItem('justInstalled');
+            if (fromInstall === 'true') {
+                localStorage.setItem('justInstalled', 'false');
+                // 用户刚刚安装，自动进入下一步
+                pythonInstalled = true;
+                setTimeout(() => updateStep2UI(), 500);
+            }
+        
         function detectOS() {
             const platform = navigator.platform.toLowerCase();
             if (platform.includes('win')) return 'windows';
@@ -438,18 +466,40 @@
             }
         }
         
+        function updateStep2UI() {
+            const btnYes = document.getElementById('btn-python-yes');
+            const btnNo = document.getElementById('btn-python-no');
+            const status = document.getElementById('python-status');
+            const btnNext = document.getElementById('btnStep3');
+            
+            if (pythonInstalled) {
+                btnYes.style.display = 'inline-block';
+                btnNo.style.display = 'none';
+                status.classList.remove('hidden');
+                btnNext.disabled = false;
+            } else {
+                btnYes.style.display = 'none';
+                btnNo.style.display = 'inline-block';
+                status.classList.add('hidden');
+                btnNext.disabled = true;
+            }
+        }
+        
         function checkPython() {
-            document.getElementById('python-result').classList.remove('hidden');
-            document.getElementById('python-status').innerHTML = 
-                '<div style="color: #d69e2e;">⚠️ 静态页面无法直接检测 Python 环境<br>请在下一步选择安装方式</div>';
-            document.getElementById('check-python').className = 'pending';
-            document.getElementById('check-version').className = 'pending';
-            document.getElementById('check-pip').className = 'pending';
+            updateStep2UI();
         }
         
         function goToStep(step) {
             document.querySelectorAll('.step-container').forEach(c => c.classList.remove('active'));
             document.getElementById('step' + step).classList.add('active');
+            
+            if (step === 2) {
+                // 重置 Step 2 UI
+                document.getElementById('btn-python-yes').style.display = 'none';
+                document.getElementById('btn-python-no').style.display = 'inline-block';
+                document.getElementById('python-status').classList.add('hidden');
+                document.getElementById('btnStep3').disabled = true;
+            }
             
             if (step === 3) {
                 setTimeout(() => {
