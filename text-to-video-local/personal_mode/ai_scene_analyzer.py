@@ -301,8 +301,9 @@ class AISceneAnalyzer:
                     (status['avg_response_time'] * (total - 1) + response_time) / total
                 )
             else:
-                status['fail_count'] += 1 
-                mode: str = 'detailed') -> Dict:
+                status['fail_count'] += 1
+    
+    def ai_analyze(self, prompt: str, mode: str = 'detailed') -> Dict:
         """
         AI 分析场景
         

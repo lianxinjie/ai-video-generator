@@ -24,6 +24,7 @@ from werkzeug.utils import secure_filename
 import subprocess
 import threading
 import uuid
+import time
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -80,7 +81,12 @@ def api_analyze_scenes():
         sys.path.insert(0, 'personal_mode')
         from collaborative_scheduler import CollaborativeScheduler
         
+        # 创建临时目录用于场景分析
+        temp_project_dir = f"/tmp/scene_analysis_{int(time.time())}"
+        os.makedirs(temp_project_dir, exist_ok=True)
+        
         scheduler = CollaborativeScheduler(
+            project_dir=temp_project_dir,
             total_duration=duration,
             segment_duration=2.0,
             enable_scene_analysis=(mode != 'keyword'),

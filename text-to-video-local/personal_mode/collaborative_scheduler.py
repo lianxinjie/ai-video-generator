@@ -85,20 +85,6 @@ class CollaborativeScheduler:
             auto_approve_changes: 自动确认优化建议
             verbose: 是否输出详细信息
         """
-        初始化协同调度器
-        
-        Args:
-            project_dir: 项目目录
-            total_duration: 总时长(秒)
-            segment_duration: 每段时长(秒)
-            local_ratio: 本地生成比例(0.0-1.0,0.5=50% 本地)
-            enable_auto_adjust: 启用自动调整
-            cloud_platforms: 支持的云端平台列表
-            enable_scene_analysis: 启用智能场景分析
-            enable_interactive_refine: 启用交互式场景优化
-            auto_approve_changes: 自动确认优化建议(无需用户确认)
-            verbose: 是否输出详细信息
-        """
         self.project_dir = Path(project_dir)
         self.total_duration = total_duration
         self.segment_duration = segment_duration
