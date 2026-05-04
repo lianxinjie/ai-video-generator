@@ -53,10 +53,11 @@ try:
     )
     
     # GPU 检测
-    gpu_info = ", ".join(hardware.gpu_models) if hardware.gpu_models else "无 GPU"
+    gpu_models = hardware.gpu_models or []
+    gpu_info = ", ".join(gpu_models) if gpu_models else "无 GPU"
     test_result(
         "GPU 检测",
-        len(hardware.gpu_models) > 0 or not hardware.gpu_available,
+        len(gpu_models) > 0 or not hardware.gpu_available,
         gpu_info
     )
     
