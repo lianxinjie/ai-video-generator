@@ -394,7 +394,10 @@
                     <h1>🎬 AI 视频生成器</h1>
                     <p>基于文本提示词和参考图片，生成专业级 AI 视频</p>
                 </div>
-                <a href="/config" class="btn btn-secondary" style="text-decoration: none; display: inline-block;">⚙️ AI 配置</a>
+                <div style="display: flex; gap: 10px;">
+                    <a href="/config" class="btn btn-secondary" style="text-decoration: none; display: inline-block;">⚙️ AI 配置</a>
+                    <a href="/projects" class="btn btn-secondary" style="text-decoration: none; display: inline-block;">📁 项目</a>
+                </div>
             </div>
         </div>
         
@@ -631,6 +634,7 @@
                 <video id="videoPlayer" controls></video>
                 <br>
                 <a id="downloadLink" download>⬇️ 下载视频</a>
+                <button id="saveProjectBtn" class="btn" onclick="saveCurrentAsProject()" style="margin-left: 10px;">💾 保存为项目</button>
             </div>
         </div>
     </div>
@@ -782,6 +786,42 @@
             
             document.getElementById('submitBtn').disabled = false;
             document.getElementById('submitBtn').textContent = '🎬 开始生成视频';
+        }
+        
+        // 保存当前为项目
+        async function saveCurrentAsProject() {
+            const projectName = prompt('请输入项目名称：');
+            if (!projectName) return;
+            
+            try {
+                const config = await fetch('/api/config').then(r => r.json());
+                const projectData = {
+                    prompt: document.getElementById('prompt').value,
+                    negative_prompt: document.getElementById('negativePrompt').value,
+                    reference_image: document.getElementById('referenceImage').value,
+                    audio_file: document.getElementById('audioFile').value,
+                    duration: parseInt(document.getElementById('duration').value),
+                    fps: parseInt(document.getElementById('fps').value),
+                    guidance_scale: parseFloat(document.getElementById('guidanceScale').value),
+                    seed: parseInt(document.getElementById('seed').value),
+                    config: config.config || {}
+                };
+                
+                const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(projectData)
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('项目保存成功！');
+                } else {
+                    alert('保存失败：' + data.error);
+                }
+            } catch (error) {
+                alert('保存失败：' + error.message);
+            }
         }
     
         // 场景相关功能
@@ -1590,9 +1630,10 @@ async function pollInstallStatus() {
 </script>
 
 <script>
-// 页面加载时检查环境状态
+// 页面加载时检查环境状态和加载项目
 window.addEventListener('DOMContentLoaded', async function() {
     await checkSetupStatus();
+    await loadProjectFromURL();
 });
 
 // 检查安装状态
@@ -1649,4 +1690,49 @@ displayScanResult = function(summary) {
     `;
     resultDiv.appendChild(installBtn);
 };
+
+// 从 URL 参数加载项目
+async function loadProjectFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    const projectName = params.get('load_project');
+    
+    if (!projectName) return;
+    
+    try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}`);
+        const data = await response.json();
+        
+        if (!data.success) {
+            alert('加载项目失败：' + data.error);
+            return;
+        }
+        
+        const project = data.project;
+        
+        // 加载配置
+        if (project.prompt) document.getElementById('prompt').value = project.prompt;
+        if (project.negative_prompt) document.getElementById('negativePrompt').value = project.negative_prompt;
+        if (project.reference_image) document.getElementById('referenceImage').value = project.reference_image;
+        if (project.audio_file) document.getElementById('audioFile').value = project.audio_file;
+        if (project.duration) document.getElementById('duration').value = project.duration;
+        if (project.fps) document.getElementById('fps').value = project.fps;
+        if (project.guidance_scale) document.getElementById('guidanceScale').value = project.guidance_scale;
+        if (project.seed) document.getElementById('seed').value = project.seed;
+        
+        // 加载 AI 配置
+        if (project.config) {
+            if (project.config.model) document.getElementById('model').value = project.config.model;
+            if (project.config.resolution) document.getElementById('resolution').value = project.config.resolution;
+            if (project.config.precision) document.getElementById('precision').value = project.config.precision;
+        }
+        
+        alert(`项目 "${projectName}" 加载成功！`);
+        
+        // 清除 URL 参数
+        window.history.replaceState({}, document.title, '/');
+        
+    } catch (error) {
+        alert('加载项目失败：' + error.message);
+    }
+}
 </script>

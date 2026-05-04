@@ -1094,3 +1094,222 @@ def api_set_config():
 def config_page():
     """AI Configuration page"""
     return render_template('ai_config.html')
+
+
+# ========== Project Management API ==========
+
+PROJECTS_DIR = Path('projects')
+PROJECTS_DIR.mkdir(exist_ok=True)
+
+
+def get_project_path(name):
+    """Get project directory path"""
+    safe_name = re.sub(r'[^\w\-_]', '_', name)
+    return PROJECTS_DIR / safe_name
+
+
+def load_project_data(name):
+    """Load project data from config file"""
+    project_path = get_project_path(name)
+    config_file = project_path / 'project.json'
+    
+    if not config_file.exists():
+        return None
+    
+    try:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return None
+
+
+def save_project_data(name, data):
+    """Save project data to config file"""
+    project_path = get_project_path(name)
+    project_path.mkdir(parents=True, exist_ok=True)
+    
+    config_file = project_path / 'project.json'
+    with open(config_file, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    return True
+
+
+@app.route('/api/projects', methods=['GET'])
+def api_list_projects():
+    """API: List all projects"""
+    try:
+        projects = []
+        if PROJECTS_DIR.exists():
+            for project_dir in PROJECTS_DIR.iterdir():
+                if project_dir.is_dir():
+                    config = load_project_data(project_dir.name)
+                    if config:
+                        projects.append({
+                            'name': project_dir.name,
+                            'created_at': config.get('created_at', 'Unknown'),
+                            'prompt': config.get('prompt', ''),
+                            'reference_image': config.get('reference_image', ''),
+                            'audio_file': config.get('audio_file', '')
+                        })
+        
+        projects.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'projects': projects
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/projects', methods=['POST'])
+def api_create_project():
+    """API: Create a new project"""
+    try:
+        data = request.get_json() or {}
+        name = data.get('name', '').strip()
+        
+        if not name:
+            return jsonify({
+                'success': False,
+                'error': '项目名称不能为空'
+            }), 400
+        
+        project_path = get_project_path(name)
+        if project_path.exists():
+            return jsonify({
+                'success': False,
+                'error': '项目已存在'
+            }), 400
+        
+        # Create project
+        save_project_data(name, {
+            'name': name,
+            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'prompt': '',
+            'negative_prompt': '',
+            'reference_image': '',
+            'audio_file': '',
+            'config': DEFAULT_CONFIG.copy()
+        })
+        
+        return jsonify({
+            'success': True,
+            'message': '项目创建成功'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/projects/<project_name>', methods=['GET'])
+def api_get_project(project_name):
+    """API: Get project data"""
+    try:
+        config = load_project_data(project_name)
+        
+        if not config:
+            return jsonify({
+                'success': False,
+                'error': '项目不存在'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'project': config
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/projects/<project_name>', methods=['POST'])
+def api_save_project(project_name):
+    """API: Save project data"""
+    try:
+        data = request.get_json() or {}
+        
+        project_path = get_project_path(project_name)
+        if not project_path.exists():
+            return jsonify({
+                'success': False,
+                'error': '项目不存在'
+            }), 404
+        
+        # Load existing data and update
+        existing = load_project_data(project_name) or {}
+        existing.update(data)
+        existing['name'] = project_name
+        existing['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Save
+        save_project_data(project_name, existing)
+        
+        # Copy files to project directory
+        if 'reference_image' in data and data['reference_image']:
+            src = Path(data['reference_image'])
+            if src.exists():
+                dst = project_path / 'reference_image' / src.name
+                dst.parent.mkdir(exist_ok=True)
+                shutil.copy2(src, dst)
+                existing['reference_image'] = str(dst)
+        
+        if 'audio_file' in data and data['audio_file']:
+            src = Path(data['audio_file'])
+            if src.exists():
+                dst = project_path / 'audio' / src.name
+                dst.parent.mkdir(exist_ok=True)
+                shutil.copy2(src, dst)
+                existing['audio_file'] = str(dst)
+        
+        save_project_data(project_name, existing)
+        
+        return jsonify({
+            'success': True,
+            'message': '项目保存成功'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/projects/<project_name>', methods=['DELETE'])
+def api_delete_project(project_name):
+    """API: Delete a project"""
+    try:
+        project_path = get_project_path(project_name)
+        
+        if not project_path.exists():
+            return jsonify({
+                'success': False,
+                'error': '项目不存在'
+            }), 404
+        
+        # Delete project directory
+        import shutil as shutil_module
+        shutil_module.rmtree(project_path)
+        
+        return jsonify({
+            'success': True,
+            'message': '项目已删除'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/projects')
+def projects_page():
+    """Projects management page"""
+    return render_template('projects.html')
