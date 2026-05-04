@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 视频生成器 - 设置向导</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .step {
+            display: none;
+            padding: 30px;
+            background: #f8f9ff;
+            border-radius: 15px;
+            border-left: 4px solid #667eea;
+            margin-bottom: 20px;
+        }
+        .step.active {
+            display: block;
+        }
+        .step h2 {
+            color: #667eea;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        .progress-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+        }
+        .progress-step {
+            flex: 1;
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            margin: 0 5px;
+            background: #e2e8f0;
+            color: #718096;
+            font-weight: bold;
+        }
+        .progress-step.active {
+            background: #667eea;
+            color: white;
+        }
+        .progress-step.completed {
+            background: #48bb78;
+            color: white;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .checklist {
+            list-style: none;
+            margin: 20px 0;
+        }
+        .checklist-item {
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .checklist-item.status-ok {
+            border-left: 4px solid #48bb78;
+        }
+        .checklist-item.status-warn {
+            border-left: 4px solid #ed8936;
+        }
+        .checklist-item.status-error {
+            border-left: 4px solid #f56565;
+        }
+        .status-icon {
+            font-size: 24px;
+        }
+        .log {
+            background: #1a202c;
+            color: #48bb78;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        .info-box {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #2196f3;
+            margin: 20px 0;
+        }
+        .success-box {
+            background: #f0fff4;
+            padding: 30px;
+            border-radius: 10px;
+            border-left: 4px solid #48bb78;
+            text-align: center;
+        }
+        .success-icon {
+            font-size: 64px;
+            color: #48bb78;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 AI 视频生成器</h1>
+        <div class="subtitle">设置向导 - 个人电脑模式</div>
+        
+        <!-- 进度指示器 -->
+        <div class="progress-indicator">
+            <div class="progress-step active" data-step="1">1. 环境检查</div>
+            <div class="progress-step" data-step="2">2. 安装依赖</div>
+            <div class="progress-step" data-step="3">3. 下载模型</div>
+            <div class="progress-step" data-step="4">4. 完成设置</div>
+        </div>
+        
+        <!-- Step 1: 环境检查 -->
+        <div class="step active" data-step="1">
+            <h2>📋 步骤 1: 环境检查</h2>
+            <div class="info-box">
+                <strong>💡 说明：</strong>
+                <p>正在检查您的 Python 环境和系统依赖，请稍候...</p>
+            </div>
+            
+            <ul class="checklist" id="envChecklist">
+                <li class="checklist-item">正在检查...</li>
+            </ul>
+            
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn" onclick="checkEnvironment()">重新检查</button>
+                <button class="btn hidden" id="btnStep2" onclick="nextStep(2)">下一步</button>
+            </div>
+        </div>
+        
+        <!-- Step 2: 安装依赖 -->
+        <div class="step" data-step="2">
+            <h2>⚙️ 步骤 2: 安装 Python 依赖</h2>
+            
+            <div class="info-box">
+                <strong>📦 需要安装的依赖：</strong>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li>PyTorch - AI 深度学习框架</li>
+                    <li>Transformers - 预训练模型库</li>
+                    <li>Diffusers - 扩散模型库</li>
+                    <li>Huggingface Hub - Huggingface 模型下载</li>
+                    <li>ModelScope - 通义千问模型下载</li>
+                </ul>
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <button class="btn" onclick="installDependencies()">开始安装依赖</button>
+            </div>
+            
+            <div id="installProgress" style="display: none;">
+                <h4>安装进度</h4>
+                <div style="background: #e2e8f0; border-radius: 10px; height: 30px; overflow: hidden; margin: 10px 0;">
+                    <div id="progressBar" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <div class="log" id="installLog">准备安装...</div>
+            </div>
+            
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn btn-secondary" onclick="prevStep(1)">上一步</button>
+                <button class="btn hidden" id="btnStep3" onclick="nextStep(3)">下一步：下载模型</button>
+            </div>
+        </div>
+        
+        <!-- Step 3: 下载模型 -->
+        <div class="step" data-step="3">
+            <h2>🎯 步骤 3: 下载 AI 模型</h2>
+            
+            <div class="info-box">
+                <strong>💡 推荐：</strong>
+                <p>首次使用建议下载 <code>modelscope</code> 基础模型（2.5GB），后续可以根据需要下载更多模型。</p>
+            </div>
+            
+            <div id="modelList" style="margin: 20px 0;">
+                <!-- 模型列表将由 JavaScript 动态加载 -->
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <button class="btn" onclick="startModelDownload()">开始下载</button>
+            </div>
+            
+            <div id="downloadProgress" style="display: none;">
+                <h4>下载进度</h4>
+                <div class="log" id="downloadLog">准备下载...</div>
+            </div>
+            
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn btn-secondary" onclick="prevStep(2)">上一步</button>
+                <button class="btn hidden" id="btnStep4" onclick="nextStep(4)">完成</button>
+            </div>
+        </div>
+        
+        <!-- Step 4: 完成 -->
+        <div class="step" data-step="4">
+            <div class="success-box">
+                <div class="success-icon">✅</div>
+                <h2>设置完成！</h2>
+                <p style="color: #666; margin: 20px 0;">
+                    所有环境和模型已准备就绪，可以开始使用 AI 视频生成功能了！
+                </p>
+                <a href="/" class="btn">进入主界面</a>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 页面加载时执行环境检查
+        window.onload = function() {
+            checkEnvironment();
+        };
+        
+        // 切换步骤
+        function nextStep(step) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.querySelector(`.step[data-step="${step}"]`).classList.add('active');
+            
+            document.querySelectorAll('.progress-step').forEach((s, index) => {
+                s.classList.remove('active');
+                if (index + 1 === step) {
+                    s.classList.add('active');
+                } else if (index + 1 < step) {
+                    s.classList.add('completed');
+                }
+            });
+            
+            // 如果进入步骤 3，加载模型列表
+            if (step === 3) {
+                loadModels();
+            }
+        }
+        
+        function prevStep(step) {
+            nextStep(step);
+        }
+        
+        // 环境检查
+        async function checkEnvironment() {
+            const checklist = document.getElementById('envChecklist');
+            checklist.innerHTML = '<li class="checklist-item">正在检查...</li>';
+            
+            try {
+                const response = await fetch('/api/check-dependencies');
+                const data = await response.json();
+                
+                checklist.innerHTML = '';
+                let allOk = true;
+                
+                for (const [name, info] of Object.entries(data.packages)) {
+                    const item = document.createElement('li');
+                    item.className = 'checklist-item';
+                    
+                    const icon = info.installed ? '✓' : '✗';
+                    const statusClass = info.installed ? 'status-ok' : 
+                                       info.required ? 'status-error' : 'status-warn';
+                    const required = info.required ? ' (必需)' : ' (可选)';
+                    
+                    item.className += ` ${statusClass}`;
+                    item.innerHTML = `
+                        <span class="status-icon">${icon}</span>
+                        <span><strong>${info.name}</strong>${required} - ${info.description}</span>
+                        <span style="margin-left: auto; color: #666;">${info.version || '未安装'}</span>
+                    `;
+                    checklist.appendChild(item);
+                    
+                    if (!info.installed && info.required) {
+                        allOk = false;
+                    }
+                }
+                
+                if (allOk) {
+                    document.getElementById('btnStep2').classList.remove('hidden');
+                }
+                
+            } catch (error) {
+                checklist.innerHTML = `<li class="checklist-item status-error">检查失败：${error.message}</li>`;
+            }
+        }
+        
+        // 安装依赖
+        async function installDependencies() {
+            document.getElementById('installProgress').style.display = 'block';
+            const logDiv = document.getElementById('installLog');
+            logDiv.textContent = '正在获取依赖列表...\n';
+            
+            try {
+                // 先获取依赖列表
+                const checkResponse = await fetch('/api/check-dependencies');
+                const checkData = await checkResponse.json();
+                
+                // 收集未安装的依赖
+                const packages = [];
+                for (const [name, info] of Object.entries(checkData.packages)) {
+                    if (!info.installed) {
+                        const pipNames = {
+                            'flask': 'flask',
+                            'PIL': 'pillow',
+                            'psutil': 'psutil',
+                            'torch': 'torch',
+                            'transformers': 'transformers',
+                            'diffusers': 'diffusers',
+                            'huggingface_hub': 'huggingface-hub',
+                            'modelscope': 'modelscope'
+                        };
+                        packages.push(pipNames[name] || name);
+                    }
+                }
+                
+                if (packages.length === 0) {
+                    logDiv.textContent = '✅ 所有依赖已安装完成！\n';
+                    document.getElementById('btnStep3').classList.remove('hidden');
+                    return;
+                }
+                
+                logDiv.textContent += `准备安装 ${packages.length} 个依赖：${packages.join(', ')}\n\n`;
+                
+                // 开始安装
+                const installResponse = await fetch('/api/install-dependencies', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({packages: packages})
+                });
+                
+                const result = await installResponse.json();
+                
+                // 轮询进度
+                pollInstallProgress(result.task_id);
+                
+            } catch (error) {
+                logDiv.textContent += `\n错误：${error.message}\n`;
+            }
+        }
+        
+        async function pollInstallProgress(taskId) {
+            const logDiv = document.getElementById('installLog');
+            const progressBar = document.getElementById('progressBar');
+            
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/task/${taskId}`);
+                    const data = await response.json();
+                    
+                    if (data.log) {
+                        logDiv.textContent = data.log;
+                        logDiv.scrollTop = logDiv.scrollHeight;
+                    }
+                    
+                    if (data.progress) {
+                        progressBar.style.width = data.progress + '%';
+                    }
+                    
+                    if (data.status === 'completed') {
+                        clearInterval(interval);
+                        logDiv.textContent += '\n✅ 依赖安装完成！\n';
+                        document.getElementById('btnStep3').classList.remove('hidden');
+                    } else if (data.status === 'failed') {
+                        clearInterval(interval);
+                        logDiv.textContent += `\n❌ 安装失败：${data.error || data.log}\n`;
+                    }
+                } catch (error) {
+                    logDiv.textContent += `\n查询进度失败：${error.message}\n`;
+                }
+            }, 2000);
+        }
+        
+        // 加载模型列表
+        async function loadModels() {
+            const modelList = document.getElementById('modelList');
+            modelList.innerHTML = '<li class="checklist-item">正在加载模型列表...</li>';
+            
+            try {
+                const response = await fetch('/api/models/list');
+                const result = await response.json();
+                
+                if (result.success) {
+                    renderModelList(result.models);
+                } else {
+                    modelList.innerHTML = `<li class="checklist-item status-error">加载失败：${result.error}</li>`;
+                }
+            } catch (error) {
+                modelList.innerHTML = `<li class="checklist-item status-error">加载失败：${error.message}</li>`;
+            }
+        }
+        
+        function renderModelList(models) {
+            const container = document.getElementById('modelList');
+            container.innerHTML = '';
+            
+            models.forEach(model => {
+                const item = document.createElement('div');
+                item.className = 'checklist-item';
+                item.style.cssText = 'background: white; border-left: 4px solid #667eea;';
+                
+                const disabled = model.installed ? 'disabled checked' : '';
+                const status = model.installed ? '✓ 已下载' : '';
+                
+                item.innerHTML = `
+                    <input type="checkbox" id="model_${model.id}" ${disabled}>
+                    <label for="model_${model.id}" style="flex: 1; cursor: pointer;">
+                        <strong>${model.name}</strong> - ${model.description}
+                        <div style="font-size: 13px; color: #666;">
+                            大小：${model.size_gb}GB | 来源：${model.source}
+                        </div>
+                    </label>
+                    ${status ? `<span style="color: #48bb78;">${status}</span>` : ''}
+                `;
+                container.appendChild(item);
+            });
+            
+            // 默认选中推荐模型
+            const modelscopeCheckbox = document.getElementById('model_modelscope');
+            if (modelscopeCheckbox && !modelscopeCheckbox.disabled) {
+                modelscopeCheckbox.checked = true;
+            }
+        }
+        
+        // 开始下载模型
+        async function startModelDownload() {
+            document.getElementById('downloadProgress').style.display = 'block';
+            const logDiv = document.getElementById('downloadLog');
+            
+            const selectedModels = [];
+            document.querySelectorAll('#modelList input[type="checkbox"]:checked').forEach(cb => {
+                if (!cb.disabled) {
+                    selectedModels.push(cb.id.replace('model_', ''));
+                }
+            });
+            
+            if (selectedModels.length === 0) {
+                alert('请至少选择一个模型');
+                return;
+            }
+            
+            logDiv.textContent = `准备下载 ${selectedModels.length} 个模型...\n`;
+            
+            try {
+                const response = await fetch('/api/models/install', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({models: selectedModels})
+                });
+                
+                const result = await response.json();
+                pollModelDownloadProgress(result.task_id);
+                
+            } catch (error) {
+                logDiv.textContent += `\n错误：${error.message}\n`;
+            }
+        }
+        
+        async function pollModelDownloadProgress(taskId) {
+            const logDiv = document.getElementById('downloadLog');
+            
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/models/status/${taskId}`);
+                    const data = await response.json();
+                    
+                    if (data.log) {
+                        logDiv.textContent = data.log;
+                        logDiv.scrollTop = logDiv.scrollHeight;
+                    }
+                    
+                    if (data.status === 'completed') {
+                        clearInterval(interval);
+                        logDiv.textContent += '\n✅ 模型下载完成！\n';
+                        document.getElementById('btnStep4').classList.remove('hidden');
+                    } else if (data.status === 'failed') {
+                        clearInterval(interval);
+                        logDiv.textContent += `\n❌ 下载失败：${data.error}\n`;
+                    }
+                } catch (error) {
+                    logDiv.textContent += `\n查询进度失败：${error.message}\n`;
+                }
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

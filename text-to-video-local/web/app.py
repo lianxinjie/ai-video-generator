@@ -60,6 +60,12 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/setup')
+def setup_wizard():
+    """设置向导页面"""
+    return render_template('setup_wizard.html')
+
+
 @app.route('/api/generate', methods=['POST'])
 def api_generate():
     """
