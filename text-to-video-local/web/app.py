@@ -154,30 +154,67 @@ def api_generate():
         }
         
         def run_task():
+            log_lines = []
+            log_lines.append(f"开始执行命令：{' '.join(cmd)}")
+            log_lines.append(f"工作目录：{Path(__file__).parent.parent}")
+            log_lines.append("")
+            
             try:
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
-                    cwd=Path(__file__).parent.parent
+                    cwd=Path(__file__).parent.parent,
+                    timeout=600  # 10 分钟超时
                 )
+                
+                # 记录标准输出
+                if result.stdout:
+                    log_lines.append("=== 标准输出 ===")
+                    log_lines.append(result.stdout)
+                    log_lines.append("")
+                
+                # 记录标准错误
+                if result.stderr:
+                    log_lines.append("=== 错误输出 ===")
+                    log_lines.append(result.stderr)
+                    log_lines.append("")
                 
                 if result.returncode == 0:
                     tasks[task_id]['status'] = 'completed'
+                    log_lines.append("✅ 任务执行成功")
                     
                     # 查找生成的视频文件
                     video_files = list(output_dir.glob('*.mp4'))
                     if video_files:
                         tasks[task_id]['video_url'] = f'/api/output/{task_id}/{video_files[0].name}'
+                        log_lines.append(f"视频文件：{video_files[0].name}")
+                    else:
+                        log_lines.append("⚠️  未找到生成的视频文件")
+                        tasks[task_id]['status'] = 'failed'
+                        tasks[task_id]['error'] = '生成成功但未找到视频文件'
                 else:
                     tasks[task_id]['status'] = 'failed'
                     tasks[task_id]['error'] = result.stderr
+                    log_lines.append(f"❌ 任务执行失败，退出码：{result.returncode}")
                 
                 tasks[task_id]['progress'] = 100
+                tasks[task_id]['log'] = '\n'.join(log_lines)
+                
+            except subprocess.TimeoutExpired:
+                tasks[task_id]['status'] = 'failed'
+                tasks[task_id]['error'] = '任务执行超时（10 分钟）'
+                log_lines.append("❌ 超时错误：任务执行超过 10 分钟")
+                tasks[task_id]['log'] = '\n'.join(log_lines)
+                
             except Exception as e:
+                import traceback
                 tasks[task_id]['status'] = 'failed'
                 tasks[task_id]['error'] = str(e)
+                log_lines.append(f"❌ 异常：{e}")
+                log_lines.append(traceback.format_exc())
                 tasks[task_id]['progress'] = 100
+                tasks[task_id]['log'] = '\n'.join(log_lines)
         
         # 后台线程运行任务
         thread = threading.Thread(target=run_task)

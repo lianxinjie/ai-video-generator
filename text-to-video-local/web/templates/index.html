@@ -550,6 +550,10 @@
                 <div class="progress-bar">
                     <div class="progress-fill" id="progressFill"></div>
                 </div>
+                <div style="margin-top: 20px;">
+                    <h4 style="color: #667eea; margin-bottom: 10px;">📋 执行日志</h4>
+                    <pre id="taskLog" style="background: rgba(0,0,0,0.5); color: #48bb78; padding: 15px; border-radius: 10px; max-height: 300px; overflow-y: auto; font-size: 12px; font-family: monospace; white-space: pre-wrap;">等待任务启动...</pre>
+                </div>
             </div>
             
             <!-- 错误提示 -->
@@ -661,12 +665,21 @@
                     
                     document.getElementById('progressFill').style.width = data.progress + '%';
                     
+                    // 显示日志（如果有）
+                    if (data.log) {
+                        const logElement = document.getElementById('taskLog');
+                        if (logElement) {
+                            logElement.textContent = data.log;
+                            logElement.scrollTop = logElement.scrollHeight;
+                        }
+                    }
+                    
                     if (data.status === 'completed') {
                         clearInterval(interval);
                         showResult(data);
                     } else if (data.status === 'failed') {
                         clearInterval(interval);
-                        showError(data.error || '生成失败');
+                        showError(data.error || data.log || '生成失败');
                     }
                 } catch (error) {
                     clearInterval(interval);
