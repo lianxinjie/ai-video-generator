@@ -852,6 +852,22 @@ def api_check_dependencies():
                 'version': None,
                 'description': '通义千问模型下载',
                 'pip_name': 'modelscope'
+            },
+            'edge_tts': {
+                'name': 'Edge TTS',
+                'required': False,
+                'installed': False,
+                'version': None,
+                'description': 'Microsoft Azure AI 配音（支持三层配音架构）',
+                'pip_name': 'edge-tts'
+            },
+            'pydub': {
+                'name': 'Pydub',
+                'required': False,
+                'installed': False,
+                'version': None,
+                'description': '音频处理库（配音混音必备）',
+                'pip_name': 'pydub'
             }
         }
         
