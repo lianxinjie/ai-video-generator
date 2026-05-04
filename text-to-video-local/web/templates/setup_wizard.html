@@ -718,6 +718,11 @@ function closeFFmpegModal() {
     document.getElementById('ffmpegModal').style.display = 'none';
 }
 
+function openFFmpegModal() {
+    document.getElementById('ffmpegModal').style.display = 'flex';
+    checkFFmpeg();
+}
+
 // 页面加载时检测
-// window.addEventListener('DOMContentLoaded', checkFFmpeg);
+window.addEventListener('DOMContentLoaded', checkFFmpeg);
 </script>

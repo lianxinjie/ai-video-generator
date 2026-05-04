@@ -9,6 +9,13 @@
 """
 
 import sys
+import codecs
+
+# Windows 控制台 UTF-8 编码支持
+if sys.platform == 'win32':
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+
 import click
 import logging
 import json
@@ -427,8 +434,8 @@ def get_mode_name(mode: str) -> str:
     """获取模式名称"""
     names = {
         'standard': '标准模式 (standard)',
-        'optimized': '超优模式 (optimized) ⭐',
-        'collaborative': '协同模式 (collaborative) 🆕'
+        'optimized': '超优模式 (optimized)',
+        'collaborative': '协同模式 (collaborative)'
     }
     return names.get(mode, mode)
 

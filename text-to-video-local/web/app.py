@@ -1354,7 +1354,14 @@ def api_analyze_scenes():
             }), 400
         
         # 导入 AI 场景分析器
-        from personal_mode.ai_scene_analyzer import AISceneAnalyzer
+        try:
+            from personal_mode.ai_scene_analyzer import AISceneAnalyzer
+        except ImportError as e:
+            return jsonify({
+                'success': False,
+                'error': f'缺少依赖：{str(e)}',
+                'hint': '请运行：pip install requests'
+            }), 500
         
         # 创建分析器实例
         analyzer = AISceneAnalyzer()
