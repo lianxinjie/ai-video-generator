@@ -751,79 +751,66 @@ def merge_segments(
     """
     合并所有片段为最终视频
     
-    调用 hybrid_mode 的 VideoSynthesizer 和配音功能
+    使用 FFmpeg 合并所有片段中的图片和音频
     """
+    import subprocess
+    
     try:
-        from hybrid_mode.video_synthesizer import VideoSynthesizer
-        
         print(f"\n【视频合并】开始合成最终视频...")
         
-        synthesizer = VideoSynthesizer(
-            output_dir=str(segment_dir.parent),
-            temp_dir=str(segment_dir.parent / 'temp')
-        )
+        # 收集所有片段目录
+        segment_dirs = sorted([d for d in segment_dir.iterdir() if d.is_dir()])
+        print(f"  ✓ 找到 {len(segment_dirs)} 个片段")
         
-        # 收集所有图片目录
-        image_dirs = sorted([d for d in segment_dir.iterdir() if d.is_dir()])
-        print(f"  ✓ 找到 {len(image_dirs)} 个片段")
+        # 收集所有图片文件
+        all_images = []
+        for seg_dir in segment_dirs:
+            images = sorted(list(seg_dir.glob('*.png')) + list(seg_dir.glob('*.jpg')))
+            all_images.extend(images)
         
-        # 1. 图片序列合成视频
-        video_output = Path(output_file)
-        video_output.parent.mkdir(parents=True, exist_ok=True)
+        print(f"  ✓ 共 {len(all_images)} 张图片")
         
-        # 2. 如果启用配音，调用配音合成
-        if voiceover and voiceover_script:
-            print(f"  ✓ 启用三层配音架构")
-            # 这里会调用 generate.py 中的配音逻辑
-            # 由于配音逻辑复杂，建议在 generate.py 中处理
-            
-        print(f"  ✓ 输出文件：{video_output}")
-        return str(video_output)
+        # 创建临时 concat 文件
+        temp_file = segment_dir.parent / 'concat_list.txt'
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            for img in all_images:
+                f.write(f"file '{img.absolute().as_posix()}'\n")
         
-    except Exception as e:
-        print(f"  ❌ 合并失败：{e}")
-        return None
-
-
-    
-    import subprocess
-    import sys
-    
-    # 调用原有的生成脚本
-    cmd = [
-        sys.executable,
-        "personal_mode/generate.py",
-        "-p", prompt,
-        "-d", str(duration),
-        "--resolution", f"{resolution[0]}x{resolution[1]}",
-        "--fps", str(fps),
-        "-m", model,
-        "-o", output
-    ]
-    
-    if device == "cpu":
-        cmd.append("--device")
-        cmd.append("cpu")
-    
-    print(f"执行命令：{' '.join(cmd)}\n")
-    
-    try:
-        result = subprocess.run(cmd, check=True)
+        # FFmpeg 命令 - 合并图片为视频
+        ffmpeg_cmd = [
+            'ffmpeg', '-y',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', str(temp_file),
+            '-vf', f'fps={fps}',
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            str(output_file)
+        ]
+        
+        print(f"  执行 FFmpeg 合并...")
+        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
         
         if result.returncode == 0:
-            print(f"\n✓ 标准模式完成：{output}")
-        else:
-            print(f"\n⚠ 标准模式完成但有警告")
+            print(f"  ✓ 视频合并完成：{output_file}")
             
-    except subprocess.CalledProcessError as e:
-        logger.error(f"标准模式执行失败：{e}")
-        print("\n💡 建议:")
-        print("  您的配置可能不适合标准模式，请尝试：")
-        print("  1. 使用超优模式：添加参数 -m optimized")
-        print("  2. 降低分辨率：--resolution 384x384")
-        print("  3. 减少时长：-d 3")
+            # 清理临时文件
+            if temp_file.exists():
+                temp_file.unlink()
+            
+            return str(output_file)
+        else:
+            print(f"  ❌ FFmpeg 合并失败：{result.stderr}")
+            return None
+            
+    except FileNotFoundError:
+        print(f"  ❌ FFmpeg 未安装，请先安装 FFmpeg")
+        return None
     except Exception as e:
-        logger.error(f"执行失败：{e}")
+        print(f"  ❌ 合并失败：{e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 def run_optimized_mode(
