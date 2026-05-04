@@ -65,6 +65,11 @@ def setup_wizard():
     """设置向导页面"""
     return render_template('setup_wizard.html')
 
+@app.route('/install')
+def install_page():
+    """依赖管理页面"""
+    return render_template('install.html')
+
 
 @app.route('/api/generate', methods=['POST'])
 def api_generate():
