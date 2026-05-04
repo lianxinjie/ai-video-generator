@@ -528,3 +528,196 @@
     </script>
 </body>
 </html>
+
+<!-- FFmpeg 检查和下载模态框 -->
+<div id="ffmpegModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div class="modal-content" style="background: white; padding: 40px; border-radius: 20px; max-width: 700px; width: 90%;">
+        <h2 style="color: #667eea; margin-bottom: 20px;">🎬 FFmpeg 检测与安装</h2>
+        
+        <div id="resourceCheck" style="margin-bottom: 20px;">
+            <h3>💻 系统资源检测</h3>
+            <div id="resourceStatus"></div>
+        </div>
+        
+        <div id="ffmpegStatus" style="margin-bottom: 20px;">
+            <h3>📦 FFmpeg 状态</h3>
+            <div id="ffmpegInfo"></div>
+        </div>
+        
+        <div id="downloadSection" style="display: none; margin-top: 20px;">
+            <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 20px;">
+                <strong>⚠️ FFmpeg 未安装</strong>
+                <p style="margin: 10px 0 0 0; font-size: 14px;">FFmpeg 是视频处理必需工具，用于视频合成和音频处理</p>
+            </div>
+            
+            <div style="display: flex; gap: 15px;">
+                <button class="btn" onclick="downloadFFmpeg()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    📥 自动下载 FFmpeg
+                </button>
+                <button class="btn btn-secondary" onclick="showManualGuide()" style="background: #e2e8f0; color: #4a5568;">
+                    📖 手动安装指南
+                </button>
+            </div>
+            
+            <div id="downloadProgress" style="display: none; margin-top: 20px;">
+                <p>正在下载 FFmpeg...</p>
+                <div style="background: #e2e8f0; border-radius: 10px; height: 20px; overflow: hidden;">
+                    <div id="ffmpegProgressBar" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <p id="downloadMessage" style="font-size: 13px; color: #718096; margin-top: 10px;"></p>
+            </div>
+        </div>
+        
+        <div style="margin-top: 30px; display: flex; gap: 15px;">
+            <button class="btn" onclick="closeFFmpegModal()" style="background: #48bb78;">
+                ✅ 完成
+            </button>
+            <button class="btn btn-secondary" onclick="refreshFFmpegCheck()" style="background: #e2e8f0; color: #4a5568;">
+                🔄 重新检测
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+let resourceData = null;
+
+function checkFFmpeg() {
+    // 先检查资源
+    fetch('/api/check-resources')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                resourceData = data;
+                displayResourceStatus(data);
+            }
+        });
+    
+    // 检查 FFmpeg 状态
+    fetch('/api/check-ffmpeg')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                displayFFmpegStatus(data);
+            }
+        });
+}
+
+function displayResourceStatus(data) {
+    const statusDiv = document.getElementById('resourceStatus');
+    const status = data.status;
+    const system = data.system;
+    
+    statusDiv.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 15px;">
+            <div style="text-align: center; padding: 15px; background: ${status.cpu === '✅' ? '#f0fff4' : '#fff5f5'}; border-radius: 10px;">
+                <div style="font-size: 24px; margin-bottom: 5px;">${status.cpu}</div>
+                <div style="font-size: 13px; color: #718096;">CPU</div>
+                <div style="font-size: 14px; font-weight: bold;">${system.cpu_cores} 核心</div>
+            </div>
+            <div style="text-align: center; padding: 15px; background: ${status.memory === '✅' ? '#f0fff4' : '#fff5f5'}; border-radius: 10px;">
+                <div style="font-size: 24px; margin-bottom: 5px;">${status.memory}</div>
+                <div style="font-size: 13px; color: #718096;">内存</div>
+                <div style="font-size: 14px; font-weight: bold;">${system.available_memory_gb}GB / ${system.total_memory_gb}GB</div>
+            </div>
+            <div style="text-align: center; padding: 15px; background: ${status.disk === '✅' ? '#f0fff4' : '#fff5f5'}; border-radius: 10px;">
+                <div style="font-size: 24px; margin-bottom: 5px;">${status.disk}</div>
+                <div style="font-size: 13px; color: #718096;">磁盘</div>
+                <div style="font-size: 14px; font-weight: bold;">${system.free_disk_gb}GB 可用</div>
+            </div>
+        </div>
+        ${data.suggestions.length > 0 ? `
+            <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 10px;">
+                <strong>💡 优化建议:</strong>
+                <ul style="margin: 10px 0 0 20px; font-size: 14px;">
+                    ${data.suggestions.map(s => `<li>${s}</li>`).join('')}
+                </ul>
+            </div>
+        ` : '<div style="text-align: center; color: #48bb78; font-weight: bold;">✅ 系统资源充足，可以安装 FFmpeg</div>'}
+    `;
+}
+
+function displayFFmpegStatus(data) {
+    const infoDiv = document.getElementById('ffmpegInfo');
+    const downloadSection = document.getElementById('downloadSection');
+    
+    if (data.installed) {
+        infoDiv.innerHTML = `
+            <div style="background: #f0fff4; border-left: 4px solid #48bb78; padding: 15px; border-radius: 10px;">
+                <strong style="color: #276749;">✅ FFmpeg 已安装</strong>
+                <p style="margin: 10px 0 0 0; font-size: 14px;">
+                    路径：${data.path}<br>
+                    版本：${data.version || '未知'}<br>
+                    来源：${data.source === 'system' ? '系统 PATH' : '项目本地'}
+                </p>
+            </div>
+        `;
+        downloadSection.style.display = 'none';
+    } else {
+        infoDiv.innerHTML = `
+            <div style="background: #fff5f5; border-left: 4px solid #f56565; padding: 15px; border-radius: 10px;">
+                <strong style="color: #c53030;">❌ FFmpeg 未安装</strong>
+                <p style="margin: 10px 0 0 0; font-size: 14px;">需要安装 FFmpeg 才能进行视频生成</p>
+            </div>
+        `;
+        downloadSection.style.display = 'block';
+    }
+}
+
+function downloadFFmpeg() {
+    if (resourceData && !resourceData.can_install) {
+        alert('系统资源不足，请先释放资源后再下载');
+        return;
+    }
+    
+    const progressDiv = document.getElementById('downloadProgress');
+    const progressBar = document.getElementById('ffmpegProgressBar');
+    const messageEl = document.getElementById('downloadMessage');
+    
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '20%';
+    messageEl.textContent = '正在准备下载...';
+    
+    fetch('/api/download-ffmpeg', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            progressBar.style.width = '100%';
+            
+            if (data.success) {
+                messageEl.textContent = '✅ 下载完成！请重启 Web 服务以使用 FFmpeg';
+                messageEl.style.color = '#48bb78';
+                setTimeout(() => {
+                    refreshFFmpegCheck();
+                }, 2000);
+            } else {
+                messageEl.textContent = '❌ 下载失败：' + (data.error || '未知错误');
+                messageEl.style.color = '#f56565';
+                if (data.suggestions && data.suggestions.length > 0) {
+                    messageEl.innerHTML += '<br><small>' + data.suggestions.join('<br>') + '</small>';
+                }
+            }
+        })
+        .catch(error => {
+            progressBar.style.width = '100%';
+            messageEl.textContent = '❌ 下载失败：' + error.message;
+            messageEl.style.color = '#f56565';
+        });
+}
+
+function showManualGuide() {
+    alert('手动安装指南:\n\nWindows:\n  choco install ffmpeg\n  或下载：https://ffmpeg.org/download.html\n\nLinux (Ubuntu):\n  sudo apt install ffmpeg\n\nmacOS:\n  brew install ffmpeg\n\n安装完成后重启 Web 服务');
+}
+
+function refreshFFmpegCheck() {
+    document.getElementById('resourceStatus').innerHTML = '<div style="text-align: center; padding: 20px;">⏳ 检测中...</div>';
+    document.getElementById('ffmpegInfo').innerHTML = '<div style="text-align: center; padding: 20px;">⏳ 检测中...</div>';
+    checkFFmpeg();
+}
+
+function closeFFmpegModal() {
+    document.getElementById('ffmpegModal').style.display = 'none';
+}
+
+// 页面加载时检测
+// window.addEventListener('DOMContentLoaded', checkFFmpeg);
+</script>

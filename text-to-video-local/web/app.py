@@ -1435,3 +1435,277 @@ def api_confirm_scenes():
 def scenes_confirm_page():
     """场景确认页面"""
     return render_template('scenes_confirm.html')
+
+
+# ========== FFmpeg Management API ==========
+
+@app.route('/api/check-ffmpeg', methods=['GET'])
+def api_check_ffmpeg():
+    """API: 检查 FFmpeg 安装状态"""
+    import shutil
+    import subprocess
+    
+    try:
+        # 检查 FFmpeg 是否在 PATH 中
+        ffmpeg_path = shutil.which('ffmpeg')
+        
+        if ffmpeg_path:
+            # 获取版本信息
+            result = subprocess.run(
+                ['ffmpeg', '-version'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            version_line = result.stdout.split('\n')[0] if result.stdout else '未知版本'
+            
+            return jsonify({
+                'success': True,
+                'installed': True,
+                'path': ffmpeg_path,
+                'version': version_line,
+                'source': 'system'
+            })
+        else:
+            # 检查项目目录是否有 FFmpeg
+            local_ffmpeg = Path('./ffmpeg')
+            if local_ffmpeg.exists():
+                # 查找 ffmpeg 可执行文件
+                if platform.system() == 'Windows':
+                    ffmpeg_exe = local_ffmpeg / 'ffmpeg.exe'
+                    if not ffmpeg_exe.exists():
+                        # 可能在子目录中
+                        for exe in local_ffmpeg.rglob('ffmpeg.exe'):
+                            ffmpeg_exe = exe
+                            break
+                else:
+                    ffmpeg_exe = local_ffmpeg / 'ffmpeg'
+                    if not ffmpeg_exe.exists():
+                        for exe in local_ffmpeg.rglob('ffmpeg'):
+                            ffmpeg_exe = exe
+                            break
+                
+                if ffmpeg_exe.exists():
+                    return jsonify({
+                        'success': True,
+                        'installed': True,
+                        'path': str(ffmpeg_exe),
+                        'version': '本地版本',
+                        'source': 'local'
+                    })
+            
+            return jsonify({
+                'success': True,
+                'installed': False,
+                'message': 'FFmpeg 未安装'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/check-resources', methods=['GET'])
+def api_check_resources():
+    """API: 检查系统资源是否满足 FFmpeg 要求"""
+    import platform
+    
+    try:
+        # 1. 检测磁盘空间
+        import shutil
+        total_space = shutil.disk_usage('/')
+        free_space_gb = total_space.free / (1024 ** 3)
+        
+        # 2. 检测内存
+        import psutil
+        total_memory = psutil.virtual_memory().total / (1024 ** 3)
+        available_memory = psutil.virtual_memory().available / (1024 ** 3)
+        
+        # 3. 检测 CPU
+        cpu_count = psutil.cpu_count(logical=True)
+        cpu_freq = psutil.cpu_freq()
+        cpu_freq_mhz = cpu_freq.current if cpu_freq else 0
+        
+        # 4. 检测系统架构
+        system = platform.system()
+        machine = platform.machine()
+        arch = 'x86_64' if machine in ['x86_64', 'AMD64'] else 'arm64' if machine in ['arm64', 'aarch64'] else machine
+        
+        # FFmpeg 最低要求
+        requirements = {
+            'disk_min_gb': 1,      # FFmpeg 本身 1GB
+            'disk_recommended_gb': 10,  # 推荐 10GB 用于处理视频
+            'memory_min_gb': 2,
+            'memory_recommended_gb': 4,
+            'cpu_min_cores': 2,
+            'cpu_recommended_cores': 4
+        }
+        
+        # 评估
+        disk_ok = free_space_gb >= requirements['disk_min_gb']
+        memory_ok = available_memory >= requirements['memory_min_gb']
+        cpu_ok = cpu_count >= requirements['cpu_min_cores']
+        
+        all_ok = disk_ok and memory_ok and cpu_ok
+        
+        # 生成建议
+        suggestions = []
+        if not disk_ok:
+            suggestions.append(f"磁盘空间不足 ({free_space_gb:.1f}GB < {requirements['disk_min_gb']}GB)，建议清理磁盘")
+        if not memory_ok:
+            suggestions.append(f"可用内存不足 ({available_memory:.1f}GB < {requirements['memory_min_gb']}GB)，建议关闭其他程序")
+        if not cpu_ok:
+            suggestions.append(f"CPU 核心数较少 ({cpu_count} 核 < {requirements['cpu_min_cores']}核)，处理速度可能较慢")
+        
+        resource_score = 0
+        if free_space_gb >= requirements['disk_recommended_gb']:
+            resource_score += 1
+        if available_memory >= requirements['memory_recommended_gb']:
+            resource_score += 1
+        if cpu_count >= requirements['cpu_recommended_cores']:
+            resource_score += 1
+        
+        return jsonify({
+            'success': True,
+            'can_install': all_ok,
+            'resource_score': resource_score,  # 0-3
+            'system': {
+                'os': system,
+                'arch': arch,
+                'cpu_cores': cpu_count,
+                'cpu_freq_mhz': round(cpu_freq_mhz, 0),
+                'total_memory_gb': round(total_memory, 1),
+                'available_memory_gb': round(available_memory, 1),
+                'total_disk_gb': round(total_space.total / (1024 ** 3), 1),
+                'free_disk_gb': round(free_space_gb, 1)
+            },
+            'requirements': requirements,
+            'status': {
+                'disk': '✅' if disk_ok else '❌',
+                'memory': '✅' if memory_ok else '❌',
+                'cpu': '✅' if cpu_ok else '❌'
+            },
+            'suggestions': suggestions,
+            'recommendation': '可以安装' if all_ok else '不建议安装'
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/download-ffmpeg', methods=['POST'])
+def api_download_ffmpeg():
+    """API: 自动下载 FFmpeg 到项目目录"""
+    import platform
+    import requests
+    import zipfile
+    import tarfile
+    
+    try:
+        # 先检查资源
+        resource_check = api_check_resources()
+        resource_data = resource_check.get_json() if hasattr(resource_check, 'get_json') else {}
+        
+        if not resource_data.get('can_install', True):
+            return jsonify({
+                'success': False,
+                'error': '系统资源不足，请先释放资源',
+                'suggestions': resource_data.get('suggestions', [])
+            }), 400
+        
+        system = platform.system()
+        machine = platform.machine()
+        arch = 'amd64' if machine in ['x86_64', 'AMD64'] else 'arm64' if machine in ['arm64', 'aarch64'] else machine
+        
+        # FFmpeg 静态编译版本下载地址
+        urls = {
+            'Windows': 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
+            'Linux': f'https://johnvansickle.com/ffmpeg/builds/ffmpeg-release-{arch}-static.tar.xz',
+            'Darwin': 'https://evermeet.cx/ffmpeg/getrelease/zip'
+        }
+        
+        if system not in urls:
+            return jsonify({
+                'success': False,
+                'error': f'不支持的系统：{system}'
+            })
+        
+        # 创建下载目录
+        download_dir = Path('./ffmpeg')
+        download_dir.mkdir(exist_ok=True)
+        
+        # 下载
+        url = urls[system]
+        filename = 'ffmpeg.zip' if system == 'Windows' else 'ffmpeg.tar.xz'
+        file_path = download_dir / filename
+        
+        # 使用流式下载，避免内存占用过大
+        response = requests.get(url, stream=True)
+        total_size = int(response.headers.get('content-length', 0))
+        
+        with open(file_path, 'wb') as f:
+            downloaded = 0
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+                downloaded += len(chunk)
+        
+        # 解压
+        if system == 'Windows':
+            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                # 找到包含 ffmpeg.exe 的目录
+                zip_ref.extractall(download_dir)
+                # 移动内容到根目录
+                for item in download_dir.iterdir():
+                    if item.is_dir() and item.name.startswith('ffmpeg'):
+                        for sub_item in item.iterdir():
+                            sub_item.rename(download_dir / sub_item.name)
+                        item.rmdir()
+                        break
+        else:
+            import subprocess
+            subprocess.run(['tar', '-xf', str(file_path), '-C', str(download_dir)], check=True)
+            # 移动内容
+            for item in download_dir.iterdir():
+                if item.is_dir() and 'ffmpeg' in item.name.lower():
+                    for sub_item in item.iterdir():
+                        sub_item.rename(download_dir / sub_item.name)
+                    item.rmdir()
+                    break
+        
+        # 清理压缩包
+        file_path.unlink()
+        
+        # 设置执行权限（Linux/macOS）
+        if system != 'Windows':
+            ffmpeg_exe = download_dir / 'ffmpeg'
+            if ffmpeg_exe.exists():
+                import stat
+                ffmpeg_exe.chmod(ffmpeg_exe.stat().st_mode | stat.S_IEXEC)
+        
+        return jsonify({
+            'success': True,
+            'path': str(download_dir),
+            'message': 'FFmpeg 下载完成',
+            'note': '请重启 Web 服务以使用 FFmpeg'
+        })
+        
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            'success': False,
+            'error': f'下载失败：{str(e)}',
+            'suggestion': '请检查网络连接'
+        }), 500
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
