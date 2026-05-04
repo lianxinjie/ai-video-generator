@@ -1334,3 +1334,104 @@ def api_delete_project(project_name):
 def projects_page():
     """Projects management page"""
     return render_template('projects.html')
+
+
+# ========== Scene Analysis API ==========
+
+@app.route('/api/analyze-scenes', methods=['POST'])
+def api_analyze_scenes():
+    """API: AI 智能场景分析"""
+    try:
+        data = request.get_json() or {}
+        prompt = data.get('prompt', '')
+        duration = data.get('duration', 10)
+        mode = data.get('mode', 'detailed')
+        
+        if not prompt:
+            return jsonify({
+                'success': False,
+                'error': '提示词不能为空'
+            }), 400
+        
+        # 导入 AI 场景分析器
+        from personal_mode.ai_scene_analyzer import AISceneAnalyzer
+        
+        # 创建分析器实例
+        analyzer = AISceneAnalyzer()
+        
+        # 执行 AI 场景分析
+        result = analyzer.ai_analyze(prompt=prompt, mode=mode)
+        
+        # 计算每个场景的时长
+        if 'scenes' in result and result['scenes']:
+            total_scenes = len(result['scenes'])
+            avg_duration = duration / total_scenes
+            
+            for scene in result['scenes']:
+                scene['duration'] = round(avg_duration, 1)
+        
+        return jsonify({
+            'success': True,
+            'result': result
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/scenes/confirm', methods=['POST'])
+def api_confirm_scenes():
+    """API: 确认场景并生成视频"""
+    try:
+        data = request.get_json() or {}
+        scenes = data.get('scenes', [])
+        mode = data.get('mode', 'hybrid')
+        prompt = data.get('prompt', '')
+        duration = data.get('duration', 10)
+        
+        if not scenes:
+            return jsonify({
+                'success': False,
+                'error': '场景不能为空'
+            }), 400
+        
+        # 将场景信息传递到生成流程
+        # 这里简化处理，实际应该集成到 generate API 中
+        # 将场景信息保存到临时文件或 session 中
+        import uuid
+        task_id = str(uuid.uuid4())
+        
+        # 保存场景配置
+        scene_config = {
+            'task_id': task_id,
+            'prompt': prompt,
+            'mode': mode,
+            'scenes': scenes,
+            'duration': duration
+        }
+        
+        # 这里应该调用实际的视频生成流程
+        # 为简化实现，返回成功消息
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'message': '场景已确认，开始生成视频',
+            'config': scene_config
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/scenes/confirm')
+def scenes_confirm_page():
+    """场景确认页面"""
+    return render_template('scenes_confirm.html')

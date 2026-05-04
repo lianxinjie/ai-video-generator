@@ -844,14 +844,14 @@
             btn.innerHTML = '⏳ 正在分析...';
             
             try {
-                const formData = new FormData();
-                formData.append('prompt', prompt);
-                formData.append('duration', duration);
-                formData.append('mode', mode);
-                
-                const response = await fetch('/api/generate', {
+                const response = await fetch('/api/analyze-scenes', {
                     method: 'POST',
-                    body: formData
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        duration: duration,
+                        mode: mode
+                    })
                 });
                 
                 // 检查响应类型
@@ -867,7 +867,7 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    currentScenes = data.scenes;
+                    currentScenes = data.result.scenes || [];
                     analysisTaskId = 'analysis_' + Date.now();
                     
                     // 显示场景面板
