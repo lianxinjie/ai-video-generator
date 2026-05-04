@@ -393,6 +393,67 @@
             <p>基于文本提示词和参考图片，生成专业级 AI 视频</p>
         </div>
         
+        <!-- 新手引导和安装状态检查 -->
+        <div id="setupNotification" style="display: none; margin-bottom: 30px;">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(102,126,234,0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <div>
+                        <h2 style="margin: 0 0 10px 0; font-size: 24px;">🚀 第一次使用？</h2>
+                        <p style="margin: 0; opacity: 0.9;">我们的智能向导会手把手教您完成所有设置</p>
+                    </div>
+                    <button class="btn" onclick="openSetupWizard()" style="background: white; color: #667eea; border: none; padding: 15px 30px; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                        开始设置向导
+                    </button>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
+                    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; backdrop-filter: blur(10px);">
+                        <div style="font-size: 24px; margin-bottom: 5px;">📦</div>
+                        <div style="font-weight: bold;">安装依赖</div>
+                        <div style="font-size: 13px; opacity: 0.8; margin-top: 5px;">PyTorch、Transformers 等</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; backdrop-filter: blur(10px);">
+                        <div style="font-size: 24px; margin-bottom: 5px;">🎯</div>
+                        <div style="font-weight: bold;">下载模型</div>
+                        <div style="font-size: 13px; opacity: 0.8; margin-top: 5px;">AI 视频生成模型</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; backdrop-filter: blur(10px);">
+                        <div style="font-size: 24px; margin-bottom: 5px;">🔍</div>
+                        <div style="font-weight: bold;">硬件检测</div>
+                        <div style="font-size: 13px; opacity: 0.8; margin-top: 5px;">智能推荐配置</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; backdrop-filter: blur(10px);">
+                        <div style="font-size: 24px; margin-bottom: 5px;">🎬</div>
+                        <div style="font-weight: bold;">开始生成</div>
+                        <div style="font-size: 13px; opacity: 0.8; margin-top: 5px;">一键生成视频</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 快速操作面板 -->
+        <div id="quickActions" style="display: none; margin-bottom: 30px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
+                <div style="background: white; padding: 20px; border-radius: 15px; border-left: 4px solid #48bb78; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                    <h3 style="margin: 0 0 10px 0; color: #48bb78;">✅ 环境就绪</h3>
+                    <p style="margin: 0 0 15px 0; color: #666; font-size: 14px;">所有依赖已安装，可以开始使用</p>
+                    <button class="btn" onclick="scrollToGenerate()" style="width: 100%;">开始生成视频</button>
+                </div>
+                
+                <div style="background: white; padding: 20px; border-radius: 15px; border-left: 4px solid #ed8936; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                    <h3 style="margin: 0 0 10px 0; color: #ed8936;">📦 依赖管理</h3>
+                    <p style="margin: 0 0 15px 0; color: #666; font-size: 14px;">查看、安装或更新 Python 依赖</p>
+                    <button class="btn btn-secondary" onclick="window.location.href='/install'" style="width: 100%;">管理依赖</button>
+                </div>
+                
+                <div style="background: white; padding: 20px; border-radius: 15px; border-left: 4px solid #4299e1; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                    <h3 style="margin: 0 0 10px 0; color: #4299e1;">🎯 模型管理</h3>
+                    <p style="margin: 0 0 15px 0; color: #666; font-size: 14px;">下载和管理 AI 视频生成模型</p>
+                    <button class="btn btn-secondary" onclick="window.location.href='/install#models'" style="width: 100%;">管理模型</button>
+                </div>
+            </div>
+        </div>
+        
         <div class="content">
             <form id="generateForm">
                 <!-- 提示词 -->
@@ -1524,6 +1585,49 @@ async function pollInstallStatus() {
 </script>
 
 <script>
+// 页面加载时检查环境状态
+window.addEventListener('DOMContentLoaded', async function() {
+    await checkSetupStatus();
+});
+
+// 检查安装状态
+async function checkSetupStatus() {
+    try {
+        const response = await fetch('/api/check-dependencies');
+        const data = await response.json();
+        
+        const missingRequired = data.summary.required_missing.length > 0;
+        const allInstalled = data.summary.all_required_installed;
+        
+        // 显示新手引导通知
+        const setupNotification = document.getElementById('setupNotification');
+        const quickActions = document.getElementById('quickActions');
+        
+        if (allInstalled) {
+            // 所有依赖已安装，显示快速操作面板
+            setupNotification.style.display = 'none';
+            quickActions.style.display = 'grid';
+        } else {
+            // 有依赖未安装，显示新手引导
+            setupNotification.style.display = 'block';
+            quickActions.style.display = 'none';
+        }
+        
+    } catch (error) {
+        console.error('检查环境状态失败:', error);
+    }
+}
+
+// 打开设置向导
+function openSetupWizard() {
+    window.location.href = '/setup';
+}
+
+// 滚动到生成区域
+function scrollToGenerate() {
+    document.getElementById('generateForm').scrollIntoView({ behavior: 'smooth' });
+}
+
 // 在显示扫描结果时添加安装按钮
 const originalDisplayScanResult = displayScanResult;
 displayScanResult = function(summary) {
