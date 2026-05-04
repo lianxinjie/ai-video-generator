@@ -774,28 +774,114 @@ def api_check_dependencies():
     """API: 检查 Python 依赖安装状态"""
     try:
         import importlib.util
+        import importlib.metadata
         
         packages = {
-            'flask': {'required': True, 'installed': False, 'version': None},
-            'pillow': {'required': False, 'installed': False, 'version': None},
-            'psutil': {'required': False, 'installed': False, 'version': None},
-            'torch': {'required': False, 'installed': False, 'version': None},
+            'flask': {
+                'name': 'Flask',
+                'required': True,
+                'installed': False,
+                'version': None,
+                'description': 'Web 服务框架',
+                'pip_name': 'flask'
+            },
+            'PIL': {
+                'name': 'Pillow',
+                'required': True,
+                'installed': False,
+                'version': None,
+                'description': '图像处理库',
+                'pip_name': 'pillow'
+            },
+            'psutil': {
+                'name': 'psutil',
+                'required': True,
+                'installed': False,
+                'version': None,
+                'description': '系统监控库',
+                'pip_name': 'psutil'
+            },
+            'torch': {
+                'name': 'PyTorch',
+                'required': True,
+                'installed': False,
+                'version': None,
+                'description': 'AI 深度学习框架（核心依赖）',
+                'pip_name': 'torch',
+                'install_extra': '--index-url https://download.pytorch.org/whl/cpu'
+            },
+            'transformers': {
+                'name': 'Transformers',
+                'required': True,
+                'installed': False,
+                'version': None,
+                'description': '预训练模型库',
+                'pip_name': 'transformers'
+            },
+            'diffusers': {
+                'name': 'Diffusers',
+                'required': True,
+                'installed': False,
+                'version': None,
+                'description': '扩散模型库',
+                'pip_name': 'diffusers'
+            },
+            'huggingface_hub': {
+                'name': 'Huggingface Hub',
+                'required': True,
+                'installed': False,
+                'version': None,
+                'description': 'Huggingface 模型下载',
+                'pip_name': 'huggingface-hub'
+            },
+            'modelscope': {
+                'name': 'ModelScope',
+                'required': True,
+                'installed': False,
+                'version': None,
+                'description': '通义千问模型下载',
+                'pip_name': 'modelscope'
+            }
         }
         
-        for name in packages.keys():
-            spec = importlib.util.find_spec(name.replace('pillow', 'PIL').replace('psutil', 'psutil'))
+        for module_name, info in packages.items():
+            spec = importlib.util.find_spec(module_name)
             if spec is not None:
-                packages[name]['installed'] = True
                 try:
-                    module = importlib.import_module(name)
-                    packages[name]['version'] = getattr(module, '__version__', 'unknown')
+                    # 特殊处理 PIL
+                    import_name = 'PIL' if module_name == 'PIL' else module_name
+                    module = importlib.import_module(import_name)
+                    packages[module_name]['installed'] = True
+                    try:
+                        version = importlib.metadata.version(info['pip_name'])
+                        packages[module_name]['version'] = version
+                    except:
+                        packages[module_name]['version'] = getattr(module, '__version__', 'unknown')
                 except:
                     pass
         
-        return jsonify(packages)
+        # 统计
+        total = len(packages)
+        installed = sum(1 for p in packages.values() if p['installed'])
+        required_missing = [name for name, info in packages.items() if info['required'] and not info['installed']]
+        
+        result = {
+            'success': True,
+            'packages': packages,
+            'summary': {
+                'total': total,
+                'installed': installed,
+                'missing': total - installed,
+                'required_missing': required_missing,
+                'all_required_installed': len(required_missing) == 0
+            }
+        }
+        
+        return jsonify(result)
     
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 
 @app.route('/api/install-dependencies', methods=['POST'])
@@ -811,6 +897,21 @@ def api_install_dependencies():
         
         task_id = str(uuid.uuid4())
         
+        # 定义包的安装信息
+        package_info = {
+            'flask': {'pip_name': 'flask', 'extra': ''},
+            'pillow': {'pip_name': 'pillow', 'extra': ''},
+            'psutil': {'pip_name': 'psutil', 'extra': ''},
+            'torch': {
+                'pip_name': 'torch',
+                'extra': '--index-url https://download.pytorch.org/whl/cpu'
+            },
+            'transformers': {'pip_name': 'transformers', 'extra': ''},
+            'diffusers': {'pip_name': 'diffusers[torch]', 'extra': ''},
+            'huggingface-hub': {'pip_name': 'huggingface-hub', 'extra': ''},
+            'modelscope': {'pip_name': 'modelscope', 'extra': ''}
+        }
+        
         # 创建任务
         tasks[task_id] = {
             'status': 'running',
@@ -818,40 +919,65 @@ def api_install_dependencies():
             'type': 'dependency_install',
             'packages': packages,
             'start_time': datetime.now().isoformat(),
-            'log': f'准备安装：{", ".join(packages)}\n\n'
+            'log': f'准备安装 {len(packages)} 个依赖...\n\n'
         }
         
         # 后台线程执行安装
         def run_install():
             task = tasks[task_id]
             try:
+                total = len(packages)
                 for i, package in enumerate(packages):
-                    task['log'] += f'正在安装 {package}...\n'
+                    task['log'] += f'\n[{i+1}/{total}] 正在安装 {package}...\n'
+                    
+                    # 获取包信息
+                    info = package_info.get(package.lower(), {'pip_name': package, 'extra': ''})
+                    pip_name = info['pip_name']
+                    extra = info['extra']
+                    
+                    # 使用清华镜像源加速
+                    cmd = [
+                        sys.executable, '-m', 'pip', 'install',
+                        '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple',
+                        '--trusted-host', 'pypi.tuna.tsinghua.edu.cn'
+                    ]
+                    
+                    if extra:
+                        cmd.extend(extra.split())
+                    
+                    cmd.append(pip_name)
                     
                     result = subprocess.run(
-                        [sys.executable, '-m', 'pip', 'install', package, '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple'],
+                        cmd,
                         capture_output=True,
                         text=True,
-                        timeout=300
+                        timeout=600  # 10 分钟超时
                     )
                     
                     if result.returncode == 0:
-                        task['log'] += f'✓ {package} 安装成功\n\n'
+                        task['log'] += f'✓ {package} 安装成功\n'
+                        if result.stdout:
+                            # 只显示关键信息
+                            for line in result.stdout.split('\n'):
+                                if 'Successfully installed' in line or 'Requirement already' in line:
+                                    task['log'] += f'  {line}\n'
                     else:
-                        task['log'] += f'✗ {package} 安装失败：{result.stderr}\n\n'
+                        task['log'] += f'✗ {package} 安装失败\n'
+                        if result.stderr:
+                            task['log'] += f'  错误：{result.stderr.strip()}\n'
                     
-                    task['progress'] = int((i + 1) / len(packages) * 100)
+                    task['progress'] = int((i + 1) / total * 100)
                 
                 task['status'] = 'completed'
-                task['log'] += '\n所有包安装完成！\n'
+                task['log'] += '\n✅ 所有依赖安装完成！\n'
                 
             except subprocess.TimeoutExpired:
                 task['status'] = 'failed'
-                task['log'] += '\n错误：安装超时\n'
+                task['log'] += '\n❌ 错误：安装超时（10 分钟）\n'
             except Exception as e:
                 task['status'] = 'failed'
                 task['error'] = str(e)
-                task['log'] += f'\n错误：{e}\n'
+                task['log'] += f'\n❌ 错误：{e}\n'
         
         # 启动后台线程
         from threading import Thread
@@ -862,7 +988,7 @@ def api_install_dependencies():
         return jsonify({
             'success': True,
             'task_id': task_id,
-            'message': f'开始安装 {len(packages)} 个包'
+            'message': f'开始安装 {len(packages)} 个依赖'
         })
     
     except Exception as e:
