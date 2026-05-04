@@ -720,7 +720,7 @@
                 formData.append('duration', duration);
                 formData.append('mode', mode);
                 
-                const response = await fetch('/api/analyze', {
+                const response = await fetch('/api/generate', {
                     method: 'POST',
                     body: formData
                 });
