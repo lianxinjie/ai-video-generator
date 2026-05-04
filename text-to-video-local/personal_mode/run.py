@@ -354,7 +354,10 @@ def main(
     reference_config = {}
     if ref_images:
         print("【加载参考图片】")
-        from personal_mode.reference_manager import ReferenceImageManager
+        try:
+            from reference_manager import ReferenceImageManager
+        except ImportError:
+            from personal_mode.reference_manager import ReferenceImageManager
         
         ref_manager = ReferenceImageManager(verbose=True)
         
