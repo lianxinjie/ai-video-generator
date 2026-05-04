@@ -1709,3 +1709,246 @@ def api_download_ffmpeg():
             'error': str(e),
             'traceback': traceback.format_exc()
         }), 500
+
+
+# ========== Resource Monitoring & Task Pause ==========
+
+# 全局任务资源监控配置
+RESOURCE_MONITOR_CONFIG = {
+    'enabled': True,
+    'check_interval': 2,  # 每 2 秒检查一次
+    'cpu_threshold': 90,  # CPU 使用率超过 90% 暂停
+    'memory_threshold': 90,  # 内存使用率超过 90% 暂停
+    'disk_threshold': 95,  # 磁盘超过 95% 暂停
+    'pause_timeout': 300,  # 暂停最长等待 5 分钟
+}
+
+# 任务资源状态
+task_resource_status = {}
+
+
+@app.route('/api/resource-monitor/config', methods=['GET'])
+def api_get_resource_monitor_config():
+    """API: 获取资源监控配置"""
+    return jsonify({
+        'success': True,
+        'config': RESOURCE_MONITOR_CONFIG
+    })
+
+
+@app.route('/api/resource-monitor/config', methods=['POST'])
+def api_set_resource_monitor_config():
+    """API: 设置资源监控配置"""
+    try:
+        data = request.get_json() or {}
+        
+        # 更新配置
+        if 'enabled' in data:
+            RESOURCE_MONITOR_CONFIG['enabled'] = data['enabled']
+        if 'check_interval' in data:
+            RESOURCE_MONITOR_CONFIG['check_interval'] = max(1, min(10, int(data['check_interval'])))
+        if 'cpu_threshold' in data:
+            RESOURCE_MONITOR_CONFIG['cpu_threshold'] = max(50, min(99, int(data['cpu_threshold'])))
+        if 'memory_threshold' in data:
+            RESOURCE_MONITOR_CONFIG['memory_threshold'] = max(50, min(99, int(data['memory_threshold'])))
+        if 'disk_threshold' in data:
+            RESOURCE_MONITOR_CONFIG['disk_threshold'] = max(80, min(99, int(data['disk_threshold'])))
+        if 'pause_timeout' in data:
+            RESOURCE_MONITOR_CONFIG['pause_timeout'] = max(60, min(600, int(data['pause_timeout'])))
+        
+        return jsonify({
+            'success': True,
+            'config': RESOURCE_MONITOR_CONFIG,
+            'message': '配置已更新'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/resource-monitor/status', methods=['GET'])
+def api_get_resource_status():
+    """API: 获取实时监控状态"""
+    try:
+        import psutil
+        import time
+        
+        # 当前资源状态
+        current = {
+            'cpu_percent': psutil.cpu_percent(interval=0.1),
+            'memory_percent': psutil.virtual_memory().percent,
+            'disk_percent': psutil.disk_usage('/').percent,
+            'timestamp': time.time()
+        }
+        
+        # 检查是否超过阈值
+        alerts = []
+        is_paused = False
+        
+        if RESOURCE_MONITOR_CONFIG['enabled']:
+            if current['cpu_percent'] > RESOURCE_MONITOR_CONFIG['cpu_threshold']:
+                alerts.append(f"CPU 使用率过高 ({current['cpu_percent']}% > {RESOURCE_MONITOR_CONFIG['cpu_threshold']}%)")
+                is_paused = True
+            if current['memory_percent'] > RESOURCE_MONITOR_CONFIG['memory_threshold']:
+                alerts.append(f"内存使用率过高 ({current['memory_percent']}% > {RESOURCE_MONITOR_CONFIG['memory_threshold']}%)")
+                is_paused = True
+            if current['disk_percent'] > RESOURCE_MONITOR_CONFIG['disk_threshold']:
+                alerts.append(f"磁盘空间不足 ({current['disk_percent']}% > {RESOURCE_MONITOR_CONFIG['disk_threshold']}%)")
+                is_paused = True
+        
+        return jsonify({
+            'success': True,
+            'current': current,
+            'thresholds': {
+                'cpu': RESOURCE_MONITOR_CONFIG['cpu_threshold'],
+                'memory': RESOURCE_MONITOR_CONFIG['memory_threshold'],
+                'disk': RESOURCE_MONITOR_CONFIG['disk_threshold']
+            },
+            'alerts': alerts,
+            'is_paused': is_paused,
+            'monitoring_enabled': RESOURCE_MONITOR_CONFIG['enabled']
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/task/<task_id>/pause', methods=['POST'])
+def api_pause_task(task_id):
+    """API: 暂停任务"""
+    try:
+        if task_id not in tasks:
+            return jsonify({
+                'success': False,
+                'error': '任务不存在'
+            }), 404
+        
+        task = tasks[task_id]
+        
+        if task['status'] == 'running':
+            task['status'] = 'paused'
+            task['pause_reason'] = '用户请求'
+            task['pause_time'] = datetime.now()
+            task_resource_status[task_id] = 'paused'
+            
+            return jsonify({
+                'success': True,
+                'message': '任务已暂停',
+                'task_id': task_id
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '任务不在运行状态'
+            }), 400
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/task/<task_id>/resume', methods=['POST'])
+def api_resume_task(task_id):
+    """API: 恢复任务"""
+    try:
+        if task_id not in tasks:
+            return jsonify({
+                'success': False,
+                'error': '任务不存在'
+            }), 404
+        
+        task = tasks[task_id]
+        
+        if task['status'] == 'paused':
+            task['status'] = 'running'
+            task['pause_reason'] = None
+            task['resume_time'] = datetime.now()
+            if task_id in task_resource_status:
+                del task_resource_status[task_id]
+            
+            return jsonify({
+                'success': True,
+                'message': '任务已恢复',
+                'task_id': task_id
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '任务未暂停'
+            }), 400
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+def check_resource_and_pause():
+    """后台线程：监控资源并自动暂停任务"""
+    import time
+    import threading
+    
+    while True:
+        try:
+            if not RESOURCE_MONITOR_CONFIG['enabled']:
+                time.sleep(5)
+                continue
+            
+            import psutil
+            
+            # 检查当前资源
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+            memory_percent = psutil.virtual_memory().percent
+            disk_percent = psutil.disk_usage('/').percent
+            
+            # 检查是否有任务超过阈值
+            should_pause = (
+                cpu_percent > RESOURCE_MONITOR_CONFIG['cpu_threshold'] or
+                memory_percent > RESOURCE_MONITOR_CONFIG['memory_threshold'] or
+                disk_percent > RESOURCE_MONITOR_CONFIG['disk_threshold']
+            )
+            
+            # 自动暂停/恢复任务
+            for task_id, task in tasks.items():
+                if task['status'] == 'running' and should_pause:
+                    # 资源不足，暂停任务
+                    task['status'] = 'paused'
+                    task['pause_reason'] = '资源不足'
+                    task['pause_time'] = datetime.now()
+                    task_resource_status[task_id] = {
+                        'reason': '资源不足',
+                        'cpu': cpu_percent,
+                        'memory': memory_percent,
+                        'disk': disk_percent
+                    }
+                    print(f"⏸️  任务 {task_id} 已暂停（资源不足）")
+                
+                elif task['status'] == 'paused' and task.get('pause_reason') == '资源不足':
+                    # 检查资源是否恢复
+                    if (cpu_percent <= RESOURCE_MONITOR_CONFIG['cpu_threshold'] and
+                        memory_percent <= RESOURCE_MONITOR_CONFIG['memory_threshold'] and
+                        disk_percent <= RESOURCE_MONITOR_CONFIG['disk_threshold']):
+                        # 资源恢复，自动继续
+                        task['status'] = 'running'
+                        task['resume_time'] = datetime.now()
+                        if task_id in task_resource_status:
+                            del task_resource_status[task_id]
+                        print(f"▶️  任务 {task_id} 已恢复（资源充足）")
+            
+            # 等待下一次检查
+            time.sleep(RESOURCE_MONITOR_CONFIG['check_interval'])
+            
+        except Exception as e:
+            print(f"资源监控错误：{e}")
+            time.sleep(5)
+
+
+# 启动资源监控线程
+import threading
+monitor_thread = threading.Thread(target=check_resource_and_pause, daemon=True)
+monitor_thread.start()
