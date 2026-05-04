@@ -1000,3 +1000,97 @@ def api_install_dependencies():
     except Exception as e:
         import traceback
         return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+# ========== AI Configuration API ==========
+
+import json
+
+CONFIG_FILE = Path('config.json')
+
+DEFAULT_CONFIG = {
+    'model': 'modelscope',
+    'model_path': './models',
+    'precision': 'fp16',
+    'duration': 10,
+    'resolution': '512x512',
+    'fps': 24,
+    'guidance_scale': 7.5,
+    'seed': -1
+}
+
+
+def load_config():
+    """Load configuration from file"""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            pass
+    return DEFAULT_CONFIG.copy()
+
+
+def save_config(config):
+    """Save configuration to file"""
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+    return True
+
+
+@app.route('/api/config', methods=['GET'])
+def api_get_config():
+    """API: Get AI configuration"""
+    try:
+        config = load_config()
+        return jsonify({
+            'success': True,
+            'config': config
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/config', methods=['POST'])
+def api_set_config():
+    """API: Set AI configuration"""
+    try:
+        data = request.get_json() or {}
+        
+        if 'config' not in data:
+            return jsonify({
+                'success': False,
+                'error': '缺少配置数据'
+            }), 400
+        
+        # Validate and merge with defaults
+        config = DEFAULT_CONFIG.copy()
+        config.update(data['config'])
+        
+        # Type validation
+        config['duration'] = int(config.get('duration', 10))
+        config['fps'] = int(config.get('fps', 24))
+        config['guidance_scale'] = float(config.get('guidance_scale', 7.5))
+        config['seed'] = int(config.get('seed', -1))
+        
+        # Save
+        save_config(config)
+        
+        return jsonify({
+            'success': True,
+            'config': config
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/config')
+def config_page():
+    """AI Configuration page"""
+    return render_template('ai_config.html')
