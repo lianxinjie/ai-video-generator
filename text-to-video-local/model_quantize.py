@@ -76,7 +76,7 @@ class ModelQuantizer:
     def _download_model(self) -> str:
         """下载模型"""
         model_map = {
-            "modelscope": "damo/cv_synthesis_video-generation-damo",
+            "modelscope": "damo/text-to-video-synthesis",
             "cogvideox": "THUDM/CogVideoX-5b",
             "animatediff": "guoyww/animatediff-motion-adapter-v1-5-2",
         }

@@ -742,7 +742,7 @@ def main(
         
         if model == "modelscope":
             pipeline = DiffusionPipeline.from_pretrained(
-                "damo/cv_synthesis_video-generation-damo",
+                "damo/text-to-video-synthesis",
                 torch_dtype=torch.float16 if device == "cuda" else torch.float32
             )
             pipeline = pipeline.to(device)

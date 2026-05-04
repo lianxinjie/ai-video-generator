@@ -78,7 +78,7 @@ class VideoGenerator:
             
             self.pipeline = pipeline(
                 Tasks.text_to_video_synthesis,
-                model='damo/cv_synthesis_video-generation-damo',
+                model='damo/text-to-video-synthesis',
                 device=self.device if self.device != "cpu" else "cpu"
             )
             print("  - ModelScope 模型加载成功")

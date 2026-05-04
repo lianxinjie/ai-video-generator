@@ -802,7 +802,7 @@ def download_model(model_name: str, output_dir: str):
         if model_name == "modelscope":
             from modelscope import snapshot_download
             model_dir = snapshot_download(
-                'damo/cv_synthesis_video-generation-damo',
+                'damo/text-to-video-synthesis',
                 cache_dir=output_dir
             )
         else:
