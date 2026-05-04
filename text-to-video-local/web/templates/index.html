@@ -1737,20 +1737,6 @@ async function loadProjectFromURL() {
     }
 }
 
-// FFmpeg 检测和下载
-function openFFmpegModal() {
-    const modal = document.getElementById('ffmpegModal');
-    if (modal) {
-        modal.style.display = 'flex';
-        // 从 setup_wizard.html 加载检测和下载逻辑
-        if (typeof checkFFmpeg === 'function') {
-            checkFFmpeg();
-        }
-    } else {
-        // 如果模态框不存在，直接跳转设置向导
-        window.location.href = '/setup';
-    }
-}
 </script>
 
 <!-- 资源监控面板 -->
@@ -2166,5 +2152,9 @@ function refreshFFmpegCheck() {
 function closeFFmpegModal() {
     document.getElementById('ffmpegModal').style.display = 'none';
 }
-</script>
+
+function openFFmpegModal() {
+    document.getElementById('ffmpegModal').style.display = 'flex';
+    checkFFmpeg();
+}
 </script>

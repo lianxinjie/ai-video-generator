@@ -1369,9 +1369,10 @@ def api_analyze_scenes():
         # 执行 AI 场景分析
         result = analyzer.ai_analyze(prompt=prompt, mode=mode)
         
-        # 计算每个场景的时长
+        # 计算每个场景的时长（确保 duration 是数字）
         if 'scenes' in result and result['scenes']:
             total_scenes = len(result['scenes'])
+            duration = float(duration) if isinstance(duration, str) else duration
             avg_duration = duration / total_scenes
             
             for scene in result['scenes']:

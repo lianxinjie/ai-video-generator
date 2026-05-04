@@ -27,7 +27,7 @@ class ModelDownloader:
         self.model_repos = {
             "modelscope": {
                 "type": "modelscope",
-                "repo": "damo/video-generation-damo",
+                "repo": "damo/text-to-video-synthesis",
                 "size_gb": 2.5,
                 "required": True
             },
