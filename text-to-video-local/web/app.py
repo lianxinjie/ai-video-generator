@@ -557,3 +557,277 @@ def api_quick_start():
     except Exception as e:
         import traceback
         return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+# ========== 模型管理 API ==========
+
+@app.route('/api/models/list', methods=['GET'])
+def api_list_models():
+    """API: 列出所有可安装的模型"""
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from download_models import ModelDownloader
+        
+        downloader = ModelDownloader(output_dir='./models')
+        
+        # 检查已下载的模型
+        model_names = list(downloader.model_repos.keys())
+        existing = downloader.check_existing_models(model_names)
+        
+        # 构建返回数据
+        models = []
+        for name, info in downloader.model_repos.items():
+            models.append({
+                'id': name,
+                'name': name.upper(),
+                'source': 'ModelScope' if info['type'] == 'modelscope' else 'HuggingFace',
+                'repo': info['repo'],
+                'size_gb': info['size_gb'],
+                'required': info.get('required', False),
+                'installed': existing.get(name, False),
+                'description': get_model_description(name)
+            })
+        
+        return jsonify({'success': True, 'models': models})
+    
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+def get_model_description(model_name: str) -> str:
+    """获取模型描述"""
+    descriptions = {
+        'modelscope': '通义实验室视频生成模型（基础模型，推荐优先下载）',
+        'animatediff': 'AnimateDiff 动画生成模型（卡通风格）',
+        'animatediff_sd': 'AnimateDiff SD 模型（依赖 animatediff）',
+        'cogvideox': 'CogVideoX-5b 大型视频生成模型（高质量，需要大显存）',
+        'svd': 'Stable Video Diffusion 图像转视频（需要 CUDA 支持）'
+    }
+    return descriptions.get(model_name, '未知模型')
+
+
+@app.route('/api/models/install', methods=['POST'])
+def api_install_models():
+    """API: 一键安装选择的模型"""
+    try:
+        import uuid
+        data = request.get_json() or {}
+        models = data.get('models', [])
+        
+        if not models:
+            return jsonify({'error': '请选择要安装的模型'}), 400
+        
+        task_id = str(uuid.uuid4())
+        
+        # 创建任务
+        tasks[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'type': 'model_install',
+            'models': models,
+            'start_time': datetime.now().isoformat(),
+            'log': f'开始下载模型：{", ".join(models)}\n'
+        }
+        
+        # 后台线程执行下载
+        def run_download():
+            import sys
+            from io import StringIO
+            from contextlib import redirect_stdout
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from download_models import ModelDownloader
+            
+            task = tasks[task_id]
+            
+            try:
+                # 创建下载器
+                downloader = ModelDownloader(output_dir='./models', max_workers=2)
+                
+                # 检查已存在的模型
+                existing = downloader.check_existing_models(models)
+                models_to_download = [m for m in models if not existing.get(m, False)]
+                
+                if not models_to_download:
+                    task['log'] += '所有选中的模型已存在，跳过下载\n'
+                    task['status'] = 'completed'
+                    task['progress'] = 100
+                    return
+                
+                task['log'] += f'需要下载 {len(models_to_download)} 个模型，跳过 {len(models) - len(models_to_download)} 个已存在模型\n'
+                
+                # 重定向输出以捕获日志
+                output = StringIO()
+                with redirect_stdout(output):
+                    results = downloader.download_batch(models_to_download, show_progress=False)
+                
+                # 更新日志
+                task['log'] += output.getvalue()
+                
+                # 统计结果
+                success_count = sum([1 for r in results if r['success']])
+                fail_count = len(results) - success_count
+                
+                task['log'] += f'\n下载完成：成功 {success_count}/{len(results)}, 失败 {fail_count}/{len(results)}\n'
+                
+                if fail_count > 0:
+                    task['status'] = 'partial'
+                    task['failed_models'] = [r['name'] for r in results if not r['success']]
+                else:
+                    task['status'] = 'completed'
+                
+                task['progress'] = 100
+                
+            except Exception as e:
+                task['status'] = 'failed'
+                task['error'] = str(e)
+                task['log'] += f'错误：{e}\n'
+        
+        # 启动后台线程
+        from threading import Thread
+        thread = Thread(target=run_download)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'message': f'开始下载 {len(models)} 个模型'
+        })
+    
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/api/models/status/<task_id>', methods=['GET'])
+def api_model_install_status(task_id):
+    """API: 查询模型安装进度"""
+    if task_id not in tasks:
+        return jsonify({'error': '任务不存在'}), 404
+    
+    task = tasks[task_id]
+    
+    # 读取进度文件（如果有）
+    progress_log = tasks[task_id].get('log', '')
+    if task.get('progress_file') and Path(task['progress_file']).exists():
+        with open(task['progress_file'], 'r') as f:
+            progress_log = f.read()[-10000:]
+    
+    result = {
+        'task_id': task_id,
+        'status': task.get('status', 'unknown'),
+        'progress': task.get('progress', 0),
+        'type': task.get('type', 'unknown'),
+        'log': progress_log,
+        'models': task.get('models', []),
+    }
+    
+    if task.get('error'):
+        result['error'] = task['error']
+    
+    if task.get('failed_models'):
+        result['failed_models'] = task['failed_models']
+    
+    return jsonify(result)
+
+
+@app.route('/api/check-dependencies', methods=['GET'])
+def api_check_dependencies():
+    """API: 检查 Python 依赖安装状态"""
+    try:
+        import importlib.util
+        
+        packages = {
+            'flask': {'required': True, 'installed': False, 'version': None},
+            'pillow': {'required': False, 'installed': False, 'version': None},
+            'psutil': {'required': False, 'installed': False, 'version': None},
+            'torch': {'required': False, 'installed': False, 'version': None},
+        }
+        
+        for name in packages.keys():
+            spec = importlib.util.find_spec(name.replace('pillow', 'PIL').replace('psutil', 'psutil'))
+            if spec is not None:
+                packages[name]['installed'] = True
+                try:
+                    module = importlib.import_module(name)
+                    packages[name]['version'] = getattr(module, '__version__', 'unknown')
+                except:
+                    pass
+        
+        return jsonify(packages)
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/install-dependencies', methods=['POST'])
+def api_install_dependencies():
+    """API: 安装 Python 依赖"""
+    try:
+        import subprocess
+        data = request.get_json() or {}
+        packages = data.get('packages', [])
+        
+        if not packages:
+            return jsonify({'error': '请指定要安装的包'}), 400
+        
+        task_id = str(uuid.uuid4())
+        
+        # 创建任务
+        tasks[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'type': 'dependency_install',
+            'packages': packages,
+            'start_time': datetime.now().isoformat(),
+            'log': f'准备安装：{", ".join(packages)}\n\n'
+        }
+        
+        # 后台线程执行安装
+        def run_install():
+            task = tasks[task_id]
+            try:
+                for i, package in enumerate(packages):
+                    task['log'] += f'正在安装 {package}...\n'
+                    
+                    result = subprocess.run(
+                        [sys.executable, '-m', 'pip', 'install', package, '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple'],
+                        capture_output=True,
+                        text=True,
+                        timeout=300
+                    )
+                    
+                    if result.returncode == 0:
+                        task['log'] += f'✓ {package} 安装成功\n\n'
+                    else:
+                        task['log'] += f'✗ {package} 安装失败：{result.stderr}\n\n'
+                    
+                    task['progress'] = int((i + 1) / len(packages) * 100)
+                
+                task['status'] = 'completed'
+                task['log'] += '\n所有包安装完成！\n'
+                
+            except subprocess.TimeoutExpired:
+                task['status'] = 'failed'
+                task['log'] += '\n错误：安装超时\n'
+            except Exception as e:
+                task['status'] = 'failed'
+                task['error'] = str(e)
+                task['log'] += f'\n错误：{e}\n'
+        
+        # 启动后台线程
+        from threading import Thread
+        thread = Thread(target=run_install)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'message': f'开始安装 {len(packages)} 个包'
+        })
+    
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500

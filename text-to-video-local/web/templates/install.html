@@ -167,41 +167,78 @@
         
         <!-- Step 2: 选择安装 -->
         <div id="step2" class="step hidden">
-            <h2>⚙️ 步骤 2: 选择安装</h2>
+            <h2>⚙️ 步骤 2: 选择依赖</h2>
+            <p style="color: #666; font-size: 14px; margin-bottom: 15px;">选择需要安装的 Python 依赖包</p>
             <div class="checkbox-item">
                 <input type="checkbox" id="installFlask" checked>
                 <label for="installFlask">
-                    <strong>Flask</strong> - Web 服务框架（必需）
+                    <strong>Flask</strong> - Web 服务框架<span style="color: #e53e3e; font-size: 12px;"> (必需)</span>
                 </label>
             </div>
             <div class="checkbox-item">
                 <input type="checkbox" id="installPillow" checked>
                 <label for="installPillow">
-                    <strong>Pillow</strong> - 图片处理（推荐）
+                    <strong>Pillow</strong> - 图片处理<span style="color: orange; font-size: 12px;"> (推荐)</span>
                 </label>
             </div>
             <div class="checkbox-item">
                 <input type="checkbox" id="installPsutil" checked>
                 <label for="installPsutil">
-                    <strong>psutil</strong> - 系统监控（推荐）
+                    <strong>psutil</strong> - 系统监控<span style="color: orange; font-size: 12px;"> (推荐)</span>
                 </label>
             </div>
             <div class="checkbox-item">
                 <input type="checkbox" id="installTorch">
                 <label for="installTorch">
-                    <strong>PyTorch</strong> - AI 模型（可选，体积较大）
+                    <strong>PyTorch</strong> - AI 深度学习框架<span style="color: #666; font-size: 12px;"> (可选，体积较大 ~2GB)</span>
                 </label>
             </div>
             <div style="margin-top: 20px; text-align: right;">
                 <button class="btn btn-secondary" onclick="showStep1()">上一步</button>
-                <button class="btn" onclick="startInstall()">开始安装</button>
+                <button class="btn" onclick="startDependencyInstall()">安装依赖</button>
+                <button class="btn" style="margin-left: 10px;" onclick="showStep2Models()">选择模型 →</button>
+            </div>
+        </div>
+        
+        <!-- Step 2.5: 选择模型 -->
+        <div id="step2Models" class="step hidden">
+            <h2>🎯 步骤 3: 选择模型</h2>
+            <p style="color: #666; font-size: 14px; margin-bottom: 15px;">选择需要下载的 AI 视频生成模型</p>
+            <div id="modelList" style="max-height: 400px; overflow-y: auto; margin-bottom: 20px;">
+                <!-- 模型列表将由 JavaScript 动态加载 -->
+            </div>
+            <div style="background: #fff3cd; padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+                <strong>💡 提示：</strong>
+                <ul style="margin: 10px 0 0 20px; font-size: 13px; color: #666;">
+                    <li>`modelscope` 是基础模型，推荐优先下载（2.5GB）</li>
+                    <li>`animatediff` 适合卡通风格动画（4GB）</li>
+                    <li>`cogvideox` 质量最高但需要大显存（20GB）</li>
+                    <li>`svd` 用于图像转视频，需要 CUDA 支持（12GB）</li>
+                </ul>
+            </div>
+            <div style="text-align: right; margin-bottom: 20px;">
+                <button class="btn btn-secondary" onclick="selectAllModels()">全选</button>
+                <button class="btn btn-secondary" onclick="deselectAllModels()">全不选</button>
+                <button class="btn btn-secondary" onclick="selectRecommended()">仅推荐</button>
+            </div>
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn btn-secondary" onclick="showStep3FromModels()">跳过模型下载</button>
+                <button class="btn" onclick="startModelInstall()">开始下载模型</button>
             </div>
         </div>
         
         <!-- Step 3: 安装进度 -->
         <div id="step3" class="step hidden">
-            <h2>🔄 步骤 3: 安装进行中</h2>
+            <h2>🔄 步骤 4: 安装进行中</h2>
+            <div id="installProgress" style="margin-bottom: 20px;">
+                <div class="progress-bar">
+                    <div id="installProgressBar" class="progress-fill" style="width: 0%">0%</div>
+                </div>
+            </div>
             <div class="log" id="installLog">准备安装...</div>
+            <div style="margin-top: 20px; text-align: center;">
+                <button id="btnFinishInstall" class="btn hidden" onclick="finishInstall()">完成安装</button>
+            </div>
         </div>
         
         <!-- Step 4: 完成 -->
@@ -220,6 +257,9 @@
     
     <script>
         let dependencies = {};
+        let models = [];
+        let currentInstallTask = null;
+        let pollingInterval = null;
         
         // 页面加载时检查依赖
         window.onload = function() {
@@ -291,8 +331,8 @@
             document.getElementById('step1').classList.remove('hidden');
         }
         
-        // 开始安装
-        async function startInstall() {
+        // 安装依赖
+        async function startDependencyInstall() {
             document.getElementById('step2').classList.add('hidden');
             document.getElementById('step3').classList.remove('hidden');
             
@@ -303,7 +343,11 @@
             if (document.getElementById('installTorch').checked) packages.push('torch');
             
             const logDiv = document.getElementById('installLog');
-            logDiv.innerHTML = '正在安装...\n\n';
+            logDiv.innerHTML = '正在安装依赖...\n\n';
+            document.getElementById('installProgress').style.display = 'block';
+            document.getElementById('installProgressBar').style.width = '0%';
+            document.getElementById('installProgressBar').textContent = '0%';
+            document.getElementById('btnFinishInstall').classList.add('hidden');
             
             try {
                 const response = await fetch('/api/install-dependencies', {
@@ -313,23 +357,227 @@
                 });
                 
                 const result = await response.json();
+                currentInstallTask = result.task_id;
                 
-                result.output.forEach(line => {
-                    logDiv.textContent += line + '\n';
-                });
-                
-                logDiv.textContent += '\n安装完成！\n';
-                logDiv.scrollTop = logDiv.scrollHeight;
-                
-                // 显示完成步骤
-                setTimeout(() => {
-                    document.getElementById('step3').classList.add('hidden');
-                    document.getElementById('step4').classList.remove('hidden');
-                }, 2000);
+                // 轮询查看进度
+                startPolling('/api/task/' + result.task_id, installProgressCallback);
                 
             } catch (error) {
                 logDiv.textContent += '\n错误：' + error.message + '\n';
             }
+        }
+        
+        // 加载模型列表
+        async function loadModels() {
+            const modelList = document.getElementById('modelList');
+            modelList.innerHTML = '<li class="dependency-item">正在加载模型列表...</li>';
+            
+            try {
+                const response = await fetch('/api/models/list');
+                const result = await response.json();
+                
+                if (result.success) {
+                    models = result.models;
+                    renderModelList();
+                } else {
+                    modelList.innerHTML = '<li class="dependency-item" style="color: red;">加载失败：' + result.error + '</li>';
+                }
+            } catch (error) {
+                modelList.innerHTML = '<li class="dependency-item" style="color: red;">加载失败：' + error.message + '</li>';
+            }
+        }
+        
+        // 渲染模型列表
+        function renderModelList() {
+            const modelList = document.getElementById('modelList');
+            modelList.innerHTML = '';
+            
+            models.forEach(model => {
+                const div = document.createElement('div');
+                div.className = 'checkbox-item';
+                div.style.background = 'white';
+                div.style.padding = '10px';
+                div.style.borderRadius = '8px';
+                div.style.margin = '5px 0';
+                
+                div.innerHTML = `
+                    <input type="checkbox" id="model_${model.id}" 
+                           ${model.installed ? 'checked disabled' : ''} 
+                           ${model.required ? 'checked' : ''}>
+                    <label for="model_${model.id}" style="flex: 1;">
+                        <strong>${model.name}</strong> 
+                        ${model.required ? '<span style="color: #e53e3e; font-size: 12px;">(必需)</span>' : ''}
+                        ${model.installed ? '<span style="color: #48bb78; font-size: 12px;"> (已安装)</span>' : ''}
+                        <div style="font-size: 13px; color: #666; margin-top: 5px;">
+                            ${model.description} | 
+                            来源：${model.source} | 
+                            大小：${model.size_gb}GB
+                            ${model.installed ? '' : ' | 仓库：' + model.repo}
+                        </div>
+                    </label>
+                `;
+                
+                modelList.appendChild(div);
+            });
+        }
+        
+        // 全选模型
+        function selectAllModels() {
+            models.forEach(model => {
+                if (!model.installed) {
+                    const checkbox = document.getElementById('model_' + model.id);
+                    if (checkbox) checkbox.checked = true;
+                }
+            });
+        }
+        
+        // 全不选模型
+        function deselectAllModels() {
+            models.forEach(model => {
+                const checkbox = document.getElementById('model_' + model.id);
+                if (checkbox && !model.required) checkbox.checked = false;
+            });
+        }
+        
+        // 仅选择推荐
+        function selectRecommended() {
+            models.forEach(model => {
+                const checkbox = document.getElementById('model_' + model.id);
+                if (checkbox) {
+                    checkbox.checked = model.required || model.id === 'modelscope';
+                }
+            });
+        }
+        
+        // 显示模型选择步骤
+        function showStep2Models() {
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('step2Models').classList.remove('hidden');
+            loadModels();
+        }
+        
+        // 从模型选择回到步骤 2
+        function showStep2FromModels() {
+            document.getElementById('step2Models').classList.add('hidden');
+            document.getElementById('step2').classList.remove('hidden');
+        }
+        
+        // 从模型选择到步骤 3（跳过模型下载）
+        function showStep3FromModels() {
+            document.getElementById('step2Models').classList.add('hidden');
+            document.getElementById('step3').classList.remove('hidden');
+            document.getElementById('installLog').innerHTML = '安装完成！\n';
+            document.getElementById('btnFinishInstall').classList.remove('hidden');
+        }
+        
+        // 安装模型
+        async function startModelInstall() {
+            const selectedModels = [];
+            models.forEach(model => {
+                const checkbox = document.getElementById('model_' + model.id);
+                if (checkbox && checkbox.checked && !model.installed) {
+                    selectedModels.push(model.id);
+                }
+            });
+            
+            if (selectedModels.length === 0) {
+                alert('请至少选择一个模型');
+                return;
+            }
+            
+            document.getElementById('step2Models').classList.add('hidden');
+            document.getElementById('step3').classList.remove('hidden');
+            document.getElementById('installLog').innerHTML = '正在下载模型...\n\n';
+            document.getElementById('installProgress').style.display = 'block';
+            document.getElementById('installProgressBar').style.width = '0%';
+            document.getElementById('installProgressBar').textContent = '0%';
+            document.getElementById('btnFinishInstall').classList.add('hidden');
+            
+            try {
+                const response = await fetch('/api/models/install', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({models: selectedModels})
+                });
+                
+                const result = await response.json();
+                currentInstallTask = result.task_id;
+                
+                // 轮询查看进度
+                startPolling('/api/models/status/' + result.task_id, installProgressCallback);
+                
+            } catch (error) {
+                document.getElementById('installLog').textContent += '\n错误：' + error.message + '\n';
+            }
+        }
+        
+        // 轮询进度
+        function startPolling(url, callback) {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+            
+            pollingInterval = setInterval(async () => {
+                if (!currentInstallTask) {
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(url);
+                    const result = await response.json();
+                    callback(result);
+                } catch (error) {
+                    console.error('轮询失败:', error);
+                }
+            }, 1000);
+        }
+        
+        // 安装进度回调
+        function installProgressCallback(result) {
+            const logDiv = document.getElementById('installLog');
+            const progressBar = document.getElementById('installProgressBar');
+            
+            if (result.log) {
+                logDiv.textContent = result.log;
+                logDiv.scrollTop = logDiv.scrollHeight;
+            }
+            
+            if (result.progress) {
+                progressBar.style.width = result.progress + '%';
+                progressBar.textContent = result.progress + '%';
+            }
+            
+            if (result.status === 'completed' || result.status === 'failed' || result.status === 'partial') {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+                
+                if (result.status === 'completed') {
+                    logDiv.textContent += '\n✅ 安装完成！\n';
+                    document.getElementById('btnFinishInstall').classList.remove('hidden');
+                } else if (result.status === 'partial') {
+                    logDiv.textContent += '\n⚠️ 部分模型安装成功\n';
+                    if (result.failed_models) {
+                        logDiv.textContent += '失败的模型：' + result.failed_models.join(', ') + '\n';
+                    }
+                    document.getElementById('btnFinishInstall').classList.remove('hidden');
+                } else {
+                    logDiv.textContent += '\n❌ 安装失败\n';
+                    if (result.error) {
+                        logDiv.textContent += '错误：' + result.error + '\n';
+                    }
+                }
+            }
+        }
+        
+        // 完成安装
+        function finishInstall() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+            
+            document.getElementById('step3').classList.add('hidden');
+            document.getElementById('step4').classList.remove('hidden');
         }
     </script>
 </body>
