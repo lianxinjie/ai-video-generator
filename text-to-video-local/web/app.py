@@ -3005,15 +3005,23 @@ def api_download_ffmpeg():
         
         # 使用流式下载，避免内存占用过大
         # 先验证 URL 可用性
+        print(f"[FFmpeg 下载] 主镜像：{url[:80]}...")
         try:
+            print(f"[FFmpeg 下载] 发送 HEAD 请求...")
             head_resp = requests.head(url, timeout=10, allow_redirects=True)
+            print(f"[FFmpeg 下载] HEAD 响应：HTTP {head_resp.status_code}")
+            if head_resp.history:
+                print(f"[FFmpeg 下载] 重定向 {len(head_resp.history)} 次")
             if head_resp.status_code != 200:
                 # 尝试备用镜像
                 print(f"[FFmpeg 下载] 主镜像失败 (HTTP {head_resp.status_code}), 尝试备用镜像...")
+                print(f"[FFmpeg 下载] 备用镜像数量：{len(backup_urls)}")
                 switched = False
                 for backup_url in backup_urls:
                     try:
+                        print(f"[FFmpeg 下载] 尝试备用镜像：{backup_url[:80]}...")
                         backup_resp = requests.head(backup_url, timeout=10, allow_redirects=True)
+                        print(f"[FFmpeg 下载] 备用镜像响应：HTTP {backup_resp.status_code}")
                         if backup_resp.status_code == 200:
                             print(f"[FFmpeg 下载] 切换到备用镜像：{backup_url[:80]}...")
                             url = backup_url
