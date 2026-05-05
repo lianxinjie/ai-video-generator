@@ -501,6 +501,11 @@
                         <div class="mode-card" data-mode="collaborative" onclick="selectMode('collaborative')">
                             <h4>🤖 协同模式</h4>
                             <p>本地 + 云端 AI 协同，智能分工，2-4 分钟</p>
+                            <button type="button" onclick="checkCollaborativeMode(event)" 
+                                style="margin-top: 10px; padding: 8px 16px; font-size: 0.9em; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer;"
+                                title="检测协同模式环境配置">
+                                🔍 检测环境
+                            </button>
                         </div>
                         <div class="mode-card" data-mode="hybrid" onclick="selectMode('hybrid')">
                             <h4>🔀 混合模式</h4>
@@ -1968,12 +1973,36 @@ function showResourceSettings() {
 <!-- FFmpeg 检测和下载模态框 -->
 <div id="ffmpegModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
     <div class="modal-content" style="background: white; padding: 40px; border-radius: 20px; max-width: 700px; width: 90%;">
-        <h2 style="color: #667eea; margin-bottom: 20px;">🎬 FFmpeg 检测与安装</h2>
-        
-        <div id="resourceCheck" style="margin-bottom: 20px;">
-            <h3>💻 系统资源检测</h3>
-            <div id="resourceStatus"></div>
+        <h2 style="margin-bottom: 20px; color: #667eea;">🎬 FFmpeg 管理</h2>
+        <div id="ffmpegContent">
+            <p>FFmpeg 是视频处理的核心工具...</p>
         </div>
+        <div style="margin-top: 30px; text-align: right;">
+            <button class="btn" onclick="closeFFmpegModal()" style="background: #48bb78;">
+                关闭
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="collaborativeModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1001; justify-content: center; align-items: center;">
+    <div class="modal-content" style="background: white; padding: 40px; border-radius: 20px; max-width: 900px; width: 90%; max-height: 80vh; overflow-y: auto;">
+        <h2 style="margin-bottom: 20px; color: #667eea;">🤖 协同模式环境检测</h2>
+        
+        <div id="collaborativeContent">
+            <div class="loading" style="text-align: center; padding: 40px;">
+                <div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
+                <p>正在检测协同模式环境配置...</p>
+            </div>
+        </div>
+        
+        <div style="margin-top: 30px; text-align: right;">
+            <button class="btn" onclick="closeCollaborativeModal()" style="background: #48bb78;">
+                关闭
+            </button>
+        </div>
+    </div>
+</div>
         
         <div id="ffmpegStatus" style="margin-bottom: 20px;">
             <h3>📦 FFmpeg 状态</h3>
@@ -2156,5 +2185,216 @@ function closeFFmpegModal() {
 function openFFmpegModal() {
     document.getElementById('ffmpegModal').style.display = 'flex';
     checkFFmpeg();
+}
+
+function checkCollaborativeMode(event) {
+    if (event) event.stopPropagation();
+    
+    const modal = document.getElementById('collaborativeModal');
+    modal.style.display = 'flex';
+    document.getElementById('collaborativeContent').innerHTML = `
+        <div class="loading" style="text-align: center; padding: 40px;">
+            <div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
+            <p>正在检测协同模式环境配置...</p>
+        </div>
+    `;
+    
+    fetch('/api/check-collaborative-mode')
+        .then(res => res.json())
+        .then(data => {
+            displayCollaborativeStatus(data);
+        })
+        .catch(err => {
+            document.getElementById('collaborativeContent').innerHTML = `
+                <div style="background: #fff5f5; border-left: 4px solid #f56565; padding: 20px; border-radius: 10px;">
+                    <strong>❌ 检测失败</strong>
+                    <p>${err.message}</p>
+                </div>
+            `;
+        });
+}
+
+function displayCollaborativeStatus(data) {
+    if (!data.success) {
+        document.getElementById('collaborativeContent').innerHTML = `
+            <div style="background: #fff5f5; border-left: 4px solid #f56565; padding: 20px; border-radius: 10px;">
+                <strong>❌ 检测失败</strong>
+                <p>${data.error || '未知错误'}</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const statusColors = {
+        'ok': '#48bb78',
+        'warning': '#ed8936',
+        'error': '#f56565',
+        'pending': '#a0aec0'
+    };
+    
+    const statusIcons = {
+        'ok': '✓',
+        'warning': '⚠',
+        'error': '✗',
+        'pending': '◌'
+    };
+    
+    const statusBg = {
+        'ready': '#f0fff4',
+        'partial': '#fffaf0',
+        'not_ready': '#fff5f5'
+    };
+    
+    const statusBorder = {
+        'ready': '#48bb78',
+        'partial': '#ed8936',
+        'not_ready': '#f56565'
+    };
+    
+    let html = `
+        <div style="background: ${statusBg[data.overall_status]}; border-left: 4px solid ${statusBorder[data.overall_status]}; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+            <strong style="font-size: 1.2em;">
+                ${data.overall_status === 'ready' ? '✅' : data.overall_status === 'partial' ? '⚠️' : '❌'}
+                ${data.overall_message}
+            </strong>
+            <div style="margin-top: 10px; font-size: 0.9em;">
+                完成度：${data.summary.ok}/${data.summary.total} (${data.summary.percentage}%)
+            </div>
+        </div>
+        
+        <div style="display: grid; gap: 15px; margin-bottom: 20px;">
+    `;
+    
+    for (const [key, check] of Object.entries(data.checks)) {
+        html += `
+            <div style="background: #f8f9ff; padding: 15px; border-radius: 10px; border-left: 4px solid ${statusColors[check.status]};">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <strong>${statusIcons[check.status]} ${check.name}</strong>
+                    <span style="background: ${statusColors[check.status]}; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.85em;">
+                        ${check.message}
+                    </span>
+                </div>
+                ${check.details.length > 0 ? `
+                    <ul style="margin: 10px 0 0 20px; font-size: 0.9em; color: #555;">
+                        ${check.details.map(d => `<li>${d}</li>`).join('')}
+                    </ul>
+                ` : ''}
+            </div>
+        `;
+    }
+    
+    html += `</div>`;
+    
+    // 安装建议
+    if (data.recommendations.need_install || data.recommendations.use_cloud) {
+        const needInstall = data.recommendations.need_install;
+        const useCloud = data.recommendations.use_cloud;
+        
+        html += `
+            <div style="background: ${needInstall ? '#fff5f5' : '#f0fff4'}; border: 2px solid ${needInstall ? '#f56565' : '#48bb78'}; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                <strong style="font-size: 1.1em;">
+                    ${needInstall ? '❌ 需要安装组件' : '💡 推荐配置'}
+                </strong>
+                <p style="margin: 10px 0; font-size: 0.95em;">
+                    ${needInstall 
+                        ? '环境存在关键缺失，建议一键安装所需组件' 
+                        : useCloud 
+                            ? '建议使用云端生成模式，无需本地 GPU 和模型' 
+                            : '环境已就绪，可以开始使用协同模式'
+                    }
+                </p>
+                ${needInstall ? `
+                    <button onclick="installCollaborativeComponents()" 
+                        style="background: #f56565; color: white; border: none; padding: 12px 30px; border-radius: 8px; font-size: 1em; cursor: pointer; margin-top: 10px;">
+                        🔧 一键安装所有组件
+                    </button>
+                ` : useCloud ? `
+                    <button onclick="selectMode('collaborative'); closeCollaborativeModal();" 
+                        style="background: #48bb78; color: white; border: none; padding: 12px 30px; border-radius: 8px; font-size: 1em; cursor: pointer; margin-top: 10px;">
+                        ✓ 使用云端模式
+                    </button>
+                ` : ''}
+            </div>
+        `;
+    }
+    
+    document.getElementById('collaborativeContent').innerHTML = html;
+}
+
+function installCollaborativeComponents() {
+    const components = ['dependencies', 'ffmpeg', 'models'];
+    
+    document.getElementById('collaborativeContent').innerHTML = `
+        <div style="text-align: center; padding: 40px;">
+            <div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
+            <h3>🔧 正在安装协同模式组件...</h3>
+            <p style="margin-top: 10px;">安装内容：Python 依赖、FFmpeg、模型文件</p>
+            <p style="margin-top: 5px; font-size: 0.9em; color: #666;">首次安装可能需要 10-20 分钟，请耐心等待</p>
+            
+            <div id="installProgress" style="margin-top: 30px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
+                <div style="background: #f8f9ff; padding: 15px; border-radius: 10px; margin-top: 10px;">
+                    <strong>⏳ 安装进度:</strong>
+                    <div style="background: #e0e0e0; height: 20px; border-radius: 10px; margin-top: 10px; overflow: hidden;">
+                        <div id="installProgressBar" style="background: linear-gradient(90deg, #667eea, #764ba2); width: 0%; height: 100%; transition: width 0.3s;"></div>
+                    </div>
+                    <div id="installProgressText" style="text-align: center; margin-top: 10px;">0%</div>
+                </div>
+                <div id="installLogs" style="background: #1a202c; color: #48bb78; padding: 15px; border-radius: 10px; margin-top: 15px; font-family: monospace; font-size: 0.85em; max-height: 300px; overflow-y: auto; white-space: pre-wrap;"></div>
+            </div>
+        </div>
+    `;
+    
+    fetch('/api/install-collaborative-components', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({components: components})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            pollInstallStatus(data.task_id, 0);
+        } else {
+            alert('安装失败：' + data.error);
+        }
+    })
+    .catch(err => {
+        alert('请求失败：' + err.message);
+    });
+}
+
+function pollInstallStatus(taskId, lastProgress) {
+    fetch(`/api/install-collaborative-status/${taskId}`)
+        .then(res => res.json())
+        .then(data => {
+            const progressBar = document.getElementById('installProgressBar');
+            const progressText = document.getElementById('installProgressText');
+            const logsDiv = document.getElementById('installLogs');
+            
+            if (progressBar && progressText) {
+                progressBar.style.width = data.progress + '%';
+                progressText.textContent = data.progress + '%';
+            }
+            
+            if (logsDiv && data.logs) {
+                logsDiv.textContent = data.logs.join('\n');
+                logsDiv.scrollTop = logsDiv.scrollHeight;
+            }
+            
+            if (data.status === 'complete') {
+                setTimeout(() => {
+                    alert('安装完成！请重新检测环境状态。');
+                    checkCollaborativeMode();
+                }, 2000);
+            } else {
+                setTimeout(() => pollInstallStatus(taskId, data.progress), 2000);
+            }
+        })
+        .catch(err => {
+            console.error('轮询失败:', err);
+        });
+}
+
+function closeCollaborativeModal() {
+    document.getElementById('collaborativeModal').style.display = 'none';
 }
 </script>

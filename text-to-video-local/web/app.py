@@ -932,6 +932,425 @@ def api_install_dependencies():
             'pillow': {'pip_name': 'pillow', 'extra': ''},
             'psutil': {'pip_name': 'psutil', 'extra': ''},
             'torch': {
+
+
+@app.route('/api/check-collaborative-mode', methods=['GET'])
+def api_check_collaborative_mode():
+    """API: 检查协同模式环境配置状态"""
+    try:
+        import importlib.util
+        import shutil
+        import torch
+        
+        # 检测项列表
+        checks = {
+            'cuda': {
+                'name': 'CUDA GPU',
+                'required': True,
+                'status': 'pending',
+                'message': '检测中...',
+                'details': []
+            },
+            'torch': {
+                'name': 'PyTorch',
+                'required': True,
+                'status': 'pending',
+                'message': '检测中...',
+                'details': []
+            },
+            'models': {
+                'name': '本地模型文件',
+                'required': False,
+                'status': 'pending',
+                'message': '检测中...',
+                'details': []
+            },
+            'ffmpeg': {
+                'name': 'FFmpeg',
+                'required': True,
+                'status': 'pending',
+                'message': '检测中...',
+                'details': []
+            },
+            'cloud_api': {
+                'name': '云端 API 配置',
+                'required': False,
+                'status': 'pending',
+                'message': '检测中...',
+                'details': []
+            },
+            'dependencies': {
+                'name': '核心依赖',
+                'required': True,
+                'status': 'pending',
+                'message': '检测中...',
+                'details': []
+            }
+        }
+        
+        # 1. 检测 CUDA
+        try:
+            if torch.cuda.is_available():
+                gpus = []
+                for i in range(torch.cuda.device_count()):
+                    gpus.append(torch.cuda.get_device_name(i))
+                
+                free_mem, total_mem = torch.cuda.mem_get_info()
+                checks['cuda']['status'] = 'ok'
+                checks['cuda']['message'] = f'可用：{len(gpus)} 个 GPU'
+                checks['cuda']['details'] = [
+                    f'GPU 型号：{", ".join(gpus)}',
+                    f'显存：{free_mem / 1024 / 1024 / 1024:.1f}GB / {total_mem / 1024 / 1024 / 1024:.1f}GB',
+                    f'CUDA 版本：{torch.version.cuda}'
+                ]
+            else:
+                checks['cuda']['status'] = 'warning'
+                checks['cuda']['message'] = 'CUDA 不可用，可使用云端模式'
+                checks['cuda']['details'] = ['本地 GPU 不可用，建议使用云端生成模式']
+        except Exception as e:
+            checks['cuda']['status'] = 'error'
+            checks['cuda']['message'] = f'CUDA 检测失败：{str(e)}'
+        
+        # 2. 检测 PyTorch
+        try:
+            import torch
+            checks['torch']['status'] = 'ok'
+            checks['torch']['message'] = f'PyTorch {torch.__version__}'
+            checks['torch']['details'] = [
+                f'版本：{torch.__version__}',
+                f'CUDA 支持：{"是" if torch.cuda.is_available() else "否"}',
+                f'CUDNN 版本：{torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else "N/A"}'
+            ]
+        except ImportError:
+            checks['torch']['status'] = 'error'
+            checks['torch']['message'] = 'PyTorch 未安装'
+            checks['torch']['details'] = ['需要安装 PyTorch 才能使用本地生成功能']
+        except Exception as e:
+            checks['torch']['status'] = 'error'
+            checks['torch']['message'] = f'PyTorch 检测失败：{str(e)}'
+        
+        # 3. 检测模型文件
+        models_dir = Path('./models')
+        if models_dir.exists():
+            model_files = list(models_dir.glob('**/*'))
+            if model_files:
+                checks['models']['status'] = 'ok'
+                checks['models']['message'] = f'已找到 {len(model_files)} 个模型文件'
+                checks['models']['details'] = [str(f.relative_to(models_dir)) for f in model_files[:10]]
+                if len(model_files) > 10:
+                    checks['models']['details'].append(f'... 还有 {len(model_files) - 10} 个文件')
+            else:
+                checks['models']['status'] = 'warning'
+                checks['models']['message'] = '模型目录为空'
+                checks['models']['details'] = ['需要下载模型文件才能使用本地生成功能']
+        else:
+            checks['models']['status'] = 'warning'
+            checks['models']['message'] = '模型目录不存在'
+            checks['models']['details'] = [
+                '需要创建 models 目录并下载模型',
+                '或者使用云端生成模式（不需要本地模型）'
+            ]
+        
+        # 4. 检测 FFmpeg
+        ffmpeg_path = shutil.which('ffmpeg')
+        local_ffmpeg = Path('./ffmpeg/bin/ffmpeg.exe')
+        if ffmpeg_path or local_ffmpeg.exists():
+            checks['ffmpeg']['status'] = 'ok'
+            path = ffmpeg_path or str(local_ffmpeg)
+            checks['ffmpeg']['message'] = f'FFmpeg 已安装：{path}'
+            checks['ffmpeg']['details'] = [f'路径：{path}']
+        else:
+            checks['ffmpeg']['status'] = 'warning'
+            checks['ffmpeg']['message'] = 'FFmpeg 未安装'
+            checks['ffmpeg']['details'] = [
+                'FFmpeg 是视频合并所必需的',
+                '可通过 Web 界面 → FFmpeg → 自动下载',
+                '或使用 apt/yum 安装：sudo apt install ffmpeg'
+            ]
+        
+        # 5. 检测云端 API 配置
+        config_file = Path('./config.json')
+        if config_file.exists():
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                api_keys = []
+                if config.get('ai_api_key'):
+                    api_keys.append(f"API Key：{config.get('ai_api_key', '')[:8]}...")
+                if config.get('ai_api_base'):
+                    api_keys.append(f"API Base: {config.get('ai_api_base', '')}")
+                if config.get('ai_model_name'):
+                    api_keys.append(f"模型：{config.get('ai_model_name', '')}")
+                
+                if api_keys:
+                    checks['cloud_api']['status'] = 'ok'
+                    checks['cloud_api']['message'] = '云端 API 已配置'
+                    checks['cloud_api']['details'] = api_keys
+                else:
+                    checks['cloud_api']['status'] = 'warning'
+                    checks['cloud_api']['message'] = '云端 API 未配置'
+                    checks['cloud_api']['details'] = [
+                        '配置云端 API 后可使用云端生成模式',
+                        '支持：通义千问、OpenAI、Clove AI'
+                    ]
+            except Exception as e:
+                checks['cloud_api']['status'] = 'warning'
+                checks['cloud_api']['message'] = '配置文件读取失败'
+                checks['cloud_api']['details'] = [str(e)]
+        else:
+            checks['cloud_api']['status'] = 'warning'
+            checks['cloud_api']['message'] = '配置文件不存在'
+            checks['cloud_api']['details'] = [
+                '需要配置 config.json 文件',
+                '或通过 Web 界面 → AI 配置 进行设置'
+            ]
+        
+        # 6. 检测核心依赖
+        required_packages = [
+            ('flask', 'Flask'),
+            ('PIL', 'Pillow'),
+            ('diffusers', 'Diffusers'),
+            ('transformers', 'Transformers'),
+            ('modelscope', 'ModelScope'),
+            ('requests', 'Requests')
+        ]
+        
+        missing_deps = []
+        installed_deps = []
+        
+        import importlib.util
+        for module_name, display_name in required_packages:
+            spec = importlib.util.find_spec(module_name)
+            if spec is not None:
+                try:
+                    module = importlib.import_module(module_name)
+                    version = getattr(module, '__version__', 'unknown')
+                    installed_deps.append(f'{display_name}: {version}')
+                except:
+                    missing_deps.append(display_name)
+            else:
+                missing_deps.append(display_name)
+        
+        if not missing_deps:
+            checks['dependencies']['status'] = 'ok'
+            checks['dependencies']['message'] = f'所有核心依赖已安装 ({len(installed_deps)} 个)'
+            checks['dependencies']['details'] = installed_deps
+        else:
+            checks['dependencies']['status'] = 'error'
+            checks['dependencies']['message'] = f'缺少 {len(missing_deps)} 个核心依赖'
+            checks['dependencies']['details'] = [f'缺少：{", ".join(missing_deps)}']
+        
+        # 总体评估
+        has_errors = any(c['status'] == 'error' for c in checks.values())
+        has_warnings = any(c['status'] == 'warning' for c in checks.values())
+        
+        if not has_errors and not has_warnings:
+            overall_status = 'ready'
+            overall_message = '协同模式已就绪，可以使用本地或云端生成'
+        elif not has_errors:
+            overall_status = 'partial'
+            overall_message = '部分配置未完成，建议使用云端生成模式'
+        else:
+            overall_status = 'not_ready'
+            overall_message = '环境未准备好，需要修复错误后才能使用'
+        
+        # 统计
+        ok_count = sum(1 for c in checks.values() if c['status'] == 'ok')
+        total_count = len(checks)
+        
+        result = {
+            'success': True,
+            'overall_status': overall_status,
+            'overall_message': overall_message,
+            'summary': {
+                'ok': ok_count,
+                'total': total_count,
+                'percentage': int(ok_count / total_count * 100)
+            },
+            'checks': checks,
+            'recommendations': {
+                'use_cloud': not has_errors and (has_warnings or checks['cuda']['status'] != 'ok'),
+                'use_local': checks['cuda']['status'] == 'ok' and checks['models']['status'] == 'ok',
+                'need_install': has_errors
+            }
+        }
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/api/install-collaborative-components', methods=['POST'])
+def api_install_collaborative_components():
+    """API: 一键安装协同模式所需组件"""
+    try:
+        import subprocess
+        
+        data = request.get_json() or {}
+        components = data.get('components', [])
+        
+        if not components:
+            return jsonify({'error': '请指定要安装的组件'}), 400
+        
+        task_id = str(uuid.uuid4())
+        
+        # 安装脚本
+        def install_task():
+            log_file = Path(f'web/logs/install_{task_id}.log')
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(log_file, 'w', encoding='utf-8') as log:
+                log.write(f"开始安装协同模式组件：{', '.join(components)}\n")
+                
+                try:
+                    # 1. 安装 Python 依赖
+                    if 'dependencies' in components:
+                        log.write("\n=== 安装 Python 依赖 ===\n")
+                        packages = [
+                            'torch', 'torchvision', 'torchaudio',
+                            'diffusers', 'transformers', 'modelscope',
+                            'pillow', 'requests', 'edge-tts', 'pydub'
+                        ]
+                        
+                        # 检测 CUDA 版本
+                        cuda_version = 'cpu'
+                        try:
+                            import torch
+                            if torch.cuda.is_available():
+                                cuda_version = 'cu118'
+                        except:
+                            pass
+                        
+                        if cuda_version == 'cpu':
+                            cmd = [
+                                sys.executable, '-m', 'pip', 'install',
+                                '--index-url', 'https://download.pytorch.org/whl/cpu',
+                                '--break-system-packages'
+                            ] + packages
+                        else:
+                            cmd = [
+                                sys.executable, '-m', 'pip', 'install',
+                                '--index-url', 'https://download.pytorch.org/whl/cu118',
+                                '--break-system-packages'
+                            ] + packages
+                        
+                        log.write(f"执行命令：{' '.join(cmd)}\n")
+                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                        
+                        if result.returncode == 0:
+                            log.write("✓ Python 依赖安装成功\n")
+                        else:
+                            log.write(f"❌ Python 依赖安装失败：{result.stderr}\n")
+                    
+                    # 2. 下载 FFmpeg
+                    if 'ffmpeg' in components:
+                        log.write("\n=== 下载 FFmpeg ===\n")
+                        ffmpeg_script = Path('./download_ffmpeg.py')
+                        if ffmpeg_script.exists():
+                            cmd = [sys.executable, str(ffmpeg_script)]
+                            log.write(f"执行命令：{' '.join(cmd)}\n")
+                            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                            
+                            if result.returncode == 0:
+                                log.write("✓ FFmpeg 下载成功\n")
+                            else:
+                                log.write(f"❌ FFmpeg 下载失败：{result.stderr}\n")
+                                log.write("尝试使用系统安装...\n")
+                                # 尝试使用 apt 安装
+                                try:
+                                    result = subprocess.run(
+                                        ['apt-get', 'update'], 
+                                        capture_output=True, text=True, timeout=60
+                                    )
+                                    result = subprocess.run(
+                                        ['apt-get', 'install', '-y', 'ffmpeg'], 
+                                        capture_output=True, text=True, timeout=300
+                                    )
+                                    if result.returncode == 0:
+                                        log.write("✓ FFmpeg 系统安装成功\n")
+                                    else:
+                                        log.write(f"❌ FFmpeg 系统安装失败：{result.stderr}\n")
+                                except Exception as apt_error:
+                                    log.write(f"❌ 系统安装失败：{str(apt_error)}\n")
+                        else:
+                            log.write("❌ FFmpeg 下载脚本不存在\n")
+                    
+                    # 3. 下载模型
+                    if 'models' in components:
+                        log.write("\n=== 下载模型文件 ===\n")
+                        models_script = Path('./download_models.py')
+                        if models_script.exists():
+                            cmd = [sys.executable, str(models_script)]
+                            log.write(f"执行命令：{' '.join(cmd)}\n")
+                            result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+                            
+                            if result.returncode == 0:
+                                log.write("✓ 模型下载成功\n")
+                            else:
+                                log.write(f"❌ 模型下载失败：{result.stderr}\n")
+                        else:
+                            log.write("❌ 模型下载脚本不存在\n")
+                            log.write("建议：访问 /models 页面下载模型\n")
+                    
+                    log.write("\n=== 安装完成 ===\n")
+                    log.write("请刷新页面重新检测环境状态\n")
+                    
+                except subprocess.TimeoutExpired:
+                    log.write("\n❌ 安装超时\n")
+                except Exception as e:
+                    log.write(f"\n❌ 安装异常：{str(e)}\n")
+        
+        # 后台执行安装任务
+        thread = threading.Thread(target=install_task)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'message': f'开始安装 {len(components)} 个组件'
+        })
+    
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/api/install-collaborative-status/<task_id>', methods=['GET'])
+def api_install_collaborative_status(task_id):
+    """API: 查询协同模式组件安装状态"""
+    try:
+        log_file = Path(f'web/logs/install_{task_id}.log')
+        
+        if not log_file.exists():
+            return jsonify({'status': 'pending', 'progress': 0})
+        
+        with open(log_file, 'r', encoding='utf-8') as f:
+            logs = f.readlines()
+        
+        # 检查是否完成
+        is_complete = any('安装完成' in line or '异常' in line for line in logs)
+        
+        # 计算进度
+        progress = 0
+        if any('Python 依赖' in line for line in logs):
+            progress += 33
+        if any('FFmpeg' in line for line in logs):
+            progress += 33
+        if any('模型' in line for line in logs):
+            progress += 34
+        
+        return jsonify({
+            'status': 'complete' if is_complete else 'running',
+            'progress': progress,
+            'logs': logs
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
                 'pip_name': 'torch',
                 'extra': '--index-url https://download.pytorch.org/whl/cpu'
             },
