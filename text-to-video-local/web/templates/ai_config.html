@@ -174,6 +174,41 @@
                 </div>
             </div>
             
+            <div class="config-section">
+                <h2>☁️ 云端 AI 配置（用于场景分析）</h2>
+                <div class="form-group">
+                    <label for="ai_api_type">AI 服务商</label>
+                    <select id="ai_api_type" name="ai_api_type">
+                        <option value="qwen">通义千问 (推荐)</option>
+                        <option value="openai">OpenAI (GPT)</option>
+                        <option value="clove">Clove AI</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="ai_api_key">API Key</label>
+                    <input type="password" id="ai_api_key" name="ai_api_key" placeholder="请输入 API Key">
+                    <div class="help-text">通义千问：https://dashscope.console.aliyun.com/apiKey</div>
+                </div>
+                <div class="form-group">
+                    <label for="ai_api_base">API Base URL</label>
+                    <input type="text" id="ai_api_base" name="ai_api_base" value="https://dashscope.aliyuncs.com/compatible-mode/v1">
+                    <div class="help-text">通义千问默认：https://dashscope.aliyuncs.com/compatible-mode/v1</div>
+                </div>
+                <div class="form-group">
+                    <label for="ai_model_name">模型名称</label>
+                    <input type="text" id="ai_model_name" name="ai_model_name" value="qwen-turbo">
+                    <div class="help-text">通义千问：qwen-turbo, qwen-plus, qwen-max</div>
+                </div>
+                <div class="form-group">
+                    <label for="ai_timeout">AI 超时时间 (秒)</label>
+                    <input type="number" id="ai_timeout" name="ai_timeout" min="10" max="300" value="60">
+                </div>
+                <div class="form-group">
+                    <label for="ai_max_retries">最大重试次数</label>
+                    <input type="number" id="ai_max_retries" name="ai_max_retries" min="0" max="10" value="3">
+                </div>
+            </div>
+            
             <div id="statusMessage" class="status-message"></div>
             
             <div class="btn-group">
@@ -210,6 +245,14 @@
                     document.getElementById('fps').value = config.fps || 24;
                     document.getElementById('guidance_scale').value = config.guidance_scale || 7.5;
                     document.getElementById('seed').value = config.seed || -1;
+                    
+                    // 加载云端 AI 配置
+                    document.getElementById('ai_api_type').value = config.ai_api_type || 'qwen';
+                    document.getElementById('ai_api_key').value = config.ai_api_key || '';
+                    document.getElementById('ai_api_base').value = config.ai_api_base || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+                    document.getElementById('ai_model_name').value = config.ai_model_name || 'qwen-turbo';
+                    document.getElementById('ai_timeout').value = config.ai_timeout || 60;
+                    document.getElementById('ai_max_retries').value = config.ai_max_retries || 3;
                     
                     showStatus('配置加载成功', 'success');
                 } else {
@@ -249,6 +292,13 @@
             document.getElementById('fps').value = 24;
             document.getElementById('guidance_scale').value = 7.5;
             document.getElementById('seed').value = -1;
+            // 重置云端 AI 配置
+            document.getElementById('ai_api_type').value = 'qwen';
+            document.getElementById('ai_api_key').value = '';
+            document.getElementById('ai_api_base').value = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+            document.getElementById('ai_model_name').value = 'qwen-turbo';
+            document.getElementById('ai_timeout').value = 60;
+            document.getElementById('ai_max_retries').value = 3;
             showStatus('已重置为默认配置', 'success');
         }
         
@@ -270,7 +320,14 @@
                 resolution: document.getElementById('resolution').value,
                 fps: parseInt(document.getElementById('fps').value),
                 guidance_scale: parseFloat(document.getElementById('guidance_scale').value),
-                seed: parseInt(document.getElementById('seed').value)
+                seed: parseInt(document.getElementById('seed').value),
+                // 云端 AI 配置
+                ai_api_type: document.getElementById('ai_api_type').value,
+                ai_api_key: document.getElementById('ai_api_key').value,
+                ai_api_base: document.getElementById('ai_api_base').value,
+                ai_model_name: document.getElementById('ai_model_name').value,
+                ai_timeout: parseInt(document.getElementById('ai_timeout').value),
+                ai_max_retries: parseInt(document.getElementById('ai_max_retries').value)
             };
             saveConfig(config);
         });

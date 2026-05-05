@@ -175,6 +175,8 @@ def api_generate():
                     cmd,
                     capture_output=True,
                     text=True,
+                    encoding='utf-8',
+                    errors='replace',
                     cwd=Path(__file__).parent.parent,
                     timeout=600  # 10 分钟超时
                 )
@@ -1037,7 +1039,14 @@ DEFAULT_CONFIG = {
     'resolution': '512x512',
     'fps': 24,
     'guidance_scale': 7.5,
-    'seed': -1
+    'seed': -1,
+    # 云端 AI 配置
+    'ai_api_type': 'qwen',  # qwen, openai, clove
+    'ai_api_key': '',
+    'ai_api_base': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    'ai_model_name': 'qwen-turbo',
+    'ai_timeout': 60,
+    'ai_max_retries': 3
 }
 
 
@@ -1363,11 +1372,23 @@ def api_analyze_scenes():
                 'hint': '请运行：pip install requests'
             }), 500
         
-        # 创建分析器实例
-        analyzer = AISceneAnalyzer()
+        # 获取 AI 配置
+        config = load_config()
+        
+        # 创建分析器实例（传入云端 AI 配置）
+        analyzer = AISceneAnalyzer(
+            model_type=config.get('ai_api_type', 'qwen'),
+            model_name=config.get('ai_model_name', 'qwen-turbo'),
+            api_base=config.get('ai_api_base', 'https://dashscope.aliyuncs.com/compatible-mode/v1'),
+            api_key=config.get('ai_api_key', '')
+        )
         
         # 执行 AI 场景分析
-        result = analyzer.ai_analyze(prompt=prompt, mode=mode)
+        try:
+            result = analyzer.ai_analyze(prompt=prompt, mode=mode)
+        except Exception as analysis_error:
+            # AI 分析失败，使用回退方案
+            result = analyzer._fallback_analysis(prompt)
         
         # 计算每个场景的时长（确保 duration 是数字）
         if 'scenes' in result and result['scenes']:
