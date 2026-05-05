@@ -2900,14 +2900,27 @@ def api_download_ffmpeg():
         file_path = temp_dir / filename
         
         # 使用流式下载，避免内存占用过大
-        response = requests.get(url, stream=True, timeout=300)
+        response = requests.get(url, stream=True, timeout=(5, 300))  # 连接 5s，读取 300s
         total_size = int(response.headers.get('content-length', 0))
+        total_mb = total_size / (1024 * 1024)  # 转换为 MB
         
         with open(file_path, 'wb') as f:
             downloaded = 0
+            chunk_count = 0
+            start_time = time.time()
+            
             for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-                downloaded += len(chunk)
+                if chunk:  # 过滤 keep-alive 块
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    chunk_count += 1
+                    
+                    # 每下载 1MB 打印进度（避免输出过多）
+                    if chunk_count % 128 == 0:  # 128 * 8KB = 1MB
+                        elapsed = time.time() - start_time
+                        speed = downloaded / (1024 * 1024) / elapsed if elapsed > 0 else 0  # MB/s
+                        percent = (downloaded / total_size * 100) if total_size > 0 else 0
+                        print(f"  进度：{percent:.1f}% ({downloaded/(1024*1024):.1f}MB/{total_mb:.1f}MB) - 速度：{speed:.2f}MB/s")
         
         # 解压
         extracted_files = []

@@ -2355,7 +2355,16 @@ function downloadFFmpeg() {
     
     progressDiv.style.display = 'block';
     progressBar.style.width = '20%';
-    messageEl.textContent = '正在准备下载...';
+    messageEl.textContent = '正在下载 FFmpeg... (文件约 70-80MB，根据网络速度，预计 1-5 分钟)';
+    
+    // 添加超时提醒：如果超过 6 分钟还在下载，提示用户
+    const timeoutReminder = setTimeout(() => {
+        const currentMsg = messageEl.textContent;
+        if (!currentMsg.includes('完成') && !currentMsg.includes('失败')) {
+            messageEl.textContent += '\n\n⚠️ 下载时间较长，请耐心等待。如果超过 10 分钟，建议检查网络连接后重试。';
+            messageEl.style.color = '#ed8936';  // 橙色警告
+        }
+    }, 360000);  // 6 分钟
     
     fetch('/api/download-ffmpeg', { method: 'POST' })
         .then(r => {
@@ -2365,6 +2374,8 @@ function downloadFFmpeg() {
             return r.json();
         })
         .then(data => {
+            // 清除超时提醒
+            clearTimeout(timeoutReminder);
             progressBar.style.width = '100%';
             
             if (data.success) {
@@ -2389,6 +2400,8 @@ function downloadFFmpeg() {
             }
         })
         .catch(error => {
+            // 清除超时提醒
+            clearTimeout(timeoutReminder);
             progressBar.style.width = '100%';
             messageEl.textContent = '❌ 下载失败：' + error.message;
             messageEl.style.color = '#f56565';
