@@ -180,9 +180,13 @@ class SystemScanner:
         """扫描 GPU 信息"""
         print("\n[2/7] 检测 GPU...")
         
+        gpu_detected = False
+        
+        # 方法 1: PyTorch 检测
         try:
             import torch
             
+            print("  使用 PyTorch 检测...")
             self.hardware.gpu_available = torch.cuda.is_available()
             
             if self.hardware.gpu_available:
@@ -196,14 +200,99 @@ class SystemScanner:
                     self.hardware.gpu_memory_total.append(round(gpu_memory, 2))
                     
                     print(f"  ✓ GPU {i}: {gpu_name} ({gpu_memory:.1f}GB)")
+                
+                gpu_detected = True
             else:
-                print("  ⚠ 未检测到 CUDA 设备")
+                print("  ⚠ PyTorch: CUDA 不可用")
                 
         except ImportError:
             print("  ⚠ PyTorch 未安装")
             self.hardware.gpu_available = False
+        except Exception as e:
+            print(f"  ⚠ PyTorch 检测失败：{e}")
         
-        # 如果没有 GPU，尝试检测 macOS Apple Silicon
+        # 方法 2: 使用 nvidia-smi (PyTorch 失败时)
+        if not gpu_detected:
+            try:
+                print("  使用 nvidia-smi 检测...")
+                result = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+                    capture_output=True, text=True, timeout=10
+                )
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    lines = result.stdout.strip().split('\n')
+                    self.hardware.gpu_count = len(lines)
+                    self.hardware.gpu_available = True
+                    
+                    for line in lines:
+                        parts = line.split(', ')
+                        if len(parts) == 2:
+                            gpu_name = parts[0].strip()
+                            gpu_memory = float(parts[1].strip()) / 1024
+                            
+                            self.hardware.gpu_models.append(gpu_name)
+                            self.hardware.gpu_memory_total.append(round(gpu_memory, 2))
+                    
+                    print(f"  ✓ 通过 nvidia-smi 检测到 {self.hardware.gpu_count} 个 GPU")
+                    for i, name in enumerate(self.hardware.gpu_models):
+                        print(f"    GPU {i}: {name} ({self.hardware.gpu_memory_total[i]:.1f}GB)")
+                    gpu_detected = True
+                else:
+                    print("  ⚠ nvidia-smi: 未检测到 NVIDIA GPU")
+            except FileNotFoundError:
+                print("  ⚠ nvidia-smi 未安装 (NVIDIA 驱动可能未安装)")
+            except subprocess.TimeoutExpired:
+                print("  ⚠ nvidia-smi 超时")
+            except Exception as e:
+                print(f"  ⚠ nvidia-smi 检测失败：{e}")
+        
+        # 方法 3: Windows 设备管理器 (备用)
+        if not gpu_detected and platform.system() == "Windows":
+            try:
+                print("  使用 Windows 设备管理器检测...")
+                result = subprocess.run(
+                    ["wmic", "path", "Win32_VideoController", "get", "Name,AdapterRAM"],
+                    capture_output=True, text=True
+                )
+                
+                if result.returncode == 0:
+                    lines = result.stdout.strip().split('\n')[1:]  # 跳过标题行
+                    for line in lines:
+                        parts = line.strip().split()
+                        if parts and 'NVIDIA' in line.upper() or 'AMD' in line.upper() or 'INTEL' in line.upper():
+                            gpu_name = ' '.join(parts[:-1]) if len(parts) > 1 else line.strip()
+                            # 尝试提取显存
+                            try:
+                                memory_bytes = int(parts[-1])
+                                memory_gb = memory_bytes / 1024**3
+                                self.hardware.gpu_memory_total.append(round(memory_gb, 2))
+                            except:
+                                self.hardware.gpu_memory_total.append(0)
+                            
+                            self.hardware.gpu_models.append(gpu_name)
+                            self.hardware.gpu_count += 1
+                    
+                    if self.hardware.gpu_count > 0:
+                        print(f"  ✓ 检测到 {self.hardware.gpu_count} 个显卡")
+                        # 判断是否有独立显卡
+                        for i, name in enumerate(self.hardware.gpu_models):
+                            is_dedicated = 'NVIDIA' in name.upper() or 'AMD' in name.upper() or 'RADEON' in name.upper()
+                            if is_dedicated:
+                                self.hardware.gpu_available = True
+                                print(f"    GPU {i}: {name} (独立显卡)")
+                            else:
+                                print(f"    GPU {i}: {name} (集成显卡)")
+                        gpu_detected = True
+            except Exception as e:
+                print(f"  ⚠ Windows 设备管理器检测失败：{e}")
+        
+        # 如果没有检测到 GPU
+        if not gpu_detected:
+            print("  ❌ 未检测到独立 GPU，建议使用云端模式")
+            self.hardware.gpu_available = False
+        
+        # 检测 macOS Apple Silicon
         if not self.hardware.gpu_available and platform.system() == "Darwin":
             try:
                 result = subprocess.run(
@@ -213,6 +302,8 @@ class SystemScanner:
                 if "Apple M" in result.stdout or "Apple Silicon" in result.stdout:
                     print("  ✓ 检测到 Apple Silicon (MPS 加速)")
                     self.hardware.gpu_models = ["Apple Silicon"]
+                    self.hardware.gpu_count = 1
+                    self.hardware.gpu_available = True
             except:
                 pass
     
