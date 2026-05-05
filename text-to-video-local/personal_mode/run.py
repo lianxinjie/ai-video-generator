@@ -696,10 +696,10 @@ def generate_local_segment(
     """
     本地生成单段图片序列
     
-    调用 hybrid_mode 的 PromptGenerator 和 VideoSynthesizer
+    调用 hybrid_mode 的 PromptTemplateGenerator 和视频生成
     """
     try:
-        from hybrid_mode.prompt_generator import PromptGenerator
+        from hybrid_mode.prompt_generator import PromptTemplateGenerator
         from hybrid_mode.video_synthesizer import VideoSynthesizer
         
         print(f"\n【本地生成】段 {segment_index + 1}: {prompt[:50]}...")
@@ -707,8 +707,8 @@ def generate_local_segment(
         # 创建输出目录
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # 使用 PromptGenerator 生成图片
-        generator = PromptGenerator()
+        # 使用 PromptTemplateGenerator 生成扩展提示词
+        generator = PromptTemplateGenerator()
         generated_prompts = generator.generate(prompts=prompt, num_prompts=3)
         
         if generated_prompts and len(generated_prompts) > 0:
@@ -755,62 +755,81 @@ def merge_segments(
     """
     import subprocess
     
-    try:
-        print(f"\n【视频合并】开始合成最终视频...")
-        
-        # 收集所有片段目录
-        segment_dirs = sorted([d for d in segment_dir.iterdir() if d.is_dir()])
-        print(f"  ✓ 找到 {len(segment_dirs)} 个片段")
-        
-        # 收集所有图片文件
-        all_images = []
-        for seg_dir in segment_dirs:
-            images = sorted(list(seg_dir.glob('*.png')) + list(seg_dir.glob('*.jpg')))
-            all_images.extend(images)
-        
-        print(f"  ✓ 共 {len(all_images)} 张图片")
-        
-        # 创建临时 concat 文件
-        temp_file = segment_dir.parent / 'concat_list.txt'
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            for img in all_images:
-                f.write(f"file '{img.absolute().as_posix()}'\n")
-        
-        # FFmpeg 命令 - 合并图片为视频
-        ffmpeg_cmd = [
-            'ffmpeg', '-y',
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', str(temp_file),
-            '-vf', f'fps={fps}',
-            '-c:v', 'libx264',
-            '-pix_fmt', 'yuv420p',
-            str(output_file)
-        ]
-        
-        print(f"  执行 FFmpeg 合并...")
-        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            print(f"  ✓ 视频合并完成：{output_file}")
+        try:
+            print(f"\n【视频合并】开始合成最终视频...")
             
-            # 清理临时文件
-            if temp_file.exists():
-                temp_file.unlink()
+            # 收集所有片段目录
+            segment_dirs = sorted([d for d in segment_dir.iterdir() if d.is_dir()])
+            print(f"  ✓ 找到 {len(segment_dirs)} 个片段")
             
-            return str(output_file)
-        else:
-            print(f"  ❌ FFmpeg 合并失败：{result.stderr}")
+            # 收集所有图片文件
+            all_images = []
+            for seg_dir in segment_dirs:
+                images = sorted(list(seg_dir.glob('*.png')) + list(seg_dir.glob('*.jpg')))
+                all_images.extend(images)
+            
+            print(f"  ✓ 共 {len(all_images)} 张图片")
+            
+            if len(all_images) == 0:
+                print(f"  ❌ 没有找到图片文件，无法合并")
+                return None
+            
+            # 创建临时 concat 文件
+            temp_file = segment_dir.parent / 'concat_list.txt'
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                for img in all_images:
+                    f.write(f"file '{img.absolute().as_posix()}'\n")
+            
+            # Windows 路径可能包含空格，需要用引号包裹
+            import shutil
+            ffmpeg_path = shutil.which('ffmpeg')
+            if not ffmpeg_path:
+                # 尝试检测项目本地的 ffmpeg
+                local_ffmpeg = Path('./ffmpeg/bin/ffmpeg.exe')
+                if local_ffmpeg.exists():
+                    ffmpeg_path = str(local_ffmpeg)
+            
+            if not ffmpeg_path:
+                raise FileNotFoundError("FFmpeg 未在 PATH 中找到")
+            
+            print(f"  使用 FFmpeg: {ffmpeg_path}")
+            
+            # FFmpeg 命令
+            ffmpeg_cmd = [
+                ffmpeg_path, '-y',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', str(temp_file),
+                '-vf', f'fps={fps}',
+                '-c:v', 'libx264',
+                '-pix_fmt', 'yuv420p',
+                str(output_file)
+            ]
+            
+            print(f"  执行 FFmpeg 合并...")
+            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            
+            if result.returncode == 0:
+                print(f"  ✓ 视频合并完成：{output_file}")
+                
+                # 清理临时文件
+                if temp_file.exists():
+                    temp_file.unlink()
+                
+                return str(output_file)
+            else:
+                print(f"  ❌ FFmpeg 合并失败：{result.stderr}")
+                return None
+                
+        except FileNotFoundError:
+            print(f"  ❌ FFmpeg 未安装，请先安装 FFmpeg")
+            print(f"  Windows 用户：访问 Web 界面 → 点击'🎬 FFmpeg' → '📥 自动下载'")
             return None
-            
-    except FileNotFoundError:
-        print(f"  ❌ FFmpeg 未安装，请先安装 FFmpeg")
-        return None
-    except Exception as e:
-        print(f"  ❌ 合并失败：{e}")
-        import traceback
-        traceback.print_exc()
-        return None
+        except Exception as e:
+            print(f"  ❌ 合并失败：{e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
 
 def run_optimized_mode(
