@@ -2904,41 +2904,74 @@ def api_download_ffmpeg():
                 downloaded += len(chunk)
         
         # 解压
+        extracted_files = []
+        
         if system == 'Windows':
+            # Windows: 解压 ZIP 文件
             with zipfile.ZipFile(file_path, 'r') as zip_ref:
-                # 找到包含 ffmpeg.exe 的目录
                 names = zip_ref.namelist()
+                
+                # 找到顶层目录
                 ffmpeg_dir = None
                 for name in names:
-                    if 'ffmpeg.exe' in name:
+                    if 'ffmpeg' in name.lower() and ('ffmpeg.exe' in name or 'ffprobe' in name):
                         ffmpeg_dir = name.split('/')[0]
                         break
                 
+                if not ffmpeg_dir:
+                    # 尝试从第一个目录名推断
+                    for name in names:
+                        if '/' in name and name.endswith('/'):
+                            ffmpeg_dir = name.rstrip('/')
+                            break
+                
                 if ffmpeg_dir:
+                    # 解压整个目录
                     zip_ref.extractall(temp_dir)
-                    # 复制到 bin 目录
+                    
+                    # 优先查找 bin 子目录
                     src_bin = temp_dir / ffmpeg_dir / 'bin'
                     if src_bin.exists():
-                        import shutil
                         shutil.copytree(src_bin, output_dir, dirs_exist_ok=True)
+                        extracted_files = ['ffmpeg.exe', 'ffprobe.exe']
                     else:
-                        # 直接找 exe 文件
+                        # 直接在顶层找 exe 文件
                         for name in names:
                             if name.endswith('ffmpeg.exe') or name.endswith('ffprobe.exe'):
                                 zip_ref.extract(name, temp_dir)
                                 src = temp_dir / name
                                 dst = output_dir / src.name
                                 shutil.copy2(src, dst)
+                                extracted_files.append(src.name)
+                else:
+                    raise Exception("无法找到 FFmpeg 文件在压缩包中的位置")
         else:
-            import subprocess
-            subprocess.run(['tar', '-xf', str(file_path), '-C', str(temp_dir)], check=True)
-            # 查找 ffmpeg 二进制文件
+            # Linux/macOS: 解压 TAR.XZ 文件
+            result = sp.run(['tar', '-xf', str(file_path), '-C', str(temp_dir)], 
+                          capture_output=True, text=True)
+            if result.returncode != 0:
+                raise Exception(f"解压失败：{result.stderr}")
+            
+            # 查找 ffmpeg 二进制文件，优先查找以 /ffmpeg 或 /ffprobe 结尾的文件
             import shutil
             for ffmpeg_file in temp_dir.rglob('ffmpeg'):
-                if ffmpeg_file.is_file() and str(ffmpeg_file).endswith('/ffmpeg'):
-                    shutil.copy2(ffmpeg_file, output_dir / 'ffmpeg')
-                elif ffmpeg_file.is_file() and str(ffmpeg_file).endswith('/ffprobe'):
-                    shutil.copy2(ffmpeg_file, output_dir / 'ffprobe')
+                if ffmpeg_file.is_file():
+                    # 确保是二进制文件而不是目录
+                    if str(ffmpeg_file).endswith('/ffmpeg') or str(ffmpeg_file).endswith('/ffmpeg\n'):
+                        shutil.copy2(ffmpeg_file, output_dir / 'ffmpeg')
+                        extracted_files.append('ffmpeg')
+                    elif str(ffmpeg_file).endswith('/ffprobe'):
+                        shutil.copy2(ffmpeg_file, output_dir / 'ffprobe')
+                        extracted_files.append('ffprobe')
+        
+        # 验证解压结果
+        if not extracted_files:
+            raise Exception("解压后未找到任何 FFmpeg 文件，请检查压缩包格式")
+        
+        # 验证 bin 目录中的文件
+        found_files = [f for f in output_dir.iterdir() if f.is_file()]
+        if not found_files:
+            raise Exception("解压完成但 bin 目录为空，可能解压路径不匹配")
         
         # 清理临时文件
         if file_path.exists():
@@ -2949,17 +2982,19 @@ def api_download_ffmpeg():
         if system != 'Windows':
             ffmpeg_exe = output_dir / 'ffmpeg'
             if ffmpeg_exe.exists():
-                import stat
                 ffmpeg_exe.chmod(ffmpeg_exe.stat().st_mode | stat.S_IEXEC)
             
             ffprobe_exe = output_dir / 'ffprobe'
             if ffprobe_exe.exists():
                 ffprobe_exe.chmod(ffprobe_exe.stat().st_mode | stat.S_IEXEC)
         
+        # 返回详细信息
+        file_list = ', '.join([f.name for f in found_files])
         return jsonify({
             'success': True,
             'path': str(output_dir.parent),
-            'message': 'FFmpeg 下载完成',
+            'message': f'FFmpeg 下载并解压完成，文件位于 ffmpeg/bin/',
+            'files': file_list,
             'note': '请重启 Web 服务以使用 FFmpeg'
         })
         

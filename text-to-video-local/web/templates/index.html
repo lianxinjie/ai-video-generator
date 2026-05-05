@@ -2331,7 +2331,14 @@ function downloadFFmpeg() {
             progressBar.style.width = '100%';
             
             if (data.success) {
-                messageEl.textContent = '✅ 下载完成！请重启 Web 服务以使用 FFmpeg';
+                // 显示详细的成功信息
+                let successMsg = '✅ FFmpeg 下载并解压完成！';
+                if (data.files) {
+                    successMsg += '\\n文件：' + data.files;
+                }
+                successMsg += '\\n位置：' + (data.path || 'ffmpeg/bin/');
+                successMsg += '\\n请重启 Web 服务以使用 FFmpeg';
+                messageEl.textContent = successMsg;
                 messageEl.style.color = '#48bb78';
                 setTimeout(() => {
                     refreshFFmpegCheck();

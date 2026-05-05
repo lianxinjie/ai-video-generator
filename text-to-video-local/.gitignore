@@ -79,3 +79,9 @@ temp/
 Thumbs.db
 .DS_Store
 ffmpeg/bin/
+
+# FFmpeg 二进制文件 (体积大，应该由用户自行下载)
+ffmpeg/bin/
+ffmpeg/temp_download/
+ffmpeg/test_extract/
+ffmpeg/test_bin/
