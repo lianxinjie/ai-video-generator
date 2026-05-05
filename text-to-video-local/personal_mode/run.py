@@ -599,98 +599,196 @@ def run_collaborative_mode(
             if task.get('status') == 'unassigned':
                 task = scheduler.assign_task(segment_idx, prompt)
             
-            # 生成图片
+            # 生成图片 - 严格轮流执行 + 详细错误检测
             start_time = time.time()
             method = task['method']
             
-            print(f"\n[段 {segment_idx + 1}/{scheduler.total_segments}] 使用 {method.upper()} 模式生成...")
+            print(f"\n[段 {segment_idx + 1}/{scheduler.total_segments}] 开始生成...")
+            print(f"  初始分配：{method.upper()} 模式")
             
-            try:
-                if method == 'local':
-                    # 本地生成（暂不可用，返回 None）
-                    image_result = generate_local_segment(
-                        prompt=prompt,
-                        segment_index=segment_idx,
-                        resolution=resolution,
-                        fps=fps,
-                        model=model,
-                        device=device,
-                        output_dir=output_dir / 'segments' / f'segment_{segment_idx + 1:03d}'
-                    )
+            # 尝试次数限制
+            max_attempts = 2  # 每种模式最多尝试 1 次
+            image_result = None
+            attempt_methods = ['local', 'cloud'] if method == 'local' else ['cloud', 'local']
+            
+            for attempt_idx, try_method in enumerate(attempt_methods):
+                print(f"\n  尝试 {attempt_idx + 1}/{max_attempts}: {try_method.upper()} 模式")
+                
+                if try_method == 'local':
+                    # ========== 本地生成模式 ==========
+                    segment_dir = output_dir / 'segments' / f'segment_{segment_idx + 1:03d}'
+                    segment_dir.mkdir(parents=True, exist_ok=True)
                     
-                    # 本地失败，自动切换到云端
+                    # 详细错误检测
+                    try:
+                        print(f"    检测本地环境...")
+                        
+                        # 1. 检测 CUDA
+                        import torch
+                        if not torch.cuda.is_available():
+                            print(f"    ❌ CUDA 不可用，跳过本地生成")
+                            image_result = None
+                            continue
+                        
+                        print(f"    ✓ CUDA 可用：{torch.cuda.get_device_name(0)}")
+                        
+                        # 2. 检测显存
+                        free_mem, total_mem = torch.cuda.mem_get_info()
+                        free_mem_gb = free_mem / 1024 / 1024 / 1024
+                        print(f"    ✓ 显存：{free_mem_gb:.1f}GB / {total_mem / 1024 / 1024 / 1024:.1f}GB")
+                        
+                        if free_mem_gb < 4:
+                            print(f"    ❌ 显存不足 (<4GB)，跳过本地生成")
+                            image_result = None
+                            continue
+                        
+                        # 3. 检测模型
+                        models_dir = Path('./models')
+                        if not models_dir.exists():
+                            print(f"    ❌ 模型目录不存在：{models_dir}")
+                            print(f"    提示：访问 /models 页面下载模型")
+                            image_result = None
+                            continue
+                        
+                        # 4. 检测 FFmpeg
+                        import shutil
+                        if not shutil.which('ffmpeg'):
+                            local_ffmpeg = Path('./ffmpeg/bin/ffmpeg.exe')
+                            if not local_ffmpeg.exists():
+                                print(f"    ❌ FFmpeg 未安装，跳过本地生成")
+                                print(f"    提示：访问 Web 界面 → FFmpeg → 自动下载")
+                                image_result = None
+                                continue
+                        
+                        print(f"    ✓ 本地环境检测通过")
+                        
+                        # 5. 尝试生成
+                        print(f"    开始生成本地图片...")
+                        image_result = generate_local_segment(
+                            prompt=prompt,
+                            segment_index=segment_idx,
+                            resolution=resolution,
+                            fps=fps,
+                            model=model,
+                            device='cuda',
+                            output_dir=segment_dir
+                        )
+                        
+                        # 6. 验证生成结果
+                        if image_result and image_result.get('path'):
+                            img_path = Path(image_result['path'])
+                            if img_path.exists() and img_path.stat().st_size > 0:
+                                print(f"    ✓ 本地生成成功，已验证：{img_path}")
+                                print(f"    文件大小：{img_path.stat().st_size / 1024:.1f}KB")
+                                break
+                            else:
+                                print(f"    ❌ 本地生成文件验证失败")
+                                image_result = None
+                        else:
+                            print(f"    ❌ 本地生成返回空结果")
+                            image_result = None
+                            
+                    except ImportError as e:
+                        print(f"    ❌ 缺少依赖：{e}")
+                        print(f"    建议：pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118")
+                        image_result = None
+                    except Exception as e:
+                        print(f"    ❌ 本地生成异常：{e}")
+                        import traceback
+                        traceback.print_exc()
+                        image_result = None
+                    
+                    # 本地失败，继续尝试云端
                     if not image_result:
-                        print(f"  → 切换到云端生成...")
+                        print(f"    → 本地失败，准备尝试云端...")
+                        continue
+                
+                elif try_method == 'cloud':
+                    # ========== 云端生成模式 ==========
+                    segment_dir = output_dir / 'segments' / f'segment_{segment_idx + 1:03d}'
+                    segment_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    try:
+                        print(f"    选择云平台...")
                         image_url, platform_name = cloud_manager.generate_image(
                             prompt=prompt,
                             preferred_platform=None
                         )
                         
-                        if image_url:
-                            # 下载图片到 segments 目录
-                            segment_dir = output_dir / 'segments' / f'segment_{segment_idx + 1:03d}'
-                            segment_dir.mkdir(parents=True, exist_ok=True)
-                            
-                            import requests
-                            try:
-                                response = requests.get(image_url, timeout=30)
-                                if response.status_code == 200:
-                                    # 保存多张图片（如果返回的是多张）
-                                    img_path = segment_dir / f'frame_0001.png'
-                                    with open(img_path, 'wb') as f:
-                                        f.write(response.content)
-                                    print(f"  ✓ 图片已下载：{img_path}")
-                                    image_result = {'url': image_url, 'path': str(img_path)}
-                                else:
-                                    print(f"  ❌ 图片下载失败：{response.status_code}")
-                                    image_result = None
-                            except Exception as e:
-                                print(f"  ❌ 图片下载异常：{e}")
-                                image_result = None
-                        else:
+                        if not image_url:
+                            print(f"    ❌ 云端生成返回空 URL")
                             image_result = None
-                else:
-                    # 云端生成
-                    image_url, platform_name = cloud_manager.generate_image(
-                        prompt=prompt,
-                        preferred_platform=None  # 自动选择
-                    )
-                    
-                    if image_url:
-                        # 下载图片到 segments 目录
-                        segment_dir = output_dir / 'segments' / f'segment_{segment_idx + 1:03d}'
-                        segment_dir.mkdir(parents=True, exist_ok=True)
+                            continue
                         
+                        print(f"    ✓ 云端生成成功，平台：{platform_name}")
+                        print(f"    图片 URL: {image_url[:80]}...")
+                        
+                        # 严格验证：下载图片到本地
+                        print(f"    开始下载图片...")
                         import requests
-                        try:
-                            image_result = {'url': image_url, 'platform': platform_name, 'path': None}
-                            if isinstance(image_url, list):
-                                # 多张图片
-                                for i, url in enumerate(image_url):
-                                    response = requests.get(url, timeout=30)
-                                    if response.status_code == 200:
-                                        img_path = segment_dir / f'frame_{i:04d}.png'
-                                        with open(img_path, 'wb') as f:
-                                            f.write(response.content)
-                                        image_result['path'] = str(img_path)
-                                    else:
-                                        print(f"  ❌ 图片{i}下载失败：{response.status_code}")
-                            else:
-                                response = requests.get(image_url, timeout=30)
+                        
+                        image_result = {'url': image_url, 'platform': platform_name, 'path': None}
+                        
+                        if isinstance(image_url, list):
+                            # 多张图片
+                            print(f"    检测到 {len(image_url)} 张图片")
+                            for i, url in enumerate(image_url):
+                                response = requests.get(url, timeout=60)
                                 if response.status_code == 200:
-                                    img_path = segment_dir / 'frame_0001.png'
+                                    img_path = segment_dir / f'frame_{i:04d}.png'
                                     with open(img_path, 'wb') as f:
                                         f.write(response.content)
                                     image_result['path'] = str(img_path)
-                                    print(f"  ✓ 图片已下载：{img_path}")
+                                    print(f"    ✓ 图片{i+1}/{len(image_url)} 已下载：{img_path.name}")
+                                    print(f"      大小：{img_path.stat().st_size / 1024:.1f}KB")
                                 else:
-                                    print(f"  ❌ 图片下载失败：{response.status_code}")
+                                    print(f"    ❌ 图片{i+1}下载失败：HTTP {response.status_code}")
                                     image_result = None
-                        except Exception as e:
-                            print(f"  ❌ 图片下载异常：{e}")
-                            image_result = None
-                    else:
+                                    break
+                        else:
+                            # 单张图片
+                            response = requests.get(image_url, timeout=60)
+                            if response.status_code == 200:
+                                img_path = segment_dir / 'frame_0001.png'
+                                with open(img_path, 'wb') as f:
+                                    f.write(response.content)
+                                image_result['path'] = str(img_path)
+                                print(f"    ✓ 图片已下载并验证：{img_path}")
+                                print(f"      大小：{img_path.stat().st_size / 1024:.1f}KB")
+                                
+                                # 二次验证：尝试读取图片头
+                                try:
+                                    from PIL import Image
+                                    with Image.open(img_path) as img:
+                                        print(f"      尺寸：{img.width}x{img.height}")
+                                        print(f"      格式：{img.format}")
+                                except Exception as pil_error:
+                                    print(f"      ⚠️ 图片验证警告：{pil_error}")
+                            else:
+                                print(f"    ❌ 图片下载失败：HTTP {response.status_code}")
+                                image_result = None
+                                continue
+                        
+                        # 云端成功，退出循环
+                        if image_result and image_result.get('path'):
+                            print(f"    ✓ 云端生成完成，已验证下载")
+                            break
+                    
+                    except requests.exceptions.RequestException as e:
+                        print(f"    ❌ 网络请求失败：{e}")
                         image_result = None
+                    except Exception as e:
+                        print(f"    ❌ 云端生成异常：{e}")
+                        import traceback
+                        traceback.print_exc()
+                        image_result = None
+                    
+                    # 云端失败，继续尝试本地（如果还有次数）
+                    if not image_result and attempt_idx < max_attempts - 1:
+                        print(f"    → 云端失败，准备重试本地...")
+                        continue
+            
+            # 记录最终结果
                 
                 duration = time.time() - start_time
                 
