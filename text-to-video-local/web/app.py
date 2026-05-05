@@ -880,7 +880,8 @@ def api_cleanup_models():
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': error_detail
+            'traceback': error_detail,
+            'debug_note': '请查看 Web 服务日志获取详细错误信息'
         }), 500
 
 
@@ -937,7 +938,8 @@ def api_delete_model():
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': error_detail
+            'traceback': error_detail,
+            'debug_note': '请查看 Web 服务日志获取详细错误信息'
         }), 500
 
 
@@ -1038,7 +1040,8 @@ def api_analyze_models():
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': error_detail
+            'traceback': error_detail,
+            'debug_note': '请查看 Web 服务日志获取详细错误信息'
         }), 500
 
 
@@ -2623,7 +2626,8 @@ def api_analyze_scenes():
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': error_detail
+            'traceback': error_detail,
+            'debug_note': '请查看 Web 服务日志获取详细错误信息'
         }), 500
 
 
@@ -2862,7 +2866,8 @@ def api_check_resources():
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': error_detail
+            'traceback': error_detail,
+            'debug_note': '请查看 Web 服务日志获取详细错误信息'
         }), 500
 
 
@@ -2878,6 +2883,9 @@ def api_download_ffmpeg():
     from pathlib import Path
     
     try:
+        # ==== 调试日志 ====
+        print("[FFmpeg 下载] ====== 开始下载流程 ======")
+        
         # 先检查资源
         resource_check = api_check_resources()
         resource_data = resource_check.get_json() if hasattr(resource_check, 'get_json') else {}
@@ -2920,10 +2928,6 @@ def api_download_ffmpeg():
         file_path = temp_dir / filename
         
         # 使用流式下载，避免内存占用过大
-        print(f"[FFmpeg 下载] 开始下载...")
-        print(f"[FFmpeg 下载] 系统：{system}, 架构：{arch}")
-        print(f"[FFmpeg 下载] URL: {url}")
-        print(f"[FFmpeg 下载] 路径：{file_path}")
         # 先验证 URL 可用性
         try:
             head_resp = requests.head(url, timeout=10, allow_redirects=True)
@@ -2970,25 +2974,25 @@ def api_download_ffmpeg():
                         percent = (downloaded / total_size * 100) if total_size > 0 else 0
                         print(f"  进度：{percent:.1f}% ({downloaded/(1024*1024):.1f}MB/{total_mb:.1f}MB) - 速度：{speed:.2f}MB/s")
         
-        # 验证下载结果
+        # ==== 验证下载结果 ====
+        print(f"[FFmpeg 下载] 下载完成，验证文件...")
+        
         if not file_path.exists():
             raise Exception(f"下载失败：文件不存在 {file_path}")
         
         file_size = file_path.stat().st_size
-        print(f"[FFmpeg 下载] 下载完成，文件大小：{file_size / (1024*1024):.2f}MB")
+        print(f"[FFmpeg 下载] 文件大小：{file_size / (1024*1024):.2f}MB")
         
         if file_size == 0:
-            raise Exception("下载失败：文件大小为 0 字节，可能网络中断")
+            raise Exception("下载失败：文件大小为 0 字节，网络中断或 URL 无效")
         
-        if file_size < 1024 * 1024:  # 小于 1MB 肯定不对
-            raise Exception(f"下载失败：文件过小 ({file_size} 字节)，可能网络中断")
+        if file_size < 1024 * 1024:
+            raise Exception(f"下载失败：文件过小 ({file_size} 字节)，可能下载不完整")
         
         # 解压
         extracted_files = []
         
         if system == 'Windows':
-            print(f"[FFmpeg 解压] Windows ZIP 解压模式")
-            # Windows: 解压 ZIP 文件
             # Windows: 解压 ZIP 文件
             with zipfile.ZipFile(file_path, 'r') as zip_ref:
                 names = zip_ref.namelist()
@@ -3008,20 +3012,7 @@ def api_download_ffmpeg():
                             break
                 
                 if ffmpeg_dir:
-                    # 验证下载结果
-        if not file_path.exists():
-            raise Exception(f"下载失败：文件不存在 {file_path}")
-        
-        file_size = file_path.stat().st_size
-        print(f"[FFmpeg 下载] 下载完成，文件大小：{file_size / (1024*1024):.2f}MB")
-        
-        if file_size == 0:
-            raise Exception("下载失败：文件大小为 0 字节，可能网络中断")
-        
-        if file_size < 1024 * 1024:  # 小于 1MB 肯定不对
-            raise Exception(f"下载失败：文件过小 ({file_size} 字节)，可能网络中断")
-        
-        # 解压整个目录
+                    # 解压整个目录
                     zip_ref.extractall(temp_dir)
                     
                     # 优先查找 bin 子目录
@@ -3134,7 +3125,8 @@ def api_download_ffmpeg():
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': error_detail
+            'traceback': error_detail,
+            'debug_note': '请查看 Web 服务日志获取详细错误信息'
         }), 500
 
 
