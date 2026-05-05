@@ -2157,9 +2157,41 @@ function showResourceSettings() {
 <div id="ffmpegModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
     <div class="modal-content" style="background: white; padding: 40px; border-radius: 20px; max-width: 700px; width: 90%;">
         <h2 style="margin-bottom: 20px; color: #667eea;">🎬 FFmpeg 管理</h2>
-        <div id="ffmpegContent">
-            <p>FFmpeg 是视频处理的核心工具...</p>
+        
+        <div id="resourceCheck" style="margin-bottom: 20px;">
+            <h4>💻 系统资源检测</h4>
+            <div id="resourceStatus"></div>
         </div>
+        
+        <div id="ffmpegStatus" style="margin-bottom: 20px;">
+            <h4>📦 FFmpeg 状态</h4>
+            <div id="ffmpegInfo"></div>
+        </div>
+        
+        <div id="downloadSection" style="display: none; margin-top: 20px;">
+            <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 20px;">
+                <strong>⚠️ FFmpeg 未安装</strong>
+                <p style="margin: 10px 0 0 0; font-size: 14px;">FFmpeg 是视频处理必需工具，用于视频合成和音频处理</p>
+            </div>
+            
+            <div style="display: flex; gap: 15px;">
+                <button class="btn" onclick="downloadFFmpeg()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    📥 自动下载 FFmpeg
+                </button>
+                <button class="btn btn-secondary" onclick="showManualGuide()" style="background: #e2e8f0; color: #4a5568;">
+                    📖 手动安装指南
+                </button>
+            </div>
+            
+            <div id="downloadProgress" style="display: none; margin-top: 20px;">
+                <p>正在下载 FFmpeg...</p>
+                <div style="background: #e2e8f0; border-radius: 10px; height: 20px; overflow: hidden;">
+                    <div id="ffmpegProgressBar" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <p id="downloadMessage" style="font-size: 13px; color: #718096; margin-top: 10px;"></p>
+            </div>
+        </div>
+        
         <div style="margin-top: 30px; text-align: right;">
             <button class="btn" onclick="closeFFmpegModal()" style="background: #48bb78;">
                 关闭
