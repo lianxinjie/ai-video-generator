@@ -2900,7 +2900,7 @@ def api_download_ffmpeg():
         file_path = temp_dir / filename
         
         # 使用流式下载，避免内存占用过大
-        response = requests.get(url, stream=True)
+        response = requests.get(url, stream=True, timeout=300)
         total_size = int(response.headers.get('content-length', 0))
         
         with open(file_path, 'wb') as f:
