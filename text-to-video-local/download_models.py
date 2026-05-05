@@ -213,13 +213,32 @@ class ModelDownloader:
             if model_info["type"] == "huggingface":
                 # HuggingFace 缓存检查
                 repo_parts = model_info["repo"].split("/")
-                check_path = self.output_dir / f"models--{repo_parts[0]}--{repo_parts[1]}"
-                existing[model_name] = check_path.exists()
+                if len(repo_parts) == 2:
+                    check_path = self.output_dir / f"models--{repo_parts[0]}--{repo_parts[1]}"
+                else:
+                    existing[model_name] = False
+                    continue
+                
+                # 不仅检查目录存在，还要验证有文件
+                if check_path.exists():
+                    # 检查是否有实际文件（至少 1 个）
+                    file_count = sum(1 for f in check_path.rglob('*') if f.is_file())
+                    existing[model_name] = file_count > 0
+                else:
+                    existing[model_name] = False
+                    
             elif model_info["type"] == "modelscope":
                 # ModelScope 缓存检查
                 repo_parts = model_info["repo"].split("/")
                 check_path = self.output_dir / repo_parts[-1]
-                existing[model_name] = check_path.exists()
+                
+                # 验证目录和文件
+                if check_path.exists():
+                    # 检查是否有实际文件
+                    file_count = sum(1 for f in check_path.rglob('*') if f.is_file())
+                    existing[model_name] = file_count > 0
+                else:
+                    existing[model_name] = False
             else:
                 existing[model_name] = False
         

@@ -445,12 +445,19 @@
                 const disabled = model.installed ? 'disabled checked' : '';
                 const status = model.installed ? '✓ 已下载' : '';
                 
+                // 构建大小显示文本
+                let sizeText = `下载大小：${model.size_gb}GB`;
+                if (model.actual_size_gb && model.actual_size_gb > 0) {
+                    sizeText += ` | 实际占用：${model.actual_size_gb}GB`;
+                }
+                sizeText += ` | 来源：${model.source}`;
+                
                 item.innerHTML = `
                     <input type="checkbox" id="model_${model.id}" ${disabled}>
                     <label for="model_${model.id}" style="flex: 1; cursor: pointer;">
                         <strong>${model.name}</strong> - ${model.description}
                         <div style="font-size: 13px; color: #666;">
-                            大小：${model.size_gb}GB | 来源：${model.source}
+                            ${sizeText}
                         </div>
                     </label>
                     ${status ? `<span style="color: #48bb78;">${status}</span>` : ''}

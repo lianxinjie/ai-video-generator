@@ -627,12 +627,16 @@ def api_list_models():
         # 构建返回数据
         models = []
         for name, info in downloader.model_repos.items():
+            # 计算实际占用空间
+            actual_size_gb = calculate_model_actual_size(name, info)
+            
             models.append({
                 'id': name,
                 'name': name.upper(),
                 'source': 'ModelScope' if info['type'] == 'modelscope' else 'HuggingFace',
                 'repo': info['repo'],
                 'size_gb': info['size_gb'],
+                'actual_size_gb': actual_size_gb,
                 'required': info.get('required', False),
                 'installed': existing.get(name, False),
                 'description': get_model_description(name)
@@ -655,6 +659,41 @@ def get_model_description(model_name: str) -> str:
         'svd': 'Stable Video Diffusion 图像转视频（需要 CUDA 支持）'
     }
     return descriptions.get(model_name, '未知模型')
+
+
+def calculate_model_actual_size(model_name: str, model_info: dict) -> float:
+    """计算模型实际占用的磁盘空间（GB）"""
+    try:
+        models_dir = Path('./models')
+        
+        # 根据模型类型确定检查路径
+        if model_info.get('type') == 'huggingface':
+            # HuggingFace 缓存目录：models--org--name
+            repo_parts = model_info.get('repo', '').split('/')
+            if len(repo_parts) == 2:
+                check_path = models_dir / f"models--{repo_parts[0]}--{repo_parts[1]}"
+            else:
+                return 0.0
+        elif model_info.get('type') == 'modelscope':
+            # ModelScope 缓存目录：repo_name
+            check_path = models_dir / model_info.get('repo', '').split('/')[-1]
+        else:
+            return 0.0
+        
+        if not check_path.exists():
+            return 0.0
+        
+        # 递归计算目录大小
+        total_size = 0
+        for f in check_path.rglob('*'):
+            if f.is_file():
+                total_size += f.stat().st_size
+        
+        # 转换为 GB
+        actual_gb = total_size / (1024 ** 3)
+        return round(actual_gb, 2)
+    except Exception:
+        return 0.0
 
 
 @app.route('/api/models/install', methods=['POST'])
