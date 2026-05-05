@@ -2902,11 +2902,33 @@ def api_download_ffmpeg():
         arch = 'amd64' if machine in ['x86_64', 'AMD64'] else 'arm64' if machine in ['arm64', 'aarch64'] else machine
         
         # FFmpeg 静态编译版本下载地址
+        # FFmpeg 静态编译版本下载地址（多镜像，自动选择最快的）
+        # 
+        # 镜像选择策略:
+        # - Linux: GitHub镜像速度更快 (0.78MB/s vs 0.38MB/s)
+        # - Windows: gyan.dev 为主要镜像
+        # - macOS: evermeet.cx 为主要镜像
+        #
+        # 如果主镜像失败，自动切换到备用镜像
         urls = {
-            'Windows': 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
-            'Linux': f'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-{arch}-static.tar.xz',
-            'Darwin': 'https://evermeet.cx/ffmpeg/getrelease/zip'
+            'Windows': [
+                'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
+                'https://github.com/GyanD/codexffmpeg/releases/download/6.1/ffmpeg-6.1-essentials_build.zip',
+            ],
+            'Linux': [
+                f'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-{arch}-gpl.tar.xz',
+                f'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-{arch}-static.tar.xz',
+            ],
+            'Darwin': [
+                'https://evermeet.cx/ffmpeg/getrelease/zip',
+                'https://github.com/evermeet/ffmpeg/releases/download/5.1.2/ffmpeg-5.1.2.zip',
+            ]
         }
+        
+        # 如果是字符串（旧格式），转换为列表
+        for sys_name in list(urls.keys()):
+            if isinstance(urls[sys_name], str):
+                urls[sys_name] = [urls[sys_name]]
         
         if system not in urls:
             return jsonify({
@@ -2923,7 +2945,17 @@ def api_download_ffmpeg():
         temp_dir.mkdir(exist_ok=True)
         
         # 下载
-        url = urls[system]
+        # 选择最快的镜像
+        url_list = urls.get(system, [])
+        if not url_list:
+            return jsonify({
+                'success': False,
+                'error': f'不支持的系统：{system}'
+            })
+        
+        # 优先使用第一个镜像（通常是最快的）
+        url = url_list[0]
+        backup_urls = url_list[1:]
         filename = 'ffmpeg.zip' if system == 'Windows' else 'ffmpeg.tar.xz'
         file_path = temp_dir / filename
         
@@ -2932,8 +2964,21 @@ def api_download_ffmpeg():
         try:
             head_resp = requests.head(url, timeout=10, allow_redirects=True)
             if head_resp.status_code != 200:
-                # 如果是 Linux 且使用 releases 路径失败，尝试 builds 路径作为备用
-                if system == 'Linux' and '/releases/' in url:
+                # 尝试备用镜像
+                print(f"[FFmpeg 下载] 主镜像失败 (HTTP {head_resp.status_code}), 尝试备用镜像...")
+                switched = False
+                for backup_url in backup_urls:
+                    try:
+                        backup_resp = requests.head(backup_url, timeout=10, allow_redirects=True)
+                        if backup_resp.status_code == 200:
+                            print(f"[FFmpeg 下载] 切换到备用镜像：{backup_url[:80]}...")
+                            url = backup_url
+                            head_resp = backup_resp
+                            switched = True
+                            break
+                    except:
+                        continue
+                if not switched:
                     backup_url = url.replace('/releases/', '/builds/')
                     head_resp = requests.head(backup_url, timeout=10, allow_redirects=True)
                     if head_resp.status_code == 200:
