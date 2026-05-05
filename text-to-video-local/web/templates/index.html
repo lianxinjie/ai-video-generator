@@ -1864,9 +1864,11 @@ function scrollToGenerate() {
 }
 
 // 在显示扫描结果时添加安装按钮
-const originalDisplayScanResult = displayScanResult;
-displayScanResult = function(summary) {
-    originalDisplayScanResult(summary);
+window.displayScanResult = function(summary) {
+    // 调用原始函数
+    if (window._originalDisplayScanResult) {
+        window._originalDisplayScanResult(summary);
+    }
     
     // 添加安装按钮
     const resultDiv = document.getElementById('scanResult');
@@ -2264,21 +2266,59 @@ function showResourceSettings() {
 let ffmpegResourceData = null;
 
 function checkFFmpeg() {
-    fetch('/api/check-resources')
-        .then(r => r.json())
+    // 添加超时控制（5 秒）
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    const fetchOptions = {
+        signal: controller.signal,
+        headers: { 'Accept': 'application/json' }
+    };
+    
+    // 检测资源
+    fetch('/api/check-resources', fetchOptions)
+        .then(r => {
+            clearTimeout(timeoutId);
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
         .then(data => {
             if (data.success) {
                 ffmpegResourceData = data;
                 displayResourceStatus(data);
+            } else {
+                document.getElementById('resourceStatus').innerHTML = 
+                    '<div style="color: #f56565;">❌ 资源检测失败</div>';
             }
+        })
+        .catch(error => {
+            console.error('资源检测错误:', error);
+            document.getElementById('resourceStatus').innerHTML = 
+                '<div style="color: #f56565;">❌ 资源检测超时或失败</div>';
         });
     
-    fetch('/api/check-ffmpeg')
-        .then(r => r.json())
+    // 检测 FFmpeg
+    const controller2 = new AbortController();
+    const timeoutId2 = setTimeout(() => controller2.abort(), 5000);
+    
+    fetch('/api/check-ffmpeg', { ...fetchOptions, signal: controller2.signal })
+        .then(r => {
+            clearTimeout(timeoutId2);
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
         .then(data => {
             if (data.success) {
                 displayFFmpegStatus(data);
+            } else {
+                document.getElementById('ffmpegInfo').innerHTML = 
+                    '<div style="color: #f56565;">❌ FFmpeg 检测失败</div>';
             }
+        })
+        .catch(error => {
+            console.error('FFmpeg 检测错误:', error);
+            document.getElementById('ffmpegInfo').innerHTML = 
+                '<div style="color: #f56565;">❌ FFmpeg 检测超时或失败</div>';
         });
 }
 
