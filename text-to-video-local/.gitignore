@@ -85,3 +85,6 @@ ffmpeg/bin/
 ffmpeg/temp_download/
 ffmpeg/test_extract/
 ffmpeg/test_bin/
+
+# FFmpeg 二进制文件 (体积大，按需下载)
+ffmpeg/
