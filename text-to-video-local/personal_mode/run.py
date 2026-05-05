@@ -607,7 +607,7 @@ def run_collaborative_mode(
             
             try:
                 if method == 'local':
-                    # 本地生成（调用现有的 generate_segmented.py 的单段生成逻辑）
+                    # 本地生成（暂不可用，返回 None）
                     image_result = generate_local_segment(
                         prompt=prompt,
                         segment_index=segment_idx,
@@ -617,13 +617,80 @@ def run_collaborative_mode(
                         device=device,
                         output_dir=output_dir / 'segments' / f'segment_{segment_idx + 1:03d}'
                     )
+                    
+                    # 本地失败，自动切换到云端
+                    if not image_result:
+                        print(f"  → 切换到云端生成...")
+                        image_url, platform_name = cloud_manager.generate_image(
+                            prompt=prompt,
+                            preferred_platform=None
+                        )
+                        
+                        if image_url:
+                            # 下载图片到 segments 目录
+                            segment_dir = output_dir / 'segments' / f'segment_{segment_idx + 1:03d}'
+                            segment_dir.mkdir(parents=True, exist_ok=True)
+                            
+                            import requests
+                            try:
+                                response = requests.get(image_url, timeout=30)
+                                if response.status_code == 200:
+                                    # 保存多张图片（如果返回的是多张）
+                                    img_path = segment_dir / f'frame_0001.png'
+                                    with open(img_path, 'wb') as f:
+                                        f.write(response.content)
+                                    print(f"  ✓ 图片已下载：{img_path}")
+                                    image_result = {'url': image_url, 'path': str(img_path)}
+                                else:
+                                    print(f"  ❌ 图片下载失败：{response.status_code}")
+                                    image_result = None
+                            except Exception as e:
+                                print(f"  ❌ 图片下载异常：{e}")
+                                image_result = None
+                        else:
+                            image_result = None
                 else:
                     # 云端生成
                     image_url, platform_name = cloud_manager.generate_image(
                         prompt=prompt,
                         preferred_platform=None  # 自动选择
                     )
-                    image_result = {'url': image_url, 'platform': platform_name} if image_url else None
+                    
+                    if image_url:
+                        # 下载图片到 segments 目录
+                        segment_dir = output_dir / 'segments' / f'segment_{segment_idx + 1:03d}'
+                        segment_dir.mkdir(parents=True, exist_ok=True)
+                        
+                        import requests
+                        try:
+                            image_result = {'url': image_url, 'platform': platform_name, 'path': None}
+                            if isinstance(image_url, list):
+                                # 多张图片
+                                for i, url in enumerate(image_url):
+                                    response = requests.get(url, timeout=30)
+                                    if response.status_code == 200:
+                                        img_path = segment_dir / f'frame_{i:04d}.png'
+                                        with open(img_path, 'wb') as f:
+                                            f.write(response.content)
+                                        image_result['path'] = str(img_path)
+                                    else:
+                                        print(f"  ❌ 图片{i}下载失败：{response.status_code}")
+                            else:
+                                response = requests.get(image_url, timeout=30)
+                                if response.status_code == 200:
+                                    img_path = segment_dir / 'frame_0001.png'
+                                    with open(img_path, 'wb') as f:
+                                        f.write(response.content)
+                                    image_result['path'] = str(img_path)
+                                    print(f"  ✓ 图片已下载：{img_path}")
+                                else:
+                                    print(f"  ❌ 图片下载失败：{response.status_code}")
+                                    image_result = None
+                        except Exception as e:
+                            print(f"  ❌ 图片下载异常：{e}")
+                            image_result = None
+                    else:
+                        image_result = None
                 
                 duration = time.time() - start_time
                 
@@ -750,6 +817,7 @@ def merge_segments(
         
         if len(all_images) == 0:
             print(f"  ❌ 没有找到图片文件，无法合并")
+            print(f"  提示：云端生成的图片可能未正确保存")
             return None
         
         # 创建临时 concat 文件
@@ -757,6 +825,13 @@ def merge_segments(
         with open(temp_file, 'w', encoding='utf-8') as f:
             for img in all_images:
                 f.write(f"file '{img.absolute().as_posix()}'\n")
+        
+        # 如果只有 1 张图片，需要复制多份才能形成视频
+        if len(all_images) == 1:
+            print(f"  ⚠️ 只有 1 张图片，将复制多份来生成视频...")
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                for i in range(16):  # 16 帧约 2 秒视频
+                    f.write(f"file '{all_images[0].absolute().as_posix()}'\n")
         
         # Windows 路径可能包含空格，需要用引号包裹
         import shutil
