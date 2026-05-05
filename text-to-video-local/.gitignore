@@ -48,3 +48,9 @@ test_*.py
 pytest_cache/
 .coverage
 htmlcov/
+
+# 清理脚本生成的文件
+*.log.bak
+
+# 清理脚本
+# clean.sh (保留)
