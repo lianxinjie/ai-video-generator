@@ -2635,14 +2635,18 @@ def api_download_ffmpeg():
                 'error': f'不支持的系统：{system}'
             })
         
-        # 创建下载目录
-        download_dir = Path('./ffmpeg')
-        download_dir.mkdir(exist_ok=True)
+        # 创建下载和输出目录
+        output_dir = Path('./ffmpeg/bin')
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 临时下载目录
+        temp_dir = Path('./ffmpeg/temp_download')
+        temp_dir.mkdir(exist_ok=True)
         
         # 下载
         url = urls[system]
         filename = 'ffmpeg.zip' if system == 'Windows' else 'ffmpeg.tar.xz'
-        file_path = download_dir / filename
+        file_path = temp_dir / filename
         
         # 使用流式下载，避免内存占用过大
         response = requests.get(url, stream=True)
@@ -2658,38 +2662,58 @@ def api_download_ffmpeg():
         if system == 'Windows':
             with zipfile.ZipFile(file_path, 'r') as zip_ref:
                 # 找到包含 ffmpeg.exe 的目录
-                zip_ref.extractall(download_dir)
-                # 移动内容到根目录
-                for item in download_dir.iterdir():
-                    if item.is_dir() and item.name.startswith('ffmpeg'):
-                        for sub_item in item.iterdir():
-                            sub_item.rename(download_dir / sub_item.name)
-                        item.rmdir()
+                names = zip_ref.namelist()
+                ffmpeg_dir = None
+                for name in names:
+                    if 'ffmpeg.exe' in name:
+                        ffmpeg_dir = name.split('/')[0]
                         break
+                
+                if ffmpeg_dir:
+                    zip_ref.extractall(temp_dir)
+                    # 复制到 bin 目录
+                    src_bin = temp_dir / ffmpeg_dir / 'bin'
+                    if src_bin.exists():
+                        import shutil
+                        shutil.copytree(src_bin, output_dir, dirs_exist_ok=True)
+                    else:
+                        # 直接找 exe 文件
+                        for name in names:
+                            if name.endswith('ffmpeg.exe') or name.endswith('ffprobe.exe'):
+                                zip_ref.extract(name, temp_dir)
+                                src = temp_dir / name
+                                dst = output_dir / src.name
+                                shutil.copy2(src, dst)
         else:
             import subprocess
-            subprocess.run(['tar', '-xf', str(file_path), '-C', str(download_dir)], check=True)
-            # 移动内容
-            for item in download_dir.iterdir():
-                if item.is_dir() and 'ffmpeg' in item.name.lower():
-                    for sub_item in item.iterdir():
-                        sub_item.rename(download_dir / sub_item.name)
-                    item.rmdir()
-                    break
+            subprocess.run(['tar', '-xf', str(file_path), '-C', str(temp_dir)], check=True)
+            # 查找 ffmpeg 二进制文件
+            import shutil
+            for ffmpeg_file in temp_dir.rglob('ffmpeg'):
+                if ffmpeg_file.is_file() and str(ffmpeg_file).endswith('/ffmpeg'):
+                    shutil.copy2(ffmpeg_file, output_dir / 'ffmpeg')
+                elif ffmpeg_file.is_file() and str(ffmpeg_file).endswith('/ffprobe'):
+                    shutil.copy2(ffmpeg_file, output_dir / 'ffprobe')
         
-        # 清理压缩包
-        file_path.unlink()
+        # 清理临时文件
+        if file_path.exists():
+            file_path.unlink()
+        shutil.rmtree(temp_dir, ignore_errors=True)
         
         # 设置执行权限（Linux/macOS）
         if system != 'Windows':
-            ffmpeg_exe = download_dir / 'ffmpeg'
+            ffmpeg_exe = output_dir / 'ffmpeg'
             if ffmpeg_exe.exists():
                 import stat
                 ffmpeg_exe.chmod(ffmpeg_exe.stat().st_mode | stat.S_IEXEC)
+            
+            ffprobe_exe = output_dir / 'ffprobe'
+            if ffprobe_exe.exists():
+                ffprobe_exe.chmod(ffprobe_exe.stat().st_mode | stat.S_IEXEC)
         
         return jsonify({
             'success': True,
-            'path': str(download_dir),
+            'path': str(output_dir.parent),
             'message': 'FFmpeg 下载完成',
             'note': '请重启 Web 服务以使用 FFmpeg'
         })
