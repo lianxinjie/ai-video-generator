@@ -2673,8 +2673,10 @@ def scenes_confirm_page():
 @app.route('/api/check-ffmpeg', methods=['GET'])
 def api_check_ffmpeg():
     """API: 检查 FFmpeg 安装状态"""
+    import platform
     import shutil
     import subprocess
+    from pathlib import Path
     
     try:
         # 检查 FFmpeg 是否在 PATH 中
