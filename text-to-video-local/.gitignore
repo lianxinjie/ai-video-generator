@@ -4,87 +4,47 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
-venv/
 *.egg-info/
+dist/
+build/
 
-# Personal Mode
-projects/
-*.mp4
-*.gif
-*.avi
-*.mov
-checkpoints/
-tasks.json
-metadata.json
-generation_report.txt
-merge_list.txt
-slideshow_list.txt
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual Environment
+# 虚拟环境
 venv/
-ENV/
 env/
-.venv
+.env/
+
+# 模型文件（体积大，按需下载）
+models/
+
+# FFmpeg（按需下载）
+ffmpeg/
+ffmpeg/
 
 # IDE
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
 *~
-.DS_Store
-
-# Models
-models/
-*.bin
-*.pt
-*.pth
-*.ckpt
-*.safetensors
-
-# Outputs
-outputs/
-*.mp4
-*.avi
-*.mov
-*.gif
-*.webp
-
-# Logs
-*.log
-
-# Config
-.env
-.env.local
-.env.production
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Temporary files
-tmp/
-temp/
-*.tmp
 
 # OS
 Thumbs.db
 .DS_Store
-ffmpeg/bin/
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 
-# FFmpeg 二进制文件 (体积大，应该由用户自行下载)
-ffmpeg/bin/
-ffmpeg/temp_download/
-ffmpeg/test_extract/
-ffmpeg/test_bin/
+# 日志
+*.log
 
-# FFmpeg 二进制文件 (体积大，按需下载)
-ffmpeg/
+# 临时文件
+*.tmp
+*.temp
+*.bak
+
+# 测试文件
+test_*.py
+pytest_cache/
+.coverage
+htmlcov/

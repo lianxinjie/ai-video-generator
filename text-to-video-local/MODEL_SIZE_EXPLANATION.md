@@ -221,7 +221,7 @@ ln -s /data/models/modelscope ./models/modelscope
 
 ```bash
 # 添加 cron 任务
-0 3 * * * cd /workspace && python clean_models.py
+0 3 * * * cd text-to-video-local && python clean_models.py
 ```
 
 ### 3. 监控磁盘空间
