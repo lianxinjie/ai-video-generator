@@ -932,6 +932,69 @@ def api_install_dependencies():
             'pillow': {'pip_name': 'pillow', 'extra': ''},
             'psutil': {'pip_name': 'psutil', 'extra': ''},
             'torch': {
+                'pip_name': 'torch',
+                'extra': '--index-url https://download.pytorch.org/whl/cpu'
+            },
+            'transformers': {'pip_name': 'transformers', 'extra': ''},
+            'diffusers': {'pip_name': 'diffusers', 'extra': ''},
+            'huggingface-hub': {'pip_name': 'huggingface-hub', 'extra': ''},
+            'modelscope': {'pip_name': 'modelscope', 'extra': ''},
+            'edge-tts': {'pip_name': 'edge-tts', 'extra': ''},
+            'pydub': {'pip_name': 'pydub', 'extra': ''}
+        }
+        
+        # 构建 pip 安装命令
+        cmd = [sys.executable, '-m', 'pip', 'install']
+        for pkg in packages:
+            if pkg in package_info:
+                info = package_info[pkg]
+                if info['extra']:
+                    cmd.extend([info['pip_name'], info['extra']])
+                else:
+                    cmd.append(info['pip_name'])
+        
+        cmd.append('--break-system-packages')
+        
+        # 后台执行安装任务
+        def install_task():
+            log_file = Path(f'web/logs/install_{task_id}.log')
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(log_file, 'w', encoding='utf-8') as log:
+                log.write(f"开始安装依赖：{', '.join(packages)}\n")
+                log.write(f"命令：{' '.join(cmd)}\n\n")
+                
+                try:
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=600
+                    )
+                    
+                    if result.returncode == 0:
+                        log.write("✓ 依赖安装成功\n")
+                    else:
+                        log.write(f"❌ 依赖安装失败：{result.stderr}\n")
+                    
+                except subprocess.TimeoutExpired:
+                    log.write("❌ 安装超时\n")
+                except Exception as e:
+                    log.write(f"❌ 安装异常：{str(e)}\n")
+        
+        thread = threading.Thread(target=install_task)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'message': f'开始安装 {len(packages)} 个包'
+        })
+    
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 
 @app.route('/api/check-pytorch-installation', methods=['GET'])
@@ -1905,97 +1968,12 @@ def api_install_collaborative_status(task_id):
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-                'pip_name': 'torch',
-                'extra': '--index-url https://download.pytorch.org/whl/cpu'
-            },
-            'transformers': {'pip_name': 'transformers', 'extra': ''},
-            'diffusers': {'pip_name': 'diffusers[torch]', 'extra': ''},
-            'huggingface-hub': {'pip_name': 'huggingface-hub', 'extra': ''},
-            'modelscope': {'pip_name': 'modelscope', 'extra': ''}
-        }
-        
-        # 创建任务
-        tasks[task_id] = {
-            'status': 'running',
-            'progress': 0,
-            'type': 'dependency_install',
-            'packages': packages,
-            'start_time': datetime.now().isoformat(),
-            'log': f'准备安装 {len(packages)} 个依赖...\n\n'
-        }
-        
-        # 后台线程执行安装
-        def run_install():
-            task = tasks[task_id]
-            try:
-                total = len(packages)
-                for i, package in enumerate(packages):
-                    task['log'] += f'\n[{i+1}/{total}] 正在安装 {package}...\n'
-                    
-                    # 获取包信息
-                    info = package_info.get(package.lower(), {'pip_name': package, 'extra': ''})
-                    pip_name = info['pip_name']
-                    extra = info['extra']
-                    
-                    # 使用清华镜像源加速
-                    cmd = [
-                        sys.executable, '-m', 'pip', 'install',
-                        '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple',
-                        '--trusted-host', 'pypi.tuna.tsinghua.edu.cn'
-                    ]
-                    
-                    if extra:
-                        cmd.extend(extra.split())
-                    
-                    cmd.append(pip_name)
-                    
-                    result = subprocess.run(
-                        cmd,
-                        capture_output=True,
-                        text=True,
-                        timeout=600  # 10 分钟超时
-                    )
-                    
-                    if result.returncode == 0:
-                        task['log'] += f'✓ {package} 安装成功\n'
-                        if result.stdout:
-                            # 只显示关键信息
-                            for line in result.stdout.split('\n'):
-                                if 'Successfully installed' in line or 'Requirement already' in line:
-                                    task['log'] += f'  {line}\n'
-                    else:
-                        task['log'] += f'✗ {package} 安装失败\n'
-                        if result.stderr:
-                            task['log'] += f'  错误：{result.stderr.strip()}\n'
-                    
-                    task['progress'] = int((i + 1) / total * 100)
-                
-                task['status'] = 'completed'
-                task['log'] += '\n✅ 所有依赖安装完成！\n'
-                
-            except subprocess.TimeoutExpired:
-                task['status'] = 'failed'
-                task['log'] += '\n❌ 错误：安装超时（10 分钟）\n'
-            except Exception as e:
-                task['status'] = 'failed'
-                task['error'] = str(e)
-                task['log'] += f'\n❌ 错误：{e}\n'
-        
-        # 启动后台线程
-        from threading import Thread
-        thread = Thread(target=run_install)
-        thread.daemon = True
-        thread.start()
-        
-        return jsonify({
-            'success': True,
-            'task_id': task_id,
-            'message': f'开始安装 {len(packages)} 个依赖'
-        })
-    
-    except Exception as e:
-        import traceback
-        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/api/check-collaborative-mode', methods=['GET'])
+def api_check_collaborative_mode():
+    """API: 检查协同模式环境配置状态"""
+    return api_check_mode_environment(mode='collaborative')
 
 
 # ========== AI Configuration API ==========
