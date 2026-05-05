@@ -739,13 +739,39 @@ def main(
     print("\n加载模型...")
     try:
         from diffusers import DiffusionPipeline
+        import os
         
         if model == "modelscope":
-            pipeline = DiffusionPipeline.from_pretrained(
-                "damo/text-to-video-synthesis",
-                torch_dtype=torch.float16 if device == "cuda" else torch.float32
-            )
-            pipeline = pipeline.to(device)
+            # 设置环境变量使用 ModelScope
+            os.environ['MODELSCOPE_CACHE'] = './models/modelscope'
+            
+            print("  正在加载模型 damo/text-to-video-synthesis...")
+            print("  提示：首次下载需要 1-3GB，可能需要 5-15 分钟")
+            print("  如果下载失败，可以使用以下备用方案：")
+            print("  1. 使用 HuggingFace 镜像：export HF_ENDPOINT=https://hf-mirror.com")
+            print("  2. 手动下载模型到 ./models 目录")
+            print("  3. 使用云端生成模式（不需要本地模型）")
+            
+            # 尝试加载，使用重试机制
+            max_retries = 3
+            for attempt in range(1, max_retries + 1):
+                try:
+                    print(f"\n  尝试 {attempt}/{max_retries}...")
+                    pipeline = DiffusionPipeline.from_pretrained(
+                        "damo/text-to-video-synthesis",
+                        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                        cache_dir='./models/modelscope',
+                        resume_download=True
+                    )
+                    pipeline = pipeline.to(device)
+                    print("✓ 模型加载成功")
+                    break
+                except Exception as retry_error:
+                    if attempt == max_retries:
+                        raise retry_error
+                    print(f"  ❌ 尝试 {attempt} 失败：{retry_error}")
+                    print(f"  等待 5 秒后重试...")
+                    time.sleep(5)
         else:
             logger.error(f"不支持的模型：{model}")
             return
@@ -755,10 +781,18 @@ def main(
             pipeline.enable_attention_slicing()
             pipeline.enable_vae_slicing()
         
-        print("✓ 模型加载完成")
+        print("✓ 模型准备完成")
         
     except Exception as e:
         logger.error(f"模型加载失败：{e}")
+        print("\n💡 建议解决方案:")
+        print("  1. 使用云端模式：-m collaborative (推荐)")
+        print("  2. 配置 HuggingFace 镜像:")
+        print("     Windows PowerShell: $env:HF_ENDPOINT='https://hf-mirror.com'")
+        print("     Linux/Mac: export HF_ENDPOINT='https://hf-mirror.com'")
+        print("  3. 手动下载模型:")
+        print("     python download_models.py")
+        print("  4. 检查网络连接，确保能访问 ModelScope 或 HuggingFace")
         return
     
     # 4. 生成每个片段的图片和配音
