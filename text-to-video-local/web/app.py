@@ -2450,29 +2450,47 @@ def api_check_ffmpeg():
             # 检查项目目录是否有 FFmpeg
             local_ffmpeg = Path('./ffmpeg')
             if local_ffmpeg.exists():
-                # 查找 ffmpeg 可执行文件
-                if platform.system() == 'Windows':
-                    ffmpeg_exe = local_ffmpeg / 'ffmpeg.exe'
-                    if not ffmpeg_exe.exists():
-                        # 可能在子目录中
-                        for exe in local_ffmpeg.rglob('ffmpeg.exe'):
-                            ffmpeg_exe = exe
-                            break
-                else:
-                    ffmpeg_exe = local_ffmpeg / 'ffmpeg'
-                    if not ffmpeg_exe.exists():
-                        for exe in local_ffmpeg.rglob('ffmpeg'):
-                            ffmpeg_exe = exe
-                            break
+                # 可能的 ffmpeg 路径（按优先级排序）
+                possible_paths = []
                 
-                if ffmpeg_exe.exists():
-                    return jsonify({
-                        'success': True,
-                        'installed': True,
-                        'path': str(ffmpeg_exe),
-                        'version': '本地版本',
-                        'source': 'local'
-                    })
+                if platform.system() == 'Windows':
+                    possible_paths = [
+                        local_ffmpeg / 'bin' / 'ffmpeg.exe',  # 新下载脚本的路径
+                        local_ffmpeg / 'ffmpeg.exe',  # 旧版本路径
+                        local_ffmpeg / 'ffmpeg-win64-static' / 'ffmpeg.exe',
+                    ]
+                else:
+                    possible_paths = [
+                        local_ffmpeg / 'bin' / 'ffmpeg',  # 新下载脚本的路径
+                        local_ffmpeg / 'ffmpeg',  # 旧版本路径
+                    ]
+                
+                # 优先检查标准路径
+                for ffmpeg_exe in possible_paths:
+                    if ffmpeg_exe.exists():
+                        return jsonify({
+                            'success': True,
+                            'installed': True,
+                            'path': str(ffmpeg_exe),
+                            'version': '本地版本',
+                            'source': 'local'
+                        })
+                
+                # 如果还没找到，递归搜索
+                for ffmpeg_exe in local_ffmpeg.rglob('ffmpeg*'):
+                    if ffmpeg_exe.is_file():
+                        # 验证是否为可执行文件
+                        if platform.system() != 'Windows':
+                            import os
+                            if not os.access(ffmpeg_exe, os.X_OK):
+                                continue
+                        return jsonify({
+                            'success': True,
+                            'installed': True,
+                            'path': str(ffmpeg_exe),
+                            'version': '本地版本',
+                            'source': 'local'
+                        })
             
             return jsonify({
                 'success': True,

@@ -131,7 +131,9 @@ try:
                 if member.name.endswith('ffmpeg') or member.name.endswith('ffprobe'):
                     t.extract(member, temp_dir)
                     src = temp_dir / member.name
-                    dst = output_dir / src.name
+                    # 使用 bin 子目录保持一致性
+                    dst = output_dir / 'bin' / src.name
+                    dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src, dst)
     
     # 验证
