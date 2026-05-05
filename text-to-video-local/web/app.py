@@ -821,6 +821,212 @@ def api_model_install_status(task_id):
     return jsonify(result)
 
 
+@app.route('/api/models/cleanup', methods=['POST'])
+def api_cleanup_models():
+    """API: 清理模型缓存和临时文件"""
+    try:
+        data = request.get_json() or {}
+        target = data.get('target', 'all')  # all, cache, temp, unused
+        
+        stats = {'cleaned': 0, 'freed_gb': 0, 'details': []}
+        
+        models_dir = Path('./models')
+        if not models_dir.exists():
+            return jsonify({'success': False, 'error': '模型目录不存在'})
+        
+        import shutil
+        
+        # 1. 清理缓存目录
+        if target in ['all', 'cache']:
+            for cache_dir in models_dir.rglob('.cache'):
+                if cache_dir.is_dir():
+                    size = sum(f.stat().st_size for f in cache_dir.rglob('*') if f.is_file())
+                    shutil.rmtree(cache_dir)
+                    stats['cleaned'] += 1
+                    stats['freed_gb'] += size / (1024 ** 3)
+                    stats['details'].append(f'清理缓存：{cache_dir.relative_to(models_dir)} ({size/1024**2:.1f} MB)')
+        
+        # 2. 清理临时文件
+        if target in ['all', 'temp']:
+            for pattern in ['*.tmp', '*.pyc', '__pycache__', '*.egg-info']:
+                for f in models_dir.rglob(pattern):
+                    if f.is_file() or f.is_dir():
+                        size = f.stat().st_size if f.is_file() else sum(x.stat().st_size for x in f.rglob('*') if x.is_file())
+                        if f.is_file():
+                            f.unlink()
+                        else:
+                            shutil.rmtree(f)
+                        stats['cleaned'] += 1
+                        stats['freed_gb'] += size / (1024 ** 3)
+                        stats['details'].append(f'清理临时文件： ({size/1024**2:.1f} MB)')
+        
+        return jsonify({
+            'success': True,
+            'stats': stats,
+            'message': f'清理完成：释放 {stats["freed_gb"]:.2f} GB 空间'
+        })
+    
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/models/delete', methods=['POST'])
+def api_delete_model():
+    """API: 删除已安装的模型"""
+    try:
+        data = request.get_json() or {}
+        model_id = data.get('model')
+        
+        if not model_id:
+            return jsonify({'success': False, 'error': '请指定模型'}), 400
+        
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from download_models import ModelDownloader
+        
+        downloader = ModelDownloader(output_dir='./models')
+        model_info = downloader.model_repos.get(model_id)
+        
+        if not model_info:
+            return jsonify({'success': False, 'error': f'未知模型：{model_id}'})
+        
+        # 确定删除路径
+        if model_info.get('type') == 'huggingface':
+            repo_parts = model_info['repo'].split('/')
+            check_path = Path('./models') / f"models--{repo_parts[0]}--{repo_parts[1]}"
+        elif model_info.get('type') == 'modelscope':
+            check_path = Path('./models') / model_info['repo'].split('/')[-1]
+        else:
+            return jsonify({'success': False, 'error': '不支持的模型类型'})
+        
+        if not check_path.exists():
+            return jsonify({'success': False, 'error': '模型未安装'})
+        
+        import shutil
+        # 计算大小
+        size = sum(f.stat().st_size for f in check_path.rglob('*') if f.is_file())
+        
+        # 删除
+        shutil.rmtree(check_path)
+        
+        return jsonify({
+            'success': True,
+            'model': model_id,
+            'freed_gb': round(size / (1024 ** 3), 2),
+            'message': f'模型 {model_id} 已删除，释放 {size/1024**3:.2f} GB'
+        })
+    
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/models/analyze', methods=['GET'])
+def api_analyze_models():
+    """API: 分析模型目录占用空间"""
+    try:
+        models_dir = Path('./models')
+        if not models_dir.exists():
+            return jsonify({'success': False, 'error': '模型目录不存在'})
+        
+        import shutil
+        analysis = []
+        
+        # 分析每个模型
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from download_models import ModelDownloader
+        
+        downloader = ModelDownloader(output_dir='./models')
+        
+        for model_name, model_info in downloader.model_repos.items():
+            # 确定路径
+            if model_info.get('type') == 'huggingface':
+                repo_parts = model_info['repo'].split('/')
+                check_path = models_dir / f"models--{repo_parts[0]}--{repo_parts[1]}"
+            elif model_info.get('type') == 'modelscope':
+                check_path = models_dir / model_info['repo'].split('/')[-1]
+            else:
+                continue
+            
+            if check_path.exists():
+                # 计算大小和文件数
+                total_size = 0
+                file_count = 0
+                for f in check_path.rglob('*'):
+                    if f.is_file():
+                        total_size += f.stat().st_size
+                        file_count += 1
+                
+                # 分析目录结构
+                dir_breakdown = {}
+                for subdir in check_path.iterdir():
+                    if subdir.is_dir():
+                        dir_size = sum(file.stat().st_size for file in subdir.rglob('*') if file.is_file())
+                        dir_breakdown[subdir.name] = {
+                            'size_gb': round(dir_size / (1024 ** 3), 2),
+                            'files': sum(1 for file in subdir.rglob('*') if file.is_file())
+                        }
+                
+                analysis.append({
+                    'id': model_name,
+                    'name': model_name.upper(),
+                    'path': str(check_path),
+                    'installed': True,
+                    'download_size_gb': model_info.get('size_gb', 0),
+                    'actual_size_gb': round(total_size / (1024 ** 3), 2),
+                    'ratio': round(total_size / (1024 ** 3) / model_info.get('size_gb', 1), 2) if model_info.get('size_gb', 0) > 0 else 0,
+                    'file_count': file_count,
+                    'breakdown': dir_breakdown,
+                    'status': 'ok' if total_size / (1024 ** 3) < model_info.get('size_gb', 1) * 3 else 'warning'
+                })
+            else:
+                analysis.append({
+                    'id': model_name,
+                    'name': model_name.upper(),
+                    'installed': False,
+                    'download_size_gb': model_info.get('size_gb', 0)
+                })
+        
+        # 总体统计
+        total_actual = sum(m.get('actual_size_gb', 0) for m in analysis if m.get('installed'))
+        total_download = sum(m.get('download_size_gb', 0) for m in analysis)
+        
+        # 计算缓存大小
+        total_cache = 0
+        for cache_dir in models_dir.rglob('.cache'):
+            if cache_dir.is_dir():
+                total_cache += sum(f.stat().st_size for f in cache_dir.rglob('*') if f.is_file())
+        total_cache /= (1024 ** 3)
+        
+        return jsonify({
+            'success': True,
+            'models': analysis,
+            'summary': {
+                'total_models': len([m for m in analysis if m.get('installed')]),
+                'total_download_gb': round(total_download, 2),
+                'total_actual_gb': round(total_actual, 2),
+                'total_cache_gb': round(total_cache, 2),
+                'ratio': round(total_actual / total_download, 2) if total_download > 0 else 0
+            }
+        })
+    
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
 @app.route('/api/check-dependencies', methods=['GET'])
 def api_check_dependencies():
     """API: 检查 Python 依赖安装状态"""

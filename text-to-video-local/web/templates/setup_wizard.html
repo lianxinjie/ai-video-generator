@@ -237,13 +237,52 @@
             </div>
             
             <div style="margin-top: 20px; text-align: right;">
-                <button class="btn btn-secondary" onclick="prevStep(2)">上一步</button>
-                <button class="btn hidden" id="btnStep4" onclick="nextStep(4)">完成</button>
+                <button class="btn btn-secondary" onclick="prevStep(3)">上一步</button>
+                <button class="btn" onclick="nextStep(4)">下一步：模型管理</button>
             </div>
         </div>
         
-        <!-- Step 4: 完成 -->
+        <!-- Step 4: 模型管理 -->
         <div class="step" data-step="4">
+            <h2>📂 模型管理</h2>
+            
+            <div class="info-box">
+                <strong>💡 提示：</strong>
+                <p>可以查看已安装模型的详细占用情况，或清理缓存释放空间。</p>
+            </div>
+            
+            <button class="btn" onclick="analyzeModels()" style="margin-bottom: 15px;">
+                📊 分析模型占用空间
+            </button>
+            
+            <div id="modelAnalysis" style="display: none; margin: 20px 0;">
+                <!-- 模型分析结果将显示在这里 -->
+            </div>
+            
+            <div style="margin: 20px 0; padding: 15px; background: #f7fafc; border-left: 4px solid #667eea;">
+                <h4 style="margin-top: 0;">🧹 清理选项</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                    <button class="btn btn-secondary" onclick="cleanupModels('cache')" style="font-size: 13px;">
+                        🗑️ 清理缓存
+                    </button>
+                    <button class="btn btn-secondary" onclick="cleanupModels('temp')" style="font-size: 13px;">
+                        🗑️ 清理临时文件
+                    </button>
+                    <button class="btn btn-secondary" onclick="cleanupModels('all')" style="font-size: 13px;">
+                        🧽 全面清理
+                    </button>
+                </div>
+                <div id="cleanupResult" style="margin-top: 10px; font-size: 14px;"></div>
+            </div>
+            
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn btn-secondary" onclick="prevStep(3)">上一步</button>
+                <button class="btn" onclick="nextStep(5)">完成</button>
+            </div>
+        </div>
+        
+        <!-- Step 5: 完成 -->
+        <div class="step" data-step="5">
             <div class="success-box">
                 <div class="success-icon">✅</div>
                 <h2>设置完成！</h2>
@@ -522,7 +561,7 @@
                     if (data.status === 'completed') {
                         clearInterval(interval);
                         logDiv.textContent += '\n✅ 模型下载完成！\n';
-                        document.getElementById('btnStep4').classList.remove('hidden');
+                        document.getElementById('btnNextToModelManagement').classList.remove('hidden');
                     } else if (data.status === 'failed') {
                         clearInterval(interval);
                         logDiv.textContent += `\n❌ 下载失败：${data.error}\n`;
@@ -532,6 +571,192 @@
                 }
             }, 2000);
         }
+        
+        // 分析模型占用空间
+        async function analyzeModels() {
+            const container = document.getElementById('modelAnalysis');
+            container.style.display = 'block';
+            container.innerHTML = '<p>正在分析模型目录...</p>';
+            
+            try {
+                const response = await fetch('/api/models/analyze');
+                const data = await response.json();
+                
+                if (!data.success) {
+                    container.innerHTML = `<p style="color: red;">分析失败：${data.error}</p>`;
+                    return;
+                }
+                
+                let html = '';
+                
+                // 总体统计
+                const summary = data.summary;
+                html += `
+                    <div style="background: #f7fafc; padding: 15px; border-radius: 10px; margin-bottom: 15px;">
+                        <h4 style="margin-top: 0;">📊 总体统计</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                            <div>
+                                <div style="font-size: 12px; color: #666;">已安装模型</div>
+                                <div style="font-size: 20px; font-weight: bold; color: #667eea;">${summary.total_models} 个</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; color: #666;">下载总大小</div>
+                                <div style="font-size: 20px; font-weight: bold; color: #48bb78;">${summary.total_download_gb} GB</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; color: #666;">实际占用</div>
+                                <div style="font-size: 20px; font-weight: bold; color: #ed8936;">${summary.total_actual_gb} GB</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; color: #666;">膨胀比例</div>
+                                <div style="font-size: 20px; font-weight: bold; color: #f56565;">${summary.ratio}x</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // 模型详情
+                html += '<h4>🎯 模型详情</h4>';
+                data.models.forEach(model => {
+                    if (!model.installed) return;
+                    
+                    const statusColor = model.status === 'warning' ? '#f56565' : '#48bb78';
+                    const statusText = model.status === 'warning' ? '⚠️ 占用过大' : '✓ 正常';
+                    
+                    html += `
+                        <div style="background: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; border-left: 4px solid ${statusColor};">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <div>
+                                    <strong>${model.name}</strong>
+                                    <span style="color: ${statusColor}; margin-left: 10px;">${statusText}</span>
+                                </div>
+                                <button class="btn btn-secondary" onclick="deleteModel('${model.id}')" 
+                                    style="padding: 5px 10px; font-size: 12px;"
+                                    title="删除此模型">
+                                    🗑️ 删除
+                                </button>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; font-size: 14px;">
+                                <div>
+                                    <span style="color: #666;">下载大小：</span>
+                                    <strong>${model.download_size_gb} GB</strong>
+                                </div>
+                                <div>
+                                    <span style="color: #666;">实际占用：</span>
+                                    <strong style="color: #ed8936;">${model.actual_size_gb} GB</strong>
+                                </div>
+                                <div>
+                                    <span style="color: #666;">膨胀比例：</span>
+                                    <strong style="color: #f56565;">${model.ratio}x</strong>
+                                </div>
+                                <div>
+                                    <span style="color: #666;">文件数量：</span>
+                                    <strong>${model.file_count}</strong>
+                                </div>
+                            </div>
+                    `;
+                    
+                    // 目录结构分析
+                    if (model.breakdown && Object.keys(model.breakdown).length > 0) {
+                        html += '<div style="margin-top: 10px; font-size: 13px;">';
+                        html += '<strong>目录结构：</strong><br>';
+                        Object.entries(model.breakdown).forEach(([dir, info]) => {
+                            html += `  • ${dir}: ${info.size_gb} GB (${info.files} 文件)<br>`;
+                        });
+                        html += '</div>';
+                    }
+                    
+                    html += '</div>';
+                });
+                
+                // 建议
+                if (summary.ratio > 2.5) {
+                    html += `
+                        <div style="background: #fff3cd; padding: 15px; border-radius: 10px; margin-top: 15px; border-left: 4px solid #ffc107;">
+                            <strong>💡 建议：</strong>
+                            <p style="margin: 10px 0 0 0; font-size: 14px;">
+                                您的模型占用空间偏大（${summary.ratio}x）。建议执行"全面清理"来释放空间。
+                            </p>
+                        </div>
+                    `;
+                }
+                
+                container.innerHTML = html;
+                
+            } catch (error) {
+                container.innerHTML = `<p style="color: red;">分析失败：${error.message}</p>`;
+            }
+        }
+        
+        // 清理模型缓存
+        async function cleanupModels(target) {
+            const resultDiv = document.getElementById('cleanupResult');
+            resultDiv.innerHTML = '<span style="color: #667eea;">正在清理...</span>';
+            
+            try {
+                const response = await fetch('/api/models/cleanup', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({target: target})
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    const stats = data.stats;
+                    let html = `✅ ${data.message}<br>`;
+                    if (stats.details && stats.details.length > 0) {
+                        html += '<div style="font-size: 13px; color: #666; margin-top: 5px;">';
+                        html += stats.details.slice(0, 5).map(d => `• ${d}`).join('<br>');
+                        if (stats.details.length > 5) {
+                            html += `<br>... 还有 ${stats.details.length - 5} 项`;
+                        }
+                        html += '</div>';
+                    }
+                    resultDiv.innerHTML = html;
+                    
+                    // 重新分析
+                    setTimeout(() => analyzeModels(), 1000);
+                } else {
+                    resultDiv.innerHTML = `<span style="color: red;">清理失败：${data.error}</span>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span style="color: red;">清理失败：${error.message}</span>`;
+            }
+        }
+        
+        // 删除模型
+        async function deleteModel(modelId) {
+            if (!confirm(`确定要删除模型 ${modelId} 吗？这将释放磁盘空间，但可以重新下载。`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/models/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({model: modelId})
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`✅ ${data.message}`);
+                    analyzeModels(); // 刷新分析
+                } else {
+                    alert(`❌ 删除失败：${data.error}`);
+                }
+            } catch (error) {
+                alert(`❌ 删除失败：${error.message}`);
+            }
+        }
+        
+        // 进入步骤 4 时自动分析
+        const originalNextStep = nextStep;
+        nextStep = function(step) {
+            originalNextStep(step);
+            if (step === 4) {
+                setTimeout(() => analyzeModels(), 500);
+            }
+        };
     </script>
 </body>
 </html>
