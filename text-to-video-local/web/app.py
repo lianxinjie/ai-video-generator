@@ -2858,6 +2858,9 @@ def api_download_ffmpeg():
     import requests
     import zipfile
     import tarfile
+    import time
+    import stat
+    from pathlib import Path
     
     try:
         # 先检查资源
