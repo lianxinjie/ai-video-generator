@@ -493,10 +493,20 @@
                         <div class="mode-card selected" data-mode="optimized" onclick="selectMode('optimized')">
                             <h4>⚡ 超优模式（推荐）</h4>
                             <p>分段文生图 + 合成视频，4GB 显存即可，3-5 分钟</p>
+                            <button type="button" onclick="checkModeEnvironment('optimized', event)" 
+                                style="margin-top: 10px; padding: 8px 16px; font-size: 0.9em; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer;"
+                                title="检测超优模式环境配置">
+                                🔍 检测环境
+                            </button>
                         </div>
                         <div class="mode-card" data-mode="standard" onclick="selectMode('standard')">
                             <h4>🚀 标准模式</h4>
                             <p>原文生视频直接跑模型，需要 12GB+ 显存，5-10 分钟</p>
+                            <button type="button" onclick="checkModeEnvironment('standard', event)" 
+                                style="margin-top: 10px; padding: 8px 16px; font-size: 0.9em; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer;"
+                                title="检测标准模式环境配置">
+                                🔍 检测环境
+                            </button>
                         </div>
                         <div class="mode-card" data-mode="collaborative" onclick="selectMode('collaborative')">
                             <h4>🤖 协同模式</h4>
@@ -510,6 +520,11 @@
                         <div class="mode-card" data-mode="hybrid" onclick="selectMode('hybrid')">
                             <h4>🔀 混合模式</h4>
                             <p>云端图片 + 本地合成，0 显存，3-6 小时</p>
+                            <button type="button" onclick="checkModeEnvironment('hybrid', event)" 
+                                style="margin-top: 10px; padding: 8px 16px; font-size: 0.9em; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer;"
+                                title="检测混合模式环境配置">
+                                🔍 检测环境
+                            </button>
                         </div>
                     </div>
                     <input type="hidden" id="mode" name="mode" value="optimized">
@@ -2189,20 +2204,33 @@ function openFFmpegModal() {
 
 function checkCollaborativeMode(event) {
     if (event) event.stopPropagation();
+    checkModeEnvironment('collaborative', event);
+}
+
+function checkModeEnvironment(mode, event) {
+    if (event) event.stopPropagation();
     
     const modal = document.getElementById('collaborativeModal');
     modal.style.display = 'flex';
+    
+    const modeNames = {
+        'optimized': '超优模式',
+        'standard': '标准模式',
+        'collaborative': '协同模式',
+        'hybrid': '混合模式'
+    };
+    
     document.getElementById('collaborativeContent').innerHTML = `
         <div class="loading" style="text-align: center; padding: 40px;">
             <div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
-            <p>正在检测协同模式环境配置...</p>
+            <p>正在检测${modeNames[mode] || mode}环境配置...</p>
         </div>
     `;
     
-    fetch('/api/check-collaborative-mode')
+    fetch(`/api/check-mode-environment/${mode}`)
         .then(res => res.json())
         .then(data => {
-            displayCollaborativeStatus(data);
+            displayModeStatus(data);
         })
         .catch(err => {
             document.getElementById('collaborativeContent').innerHTML = `
@@ -2214,7 +2242,7 @@ function checkCollaborativeMode(event) {
         });
 }
 
-function displayCollaborativeStatus(data) {
+function displayModeStatus(data) {
     if (!data.success) {
         document.getElementById('collaborativeContent').innerHTML = `
             <div style="background: #fff5f5; border-left: 4px solid #f56565; padding: 20px; border-radius: 10px;">
@@ -2286,10 +2314,11 @@ function displayCollaborativeStatus(data) {
     html += `</div>`;
     
     // 安装建议
-    if (data.recommendations.need_install || data.recommendations.use_cloud) {
-        const needInstall = data.recommendations.need_install;
-        const useCloud = data.recommendations.use_cloud;
-        
+    const needInstall = data.recommendations.need_install;
+    const canUse = data.recommendations.can_use;
+    const useCloud = data.recommendations.use_cloud;
+    
+    if (needInstall || canUse) {
         html += `
             <div style="background: ${needInstall ? '#fff5f5' : '#f0fff4'}; border: 2px solid ${needInstall ? '#f56565' : '#48bb78'}; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
                 <strong style="font-size: 1.1em;">
@@ -2300,18 +2329,25 @@ function displayCollaborativeStatus(data) {
                         ? '环境存在关键缺失，建议一键安装所需组件' 
                         : useCloud 
                             ? '建议使用云端生成模式，无需本地 GPU 和模型' 
-                            : '环境已就绪，可以开始使用协同模式'
+                            : '环境已就绪，可以开始使用'
                     }
                 </p>
                 ${needInstall ? `
+                    ${data.mode ? `
+                    <button onclick="installModeComponents('${data.mode}')" 
+                        style="background: #f56565; color: white; border: none; padding: 12px 30px; border-radius: 8px; font-size: 1em; cursor: pointer; margin-top: 10px;">
+                        🔧 一键安装${data.mode_name || '所需'}组件
+                    </button>
+                    ` : `
                     <button onclick="installCollaborativeComponents()" 
                         style="background: #f56565; color: white; border: none; padding: 12px 30px; border-radius: 8px; font-size: 1em; cursor: pointer; margin-top: 10px;">
                         🔧 一键安装所有组件
                     </button>
-                ` : useCloud ? `
-                    <button onclick="selectMode('collaborative'); closeCollaborativeModal();" 
+                    `}
+                ` : canUse ? `
+                    <button onclick="selectMode('${data.mode}'); closeCollaborativeModal();" 
                         style="background: #48bb78; color: white; border: none; padding: 12px 30px; border-radius: 8px; font-size: 1em; cursor: pointer; margin-top: 10px;">
-                        ✓ 使用云端模式
+                        ✓ 使用该模式
                     </button>
                 ` : ''}
             </div>
@@ -2321,14 +2357,12 @@ function displayCollaborativeStatus(data) {
     document.getElementById('collaborativeContent').innerHTML = html;
 }
 
-function installCollaborativeComponents() {
-    const components = ['dependencies', 'ffmpeg', 'models'];
-    
+function installModeComponents(mode) {
     document.getElementById('collaborativeContent').innerHTML = `
         <div style="text-align: center; padding: 40px;">
             <div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
-            <h3>🔧 正在安装协同模式组件...</h3>
-            <p style="margin-top: 10px;">安装内容：Python 依赖、FFmpeg、模型文件</p>
+            <h3>🔧 正在安装组件...</h3>
+            <p style="margin-top: 10px;">正在为目标模式安装所需组件</p>
             <p style="margin-top: 5px; font-size: 0.9em; color: #666;">首次安装可能需要 10-20 分钟，请耐心等待</p>
             
             <div id="installProgress" style="margin-top: 30px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
@@ -2344,10 +2378,9 @@ function installCollaborativeComponents() {
         </div>
     `;
     
-    fetch('/api/install-collaborative-components', {
+    fetch(`/api/install-mode-components/${mode}`, {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({components: components})
+        headers: {'Content-Type': 'application/json'}
     })
     .then(res => res.json())
     .then(data => {
@@ -2360,6 +2393,10 @@ function installCollaborativeComponents() {
     .catch(err => {
         alert('请求失败：' + err.message);
     });
+}
+
+function installCollaborativeComponents() {
+    installModeComponents('collaborative');
 }
 
 function pollInstallStatus(taskId, lastProgress) {

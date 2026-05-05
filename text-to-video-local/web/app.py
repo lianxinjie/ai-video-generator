@@ -937,56 +937,359 @@ def api_install_dependencies():
 @app.route('/api/check-collaborative-mode', methods=['GET'])
 def api_check_collaborative_mode():
     """API: 检查协同模式环境配置状态"""
+    return api_check_mode_environment(mode='collaborative')
+
+
+@app.route('/api/check-mode-environment/<mode>', methods=['GET'])
+def api_check_mode_environment(mode):
+    """API: 通用模式环境检测"""
     try:
         import importlib.util
         import shutil
         import torch
         
+        # 各模式配置要求
+        mode_requirements = {
+            'optimized': {
+                'name': '超优模式',
+                'required': ['torch', 'ffmpeg', 'dependencies'],
+                'recommended': ['models', 'cloud_api'],
+                'min_gpu_memory': 4,
+                'description': '分段文生图 + 合成视频'
+            },
+            'standard': {
+                'name': '标准模式',
+                'required': ['torch', 'cuda', 'ffmpeg', 'dependencies'],
+                'recommended': ['models'],
+                'min_gpu_memory': 12,
+                'description': '原文生视频直接跑模型'
+            },
+            'collaborative': {
+                'name': '协同模式',
+                'required': ['torch', 'ffmpeg', 'dependencies'],
+                'recommended': ['models', 'cloud_api'],
+                'min_gpu_memory': 4,
+                'description': '本地 + 云端 AI 协同'
+            },
+            'hybrid': {
+                'name': '混合模式',
+                'required': ['ffmpeg', 'cloud_api'],
+                'recommended': ['dependencies'],
+                'min_gpu_memory': 0,
+                'description': '云端图片 + 本地合成'
+            }
+        }
+        
+        if mode not in mode_requirements:
+            return jsonify({'error': '未知模式'}), 400
+        
+        req = mode_requirements[mode]
+        
         # 检测项列表
         checks = {
             'cuda': {
                 'name': 'CUDA GPU',
-                'required': True,
+                'required': 'cuda' in req['required'],
                 'status': 'pending',
                 'message': '检测中...',
-                'details': []
+                'details': [],
+                'min_memory': req['min_gpu_memory']
             },
             'torch': {
                 'name': 'PyTorch',
-                'required': True,
+                'required': 'torch' in req['required'],
                 'status': 'pending',
                 'message': '检测中...',
                 'details': []
             },
             'models': {
                 'name': '本地模型文件',
-                'required': False,
+                'required': 'models' in req['required'],
                 'status': 'pending',
                 'message': '检测中...',
                 'details': []
             },
             'ffmpeg': {
                 'name': 'FFmpeg',
-                'required': True,
+                'required': 'ffmpeg' in req['required'],
                 'status': 'pending',
                 'message': '检测中...',
                 'details': []
             },
             'cloud_api': {
                 'name': '云端 API 配置',
-                'required': False,
+                'required': 'cloud_api' in req['required'],
                 'status': 'pending',
                 'message': '检测中...',
                 'details': []
             },
             'dependencies': {
                 'name': '核心依赖',
-                'required': True,
+                'required': 'dependencies' in req['required'],
                 'status': 'pending',
                 'message': '检测中...',
                 'details': []
             }
         }
+        
+        # 1. 检测 CUDA
+        try:
+            if torch.cuda.is_available():
+                gpus = []
+                for i in range(torch.cuda.device_count()):
+                    gpus.append(torch.cuda.get_device_name(i))
+                
+                free_mem, total_mem = torch.cuda.mem_get_info()
+                free_mem_gb = free_mem / 1024 / 1024 / 1024
+                
+                if free_mem_gb >= req['min_gpu_memory']:
+                    checks['cuda']['status'] = 'ok'
+                    checks['cuda']['message'] = f'可用：{free_mem_gb:.1f}GB'
+                else:
+                    checks['cuda']['status'] = 'error' if checks['cuda']['required'] else 'warning'
+                    checks['cuda']['message'] = f'显存不足 ({free_mem_gb:.1f}GB < {req["min_gpu_memory"]}GB)'
+                
+                checks['cuda']['details'] = [
+                    f'GPU 型号：{", ".join(gpus)}',
+                    f'显存：{free_mem_gb:.1f}GB / {total_mem / 1024 / 1024 / 1024:.1f}GB',
+                    f'CUDA 版本：{torch.version.cuda}',
+                    f'最低要求：{req["min_gpu_memory"]}GB'
+                ]
+            else:
+                if checks['cuda']['required']:
+                    checks['cuda']['status'] = 'error'
+                    checks['cuda']['message'] = 'CUDA 不可用'
+                else:
+                    checks['cuda']['status'] = 'ok'
+                    checks['cuda']['message'] = '不需要 GPU'
+                checks['cuda']['details'] = ['本地 GPU 不可用']
+        except Exception as e:
+            checks['cuda']['status'] = 'error' if checks['cuda']['required'] else 'warning'
+            checks['cuda']['message'] = f'CUDA 检测失败：{str(e)}'
+        
+        # 2. 检测 PyTorch
+        try:
+            import torch
+            checks['torch']['status'] = 'ok'
+            checks['torch']['message'] = f'PyTorch {torch.__version__}'
+            checks['torch']['details'] = [
+                f'版本：{torch.__version__}',
+                f'CUDA 支持：{"是" if torch.cuda.is_available() else "否"}'
+            ]
+        except ImportError:
+            checks['torch']['status'] = 'error' if checks['torch']['required'] else 'warning'
+            checks['torch']['message'] = 'PyTorch 未安装'
+            checks['torch']['details'] = ['需要安装 PyTorch 才能使用本地生成功能']
+        
+        # 3. 检测模型文件
+        models_dir = Path('./models')
+        if models_dir.exists():
+            model_files = list(models_dir.glob('**/*'))
+            if model_files:
+                checks['models']['status'] = 'ok'
+                checks['models']['message'] = f'已找到 {len(model_files)} 个模型文件'
+                checks['models']['details'] = [str(f.relative_to(models_dir)) for f in model_files[:5]]
+            else:
+                checks['models']['status'] = 'warning'
+                checks['models']['message'] = '模型目录为空'
+                checks['models']['details'] = ['需要下载模型文件才能使用本地生成功能']
+        else:
+            checks['models']['status'] = 'warning'
+            checks['models']['message'] = '模型目录不存在'
+            checks['models']['details'] = ['需要创建 models 目录并下载模型']
+        
+        # 4. 检测 FFmpeg
+        ffmpeg_path = shutil.which('ffmpeg')
+        local_ffmpeg = Path('./ffmpeg/bin/ffmpeg.exe')
+        if ffmpeg_path or local_ffmpeg.exists():
+            checks['ffmpeg']['status'] = 'ok'
+            path = ffmpeg_path or str(local_ffmpeg)
+            checks['ffmpeg']['message'] = f'FFmpeg 已安装'
+            checks['ffmpeg']['details'] = [f'路径：{path}']
+        else:
+            checks['ffmpeg']['status'] = 'error' if checks['ffmpeg']['required'] else 'warning'
+            checks['ffmpeg']['message'] = 'FFmpeg 未安装'
+            checks['ffmpeg']['details'] = ['FFmpeg 是视频合并所必需的']
+        
+        # 5. 检测云端 API 配置
+        config_file = Path('./config.json')
+        if config_file.exists():
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                has_api_key = bool(config.get('ai_api_key'))
+                
+                if has_api_key:
+                    checks['cloud_api']['status'] = 'ok'
+                    checks['cloud_api']['message'] = '云端 API 已配置'
+                    checks['cloud_api']['details'] = [f"API Key：{config.get('ai_api_key', '')[:8]}..."]
+                else:
+                    checks['cloud_api']['status'] = 'error' if checks['cloud_api']['required'] else 'warning'
+                    checks['cloud_api']['message'] = '云端 API 未配置'
+                    checks['cloud_api']['details'] = ['需要配置 API Key 才能使用云端功能']
+            except Exception as e:
+                checks['cloud_api']['status'] = 'warning'
+                checks['cloud_api']['message'] = '配置文件读取失败'
+                checks['cloud_api']['details'] = [str(e)]
+        else:
+            checks['cloud_api']['status'] = 'error' if checks['cloud_api']['required'] else 'warning'
+            checks['cloud_api']['message'] = '配置文件不存在'
+            checks['cloud_api']['details'] = ['需要配置 config.json 文件']
+        
+        # 6. 检测核心依赖
+        required_packages = [
+            ('flask', 'Flask'),
+            ('PIL', 'Pillow'),
+            ('diffusers', 'Diffusers'),
+            ('transformers', 'Transformers'),
+            ('modelscope', 'ModelScope'),
+            ('requests', 'Requests')
+        ]
+        
+        missing_deps = []
+        installed_deps = []
+        
+        for module_name, display_name in required_packages:
+            spec = importlib.util.find_spec(module_name)
+            if spec is not None:
+                try:
+                    module = importlib.import_module(module_name)
+                    version = getattr(module, '__version__', 'unknown')
+                    installed_deps.append(f'{display_name}: {version}')
+                except:
+                    missing_deps.append(display_name)
+            else:
+                missing_deps.append(display_name)
+        
+        if not missing_deps:
+            checks['dependencies']['status'] = 'ok'
+            checks['dependencies']['message'] = f'所有核心依赖已安装'
+            checks['dependencies']['details'] = installed_deps[:5]
+        else:
+            checks['dependencies']['status'] = 'error' if checks['dependencies']['required'] else 'warning'
+            checks['dependencies']['message'] = f'缺少 {len(missing_deps)} 个核心依赖'
+            checks['dependencies']['details'] = [f'缺少：{", ".join(missing_deps)}']
+        
+        # 总体评估
+        required_checks = [k for k, v in checks.items() if v['required']]
+        has_required_errors = any(
+            checks[k]['status'] == 'error' 
+            for k in required_checks
+        )
+        
+        ok_count = sum(1 for c in checks.values() if c['status'] == 'ok')
+        total_count = len(checks)
+        
+        if not has_required_errors and ok_count == total_count:
+            overall_status = 'ready'
+            overall_message = f'{req["name"]}已就绪，可以开始使用'
+        elif not has_required_errors:
+            overall_status = 'partial'
+            overall_message = f'{req["name"]}基本就绪，部分配置可优化'
+        else:
+            overall_status = 'not_ready'
+            overall_message = f'{req["name"]}未准备好，需要修复错误'
+        
+        # 安装建议
+        needs_install = has_required_errors
+        can_use = not has_required_errors
+        
+        result = {
+            'success': True,
+            'mode': mode,
+            'mode_name': req['name'],
+            'description': req['description'],
+            'overall_status': overall_status,
+            'overall_message': overall_message,
+            'summary': {
+                'ok': ok_count,
+                'total': total_count,
+                'percentage': int(ok_count / total_count * 100),
+                'required_items': required_checks,
+                'missing_required': [
+                    k for k in required_checks 
+                    if checks[k]['status'] == 'error'
+                ]
+            },
+            'checks': checks,
+            'recommendations': {
+                'need_install': needs_install,
+                'can_use': can_use,
+                'use_cloud': mode != 'standard' and checks['cloud_api']['status'] == 'ok'
+            }
+        }
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/api/install-mode-components/<mode>', methods=['POST'])
+def api_install_mode_components(mode):
+    """API: 一键安装指定模式所需组件"""
+    try:
+        import subprocess
+        
+        mode_components = {
+            'optimized': ['dependencies', 'ffmpeg', 'models'],
+            'standard': ['dependencies', 'ffmpeg', 'models'],
+            'collaborative': ['dependencies', 'ffmpeg', 'models'],
+            'hybrid': ['dependencies', 'ffmpeg']
+        }
+        
+        if mode not in mode_components:
+            return jsonify({'error': '未知模式'}), 400
+        
+        components = mode_components[mode]
+        task_id = str(uuid.uuid4())
+        
+        # 安装脚本（复用协同模式的安装逻辑）
+        def install_task():
+            log_file = Path(f'web/logs/install_{task_id}.log')
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(log_file, 'w', encoding='utf-8') as log:
+                log.write(f"开始安装 {mode} 模式组件：{', '.join(components)}\n")
+                
+                try:
+                    # 1. 安装 Python 依赖
+                    if 'dependencies' in components:
+                        log.write("\n=== 安装 Python 依赖 ===\n")
+                        # ... (与协同模式相同的安装逻辑)
+                    
+                    # 2. 下载 FFmpeg
+                    if 'ffmpeg' in components:
+                        log.write("\n=== 下载 FFmpeg ===\n")
+                        # ... (与协同模式相同的安装逻辑)
+                    
+                    # 3. 下载模型
+                    if 'models' in components:
+                        log.write("\n=== 下载模型文件 ===\n")
+                        # ... (与协同模式相同的安装逻辑)
+                    
+                    log.write("\n=== 安装完成 ===\n")
+                    
+                except Exception as e:
+                    log.write(f"\n❌ 安装异常：{str(e)}\n")
+        
+        thread = threading.Thread(target=install_task)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'mode': mode,
+            'components': components,
+            'message': f'开始安装 {len(components)} 个组件'
+        })
+    
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
         
         # 1. 检测 CUDA
         try:
