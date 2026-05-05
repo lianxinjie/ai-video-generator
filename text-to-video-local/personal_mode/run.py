@@ -696,43 +696,21 @@ def generate_local_segment(
     """
     本地生成单段图片序列
     
-    调用 hybrid_mode 的 PromptTemplateGenerator 和视频生成
+    简化实现：直接使用提示词生成，不使用 PromptTemplateGenerator
     """
     try:
-        from hybrid_mode.prompt_generator import PromptTemplateGenerator
-        from hybrid_mode.video_synthesizer import VideoSynthesizer
-        
         print(f"\n【本地生成】段 {segment_index + 1}: {prompt[:50]}...")
         
         # 创建输出目录
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # 使用 PromptTemplateGenerator 生成扩展提示词
-        generator = PromptTemplateGenerator()
-        generated_prompts = generator.generate(prompts=prompt, num_prompts=3)
-        
-        if generated_prompts and len(generated_prompts) > 0:
-            print(f"  ✓ 扩展提示词：{len(generated_prompts)} 个")
-        
-        # 实际应该调用图片生成 API 下载图片
-        # 这里简化：创建图片序列目录结构的占位
-        images_dir = output_dir / f'segment_{segment_index}'
-        images_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 记录生成的图片
+        # 记录生成的图片路径（实际应该调用图片生成服务）
         image_files = []
-        for i in range(16):  # 假设每段 16 帧
-            img_path = images_dir / f'frame_{i:04d}.png'
-            # 实际应该在这里调用图片生成服务
-            image_files.append(str(img_path))
         
-        print(f"  ✓ 生成 {len(image_files)} 张图片序列")
+        print(f"  ⚠️ 本地生成功能暂不可用，需要配置本地模型")
+        print(f"  建议使用云端生成模式")
         
-        return {
-            'segment_index': segment_index,
-            'images': image_files,
-            'dir': str(images_dir)
-        }
+        return None  # 返回 None 让云端处理
         
     except Exception as e:
         print(f"  ❌ 本地生成失败：{e}")
