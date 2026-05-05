@@ -1,0 +1,27 @@
+fix: 修复模型检测路径不匹配和前段错误
+
+问题:
+1. 模型下载路径与检测路径不匹配
+2. 前端按钮 ID 引用错误
+3. "下一步"按钮默认隐藏
+
+修复:
+1. download_models.py
+   - check_existing_models() 支持多种路径
+   - ModelScope 路径: models/damo/xxx, models/xxx, models/modelscope
+   - 验证文件存在而非仅目录存在
+
+2. web/app.py
+   - calculate_model_actual_size() 支持多路径检测
+   - 尝试所有可能路径并返回实际大小
+
+3. web/templates/setup_wizard.html
+   - 修复 JS 按钮引用：btnNextToModelManagement → #step3 .btn-next
+   - "下一步：模型管理"按钮添加 hidden 和 btn-next class
+   - 下载完成后显示按钮
+
+效果:
+✓ 检测到 models/damo/text-to-video-synthesis/ 目录
+✓ 检测到 models/xxx 或其他位置
+✓ 前端下载完成后显示下一步按钮
+✓ 模型管理页面正确显示已安装模型

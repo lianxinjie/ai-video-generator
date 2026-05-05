@@ -200,7 +200,7 @@ class ModelDownloader:
         return results
     
     def check_existing_models(self, model_names: List[str]) -> Dict[str, bool]:
-        """检查已下载的模型"""
+        """检查已下载的模型 - 修复路径不匹配问题"""
         existing = {}
         
         for model_name in model_names:
@@ -219,25 +219,33 @@ class ModelDownloader:
                     existing[model_name] = False
                     continue
                 
-                # 不仅检查目录存在，还要验证有文件
                 if check_path.exists():
-                    # 检查是否有实际文件（至少 1 个）
                     file_count = sum(1 for f in check_path.rglob('*') if f.is_file())
                     existing[model_name] = file_count > 0
                 else:
                     existing[model_name] = False
                     
             elif model_info["type"] == "modelscope":
-                # ModelScope 缓存检查
+                # ModelScope 缓存检查 - 修复路径不匹配
                 repo_parts = model_info["repo"].split("/")
-                check_path = self.output_dir / repo_parts[-1]
                 
-                # 验证目录和文件
-                if check_path.exists():
-                    # 检查是否有实际文件
-                    file_count = sum(1 for f in check_path.rglob('*') if f.is_file())
-                    existing[model_name] = file_count > 0
-                else:
+                # 尝试多种可能的路径
+                check_paths = [
+                    self.output_dir / model_info["repo"],  # models/damo/text-to-video-synthesis
+                    self.output_dir / repo_parts[-1],      # models/text-to-video-synthesis
+                    self.output_dir / model_name,          # models/modelscope
+                ]
+                
+                found = False
+                for check_path in check_paths:
+                    if check_path.exists():
+                        file_count = sum(1 for f in check_path.rglob('*') if f.is_file())
+                        if file_count > 0:
+                            existing[model_name] = True
+                            found = True
+                            break
+                
+                if not found:
                     existing[model_name] = False
             else:
                 existing[model_name] = False

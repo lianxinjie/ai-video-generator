@@ -238,7 +238,7 @@
             
             <div style="margin-top: 20px; text-align: right;">
                 <button class="btn btn-secondary" onclick="prevStep(3)">上一步</button>
-                <button class="btn" onclick="nextStep(4)">下一步：模型管理</button>
+                <button class="btn hidden btn-next" onclick="nextStep(4)">下一步：模型管理</button>
             </div>
         </div>
         
@@ -561,7 +561,7 @@
                     if (data.status === 'completed') {
                         clearInterval(interval);
                         logDiv.textContent += '\n✅ 模型下载完成！\n';
-                        document.getElementById('btnNextToModelManagement').classList.remove('hidden');
+                        document.querySelector('#step3 .btn-next').classList.remove('hidden');
                     } else if (data.status === 'failed') {
                         clearInterval(interval);
                         logDiv.textContent += `\n❌ 下载失败：${data.error}\n`;
