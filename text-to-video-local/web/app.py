@@ -2912,8 +2912,10 @@ def api_download_ffmpeg():
         # 如果主镜像失败，自动切换到备用镜像
         urls = {
             'Windows': [
-                'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
+                # GitHub 镜像速度更快 (0.67-0.77MB/s vs 0.21MB/s)
                 'https://github.com/GyanD/codexffmpeg/releases/download/6.1/ffmpeg-6.1-essentials_build.zip',
+                'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip',
+                'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',  # 官方备用
             ],
             'Linux': [
                 f'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-{arch}-gpl.tar.xz',
