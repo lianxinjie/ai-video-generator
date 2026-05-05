@@ -2876,7 +2876,7 @@ def api_download_ffmpeg():
         # FFmpeg 静态编译版本下载地址
         urls = {
             'Windows': 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
-            'Linux': f'https://johnvansickle.com/ffmpeg/builds/ffmpeg-release-{arch}-static.tar.xz',
+            'Linux': f'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-{arch}-static.tar.xz',
             'Darwin': 'https://evermeet.cx/ffmpeg/getrelease/zip'
         }
         
@@ -2900,6 +2900,30 @@ def api_download_ffmpeg():
         file_path = temp_dir / filename
         
         # 使用流式下载，避免内存占用过大
+        # 先验证 URL 可用性
+        try:
+            head_resp = requests.head(url, timeout=10, allow_redirects=True)
+            if head_resp.status_code != 200:
+                # 如果是 Linux 且使用 releases 路径失败，尝试 builds 路径作为备用
+                if system == 'Linux' and '/releases/' in url:
+                    backup_url = url.replace('/releases/', '/builds/')
+                    head_resp = requests.head(backup_url, timeout=10, allow_redirects=True)
+                    if head_resp.status_code == 200:
+                        print(f"使用备用 URL: {backup_url}")
+                        url = backup_url
+                if head_resp.status_code != 200:
+                    return jsonify({
+                        'success': False,
+                        'error': f'下载链接不可用 (HTTP {head_resp.status_code})',
+                        'suggestion': '请检查网络连接或手动下载 FFmpeg'
+                    }), 503
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'无法验证下载链接：{str(e)}',
+                'suggestion': '请检查网络连接'
+            }), 503
+        
         response = requests.get(url, stream=True, timeout=(5, 300))  # 连接 5s，读取 300s
         total_size = int(response.headers.get('content-length', 0))
         total_mb = total_size / (1024 * 1024)  # 转换为 MB
@@ -3017,11 +3041,38 @@ def api_download_ffmpeg():
             'note': '请重启 Web 服务以使用 FFmpeg'
         })
         
+    except requests.exceptions.Timeout:
+        return jsonify({
+            'success': False,
+            'error': '下载超时（超过 300 秒）',
+            'suggestions': [
+                '请检查网络连接',
+                '网络可能较慢，请稍后重试',
+                '或手动下载 FFmpeg'
+            ]
+        }), 504
+    except requests.exceptions.ConnectionError:
+        return jsonify({
+            'success': False,
+            'error': '连接错误',
+            'suggestions': [
+                '无法连接到下载服务器',
+                '请检查网络连接',
+                '或手动下载 FFmpeg'
+            ]
+        }), 503
     except requests.exceptions.RequestException as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"下载错误：{error_detail}")
         return jsonify({
             'success': False,
             'error': f'下载失败：{str(e)}',
-            'suggestion': '请检查网络连接'
+            'suggestions': [
+                '详细错误已记录到日志',
+                '请检查网络连接',
+                '或手动下载 FFmpeg'
+            ]
         }), 500
     except Exception as e:
         import traceback
