@@ -1502,16 +1502,34 @@ function applyRecommendation(mode) {
         <h3>🚀 个性化安装包生成</h3>
         <p>根据您的硬件配置，自动生成定制化的安装脚本和依赖包</p>
         
-        <div style="margin-top: 20px;">
-            <button class="scan-btn" onclick="generatePackage()" style="background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); margin-right: 10px;">
-                📦 生成安装包
-            </button>
-            <button class="scan-btn" onclick="downloadPackage()" style="background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%); margin-right: 10px;">
-                ⬇️ 下载离线包
-            </button>
-            <button class="scan-btn" onclick="startInstall()" style="background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);">
-                🔧 执行安装
-            </button>
+        <div style="margin-top: 20px; display: grid; gap: 15px;">
+            <!-- PyTorch 专项检测与安装 -->
+            <div style="background: white; border: 2px solid #4299e1; border-radius: 10px; padding: 15px;">
+                <h4 style="color: #4299e1; margin-bottom: 10px;">🔥 PyTorch 专项安装</h4>
+                <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">
+                    检测 PyTorch 安装状态，自动配置 CUDA 版本
+                </p>
+                <div id="pytorchStatus" style="margin-bottom: 15px;"></div>
+                <button class="scan-btn" onclick="checkPyTorchInstallation()" style="background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%); margin-right: 10px;">
+                    🔍 检测 PyTorch
+                </button>
+                <button id="installPytorchBtn" class="scan-btn" onclick="installPyTorch()" style="background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%); display: none;">
+                    ⚡ 安装 PyTorch
+                </button>
+            </div>
+            
+            <!-- 完整安装包 -->
+            <div style="border-top: 2px dashed #e2e8f0; padding-top: 15px;">
+                <button class="scan-btn" onclick="generatePackage()" style="background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); margin-right: 10px;">
+                    📦 生成完整安装包
+                </button>
+                <button class="scan-btn" onclick="downloadPackage()" style="background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%); margin-right: 10px;">
+                    ⬇️ 下载离线包
+                </button>
+                <button class="scan-btn" onclick="startInstall()" style="background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);">
+                    🔧 执行安装
+                </button>
+            </div>
         </div>
         
         <div id="packageResult" style="margin-top: 20px; display: none;"></div>
@@ -1530,10 +1548,160 @@ function applyRecommendation(mode) {
 <script>
 let currentPackageDir = null;
 let installTaskId = null;
+let pytorchInstallTaskId = null;
 
-function showInstallSection() {
-    document.getElementById('installSection').style.display = 'block';
-    document.getElementById('installSection').scrollIntoView({ behavior: 'smooth' });
+async function checkPyTorchInstallation() {
+    const statusDiv = document.getElementById('pytorchStatus');
+    const installBtn = document.getElementById('installPytorchBtn');
+    
+    statusDiv.innerHTML = '<div style="text-align: center; padding: 10px;"><div class="spinner" style="width: 20px; height: 20px; border-width: 2px;"></div> 检测中...</div>';
+    installBtn.style.display = 'none';
+    
+    try {
+        const response = await fetch('/api/check-pytorch-installation');
+        const data = await response.json();
+        
+        if (!data.success) {
+            statusDiv.innerHTML = `<div style="background: #fff5f5; border-left: 4px solid #f56565; padding: 15px; border-radius: 10px;"><strong>❌ 检测失败</strong><p>${data.error || '未知错误'}</p></div>`;
+            return;
+        }
+        
+        const pt = data.pytorch;
+        
+        if (pt.installed) {
+            // 已安装
+            let html = `<div style="background: #f0fff4; border-left: 4px solid #48bb78; padding: 15px; border-radius: 10px;">`;
+            html += `<strong style="color: #276749;">✅ PyTorch 已安装</strong><br>`;
+            html += `<strong>版本：</strong>${pt.version}<br>`;
+            
+            if (pt.cuda_support) {
+                html += `<strong>CUDA：</strong>${pt.cuda_version} ✓<br>`;
+                html += `<strong>CUDNN：</strong>${pt.cudnn_version}<br>`;
+                html += `<strong>GPU：</strong>${pt.gpu_models.join(', ')} (${pt.gpu_memory.join(', ')})<br>`;
+                html += `<strong>推荐命令：</strong><code style="background: #e2e8f0; padding: 2px 5px; border-radius: 3px; font-size: 0.85em;">${pt.recommended_install_command}</code>`;
+            } else {
+                html += `<strong>CUDA 支持：</strong>❌ 不可用 (CPU 版本)<br>`;
+                html += `<strong>建议：</strong>如果有 NVIDIA GPU，建议安装 CUDA 版本`;
+            }
+            html += `</div>`;
+            
+            statusDiv.innerHTML = html;
+            installBtn.style.display = 'inline-block';
+            installBtn.textContent = '🔄 重新安装 PyTorch';
+        } else {
+            // 未安装
+            let html = `<div style="background: #fffaf0; border-left: 4px solid #ed8936; padding: 15px; border-radius: 10px;">`;
+            html += `<strong style="color: #c05621;">⚠️ PyTorch 未安装</strong><br>`;
+            
+            if (pt.system_cuda_version) {
+                html += `<strong>系统 NVIDIA 驱动：</strong>${pt.nvidia_driver}<br>`;
+                html += `<strong>系统 CUDA 版本：</strong>${pt.system_cuda_version}<br>`;
+                html += `<strong>推荐：</strong>安装 CUDA ${pt.system_cuda_version} 支持的 PyTorch 版本`;
+            } else {
+                html += `<strong>检测状态：</strong>未检测到 NVIDIA GPU 或使用 CPU 模式<br>`;
+                html += `<strong>推荐：</strong>安装 CPU 版本 PyTorch`;
+            }
+            html += `</div>`;
+            
+            statusDiv.innerHTML = html;
+            installBtn.style.display = 'inline-block';
+            installBtn.textContent = '⚡ 安装 PyTorch';
+        }
+        
+    } catch (error) {
+        statusDiv.innerHTML = `<div style="background: #fff5f5; border-left: 4px solid #f56565; padding: 15px; border-radius: 10px;"><strong>❌ 检测失败</strong><p>${error.message}</p></div>`;
+    }
+}
+
+async function installPyTorch() {
+    const statusDiv = document.getElementById('pytorchStatus');
+    const installBtn = document.getElementById('installPytorchBtn');
+    
+    const confirmed = confirm('即将安装 PyTorch，这可能需要 5-15 分钟（取决于网速）。\n\n是否继续？');
+    if (!confirmed) return;
+    
+    installBtn.disabled = true;
+    installBtn.textContent = '⏳ 安装中...';
+    
+    const progressDiv = document.getElementById('installProgress');
+    progressDiv.style.display = 'block';
+    progressDiv.scrollIntoView({ behavior: 'smooth' });
+    
+    document.getElementById('progressBar').style.width = '0%';
+    const logEl = document.getElementById('installLog');
+    logEl.textContent = '正在启动 PyTorch 安装...\n';
+    
+    try {
+        const response = await fetch('/api/install-pytorch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({cuda_version: 'auto'})
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            pytorchInstallTaskId = data.task_id;
+            logEl.textContent += `任务 ID: ${data.task_id}\n`;
+            logEl.textContent += `CUDA 版本：${data.cuda_version}\n\n`;
+            
+            pollPyTorchInstallStatus();
+        } else {
+            logEl.textContent += `\n启动失败：${data.error}\n`;
+            installBtn.disabled = false;
+            installBtn.textContent = '⚡ 重试安装 PyTorch';
+        }
+    } catch (error) {
+        logEl.textContent += `\n启动失败：${error.message}\n`;
+        installBtn.disabled = false;
+        installBtn.textContent = '⚡ 重试安装 PyTorch';
+    }
+}
+
+async function pollPyTorchInstallStatus() {
+    if (!pytorchInstallTaskId) return;
+    
+    try {
+        const response = await fetch(`/api/pytorch-install-status/${pytorchInstallTaskId}`);
+        const data = await response.json();
+        
+        const logEl = document.getElementById('installLog');
+        const progressEl = document.getElementById('progressBar');
+        
+        if (data.logs) {
+            logEl.textContent = data.logs.join('');
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        progressEl.style.width = data.progress + '%';
+        
+        if (data.status === 'complete') {
+            progressEl.style.width = '100%';
+            logEl.textContent += '\n✅ PyTorch 安装完成！请重新检测状态。\n';
+            
+            const installBtn = document.getElementById('installPytorchBtn');
+            installBtn.disabled = false;
+            installBtn.textContent = '✓ 重新检测 PyTorch';
+            installBtn.onclick = checkPyTorchInstallation;
+            
+            setTimeout(() => {
+                checkPyTorchInstallation();
+            }, 2000);
+        } else if (data.status === 'failed') {
+            progressEl.style.width = '100%';
+            logEl.textContent += '\n❌ PyTorch 安装失败\n';
+            
+            const installBtn = document.getElementById('installPytorchBtn');
+            installBtn.disabled = false;
+            installBtn.textContent = '⚡ 重试安装 PyTorch';
+        } else {
+            // 仍在进行中
+            setTimeout(pollPyTorchInstallStatus, 2000);
+        }
+    } catch (error) {
+        console.error('轮询失败:', error);
+        setTimeout(pollPyTorchInstallStatus, 2000);
+    }
 }
 
 async function generatePackage() {

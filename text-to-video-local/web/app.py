@@ -934,10 +934,261 @@ def api_install_dependencies():
             'torch': {
 
 
-@app.route('/api/check-collaborative-mode', methods=['GET'])
-def api_check_collaborative_mode():
-    """API: 检查协同模式环境配置状态"""
-    return api_check_mode_environment(mode='collaborative')
+@app.route('/api/check-pytorch-installation', methods=['GET'])
+def api_check_pytorch_installation():
+    """API: 检查 PyTorch 安装状态和 CUDA 版本"""
+    try:
+        import importlib.util
+        import subprocess
+        import sys
+        
+        result = {
+            'success': True,
+            'pytorch': {
+                'installed': False,
+                'version': None,
+                'cuda_support': False,
+                'cuda_version': None,
+                'cudnn_version': None,
+                'gpu_available': False,
+                'gpu_models': [],
+                'gpu_memory': [],
+                'recommended_install_command': None
+            }
+        }
+        
+        # 1. 检查 PyTorch 是否安装
+        spec = importlib.util.find_spec('torch')
+        if spec is not None:
+            try:
+                import torch
+                result['pytorch']['installed'] = True
+                result['pytorch']['version'] = torch.__version__
+                
+                # 2. 检查 CUDA 支持
+                result['pytorch']['cuda_support'] = torch.cuda.is_available()
+                
+                if torch.cuda.is_available():
+                    result['pytorch']['cuda_version'] = torch.version.cuda
+                    result['pytorch']['cudnn_version'] = torch.backends.cudnn.version()
+                    result['pytorch']['gpu_available'] = True
+                    
+                    # 获取 GPU 信息
+                    for i in range(torch.cuda.device_count()):
+                        gpu_name = torch.cuda.get_device_name(i)
+                        gpu_memory = torch.cuda.get_device_properties(i).total_memory / 1024**3
+                        result['pytorch']['gpu_models'].append(gpu_name)
+                        result['pytorch']['gpu_memory'].append(f"{gpu_memory:.1f}GB")
+                
+                # 3. 生成推荐安装命令
+                if torch.cuda.is_available():
+                    cuda_ver = torch.version.cuda
+                    if cuda_ver:
+                        cuda_major_minor = cuda_ver.replace('.', '')
+                        result['pytorch']['recommended_install_command'] = (
+                            f"pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu{cuda_major_minor}"
+                        )
+                else:
+                    result['pytorch']['recommended_install_command'] = (
+                        "pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu"
+                    )
+                    
+            except Exception as e:
+                result['pytorch']['error'] = str(e)
+        else:
+            # PyTorch 未安装，检测系统 GPU 推荐安装版本
+            try:
+                # 尝试使用 nvidia-smi 检测 CUDA 版本
+                nvidia_result = subprocess.run(
+                    ['nvidia-smi', '--query-gpu=driver_version,cuda_version', '--format=csv,noheader'],
+                    capture_output=True, text=True, timeout=5
+                )
+                if nvidia_result.returncode == 0 and nvidia_result.stdout.strip():
+                    lines = nvidia_result.stdout.strip().split('\n')
+                    if len(lines) > 0:
+                        parts = lines[0].split(', ')
+                        if len(parts) == 2:
+                            driver_version = parts[0].strip()
+                            cuda_version = parts[1].strip()
+                            result['pytorch']['system_cuda_version'] = cuda_version
+                            result['pytorch']['nvidia_driver'] = driver_version
+                            
+                            # 根据系统 CUDA 版本推荐
+                            cuda_major = cuda_version.split('.')[0]
+                            if int(cuda_major) >= 11:
+                                result['pytorch']['recommended_install_command'] = (
+                                    f"pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118"
+                                )
+                            else:
+                                result['pytorch']['recommended_install_command'] = (
+                                    "pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu"
+                                )
+            except:
+                pass
+            
+            # 默认推荐 CPU 版本
+            if not result['pytorch']['recommended_install_command']:
+                result['pytorch']['recommended_install_command'] = (
+                    "pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu"
+                )
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/api/install-pytorch', methods=['POST'])
+def api_install_pytorch():
+    """API: 安装 PyTorch (带 CUDA 支持)"""
+    try:
+        import subprocess
+        import sys
+        import uuid
+        
+        data = request.get_json() or {}
+        cuda_version = data.get('cuda_version', 'auto')  # 'cu118', 'cu117', 'cpu', etc.
+        
+        task_id = str(uuid.uuid4())
+        
+        # 确定 CUDA 版本
+        if cuda_version == 'auto':
+            # 自动检测
+            try:
+                import torch
+                if torch.cuda.is_available() and torch.version.cuda:
+                    cuda_major_minor = torch.version.cuda.replace('.', '')
+                    cuda_version = f'cu{cuda_major_minor}'
+                else:
+                    cuda_version = 'cpu'
+            except:
+                # 尝试 nvidia-smi
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ['nvidia-smi', '--query-gpu=cuda_version', '--format=csv,noheader'],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if result.returncode == 0:
+                        cuda_ver = result.stdout.strip().split('\n')[0]
+                        cuda_major = cuda_ver.split('.')[0]
+                        cuda_version = f'cu{cuda_major}8' if int(cuda_major) >= 11 else 'cpu'
+                    else:
+                        cuda_version = 'cpu'
+                except:
+                    cuda_version = 'cpu'
+        
+        # 构建安装命令
+        if cuda_version == 'cpu':
+            cmd = [
+                sys.executable, '-m', 'pip', 'install',
+                'torch', 'torchvision', 'torchaudio',
+                '--index-url', 'https://download.pytorch.org/whl/cpu',
+                '--break-system-packages'
+            ]
+        else:
+            cmd = [
+                sys.executable, '-m', 'pip', 'install',
+                'torch', 'torchvision', 'torchaudio',
+                '--index-url', f'https://download.pytorch.org/whl/{cuda_version}',
+                '--break-system-packages'
+            ]
+        
+        # 后台执行安装
+        def install_task():
+            log_file = Path(f'web/logs/pytorch_install_{task_id}.log')
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(log_file, 'w', encoding='utf-8') as log:
+                log.write(f"开始安装 PyTorch (CUDA: {cuda_version})\n")
+                log.write(f"命令：{' '.join(cmd)}\n\n")
+                
+                try:
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        encoding='utf-8',
+                        errors='replace'
+                    )
+                    
+                    for line in process.stdout:
+                        log.write(line)
+                        log.flush()
+                    
+                    process.wait()
+                    
+                    if process.returncode == 0:
+                        log.write("\n✅ PyTorch 安装成功！\n")
+                        
+                        # 验证安装
+                        try:
+                            import torch
+                            log.write(f"\n版本：{torch.__version__}\n")
+                            log.write(f"CUDA 可用：{torch.cuda.is_available()}\n")
+                            if torch.cuda.is_available():
+                                log.write(f"CUDA 版本：{torch.version.cuda}\n")
+                                log.write(f"GPU 数量：{torch.cuda.device_count()}\n")
+                                for i in range(torch.cuda.device_count()):
+                                    log.write(f"  GPU {i}: {torch.cuda.get_device_name(i)}\n")
+                        except Exception as verify_error:
+                            log.write(f"\n⚠️ 验证失败：{verify_error}\n")
+                    else:
+                        log.write(f"\n❌ PyTorch 安装失败，退出码：{process.returncode}\n")
+                        
+                except Exception as e:
+                    log.write(f"\n❌ 安装异常：{str(e)}\n")
+        
+        thread = threading.Thread(target=install_task)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'cuda_version': cuda_version,
+            'message': f'开始安装 PyTorch ({cuda_version})'
+        })
+    
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/api/pytorch-install-status/<task_id>', methods=['GET'])
+def api_pytorch_install_status(task_id):
+    """API: 查询 PyTorch 安装状态"""
+    try:
+        log_file = Path(f'web/logs/pytorch_install_{task_id}.log')
+        
+        if not log_file.exists():
+            return jsonify({'status': 'pending', 'progress': 0})
+        
+        with open(log_file, 'r', encoding='utf-8') as f:
+            logs = f.readlines()
+        
+        # 检查是否完成
+        is_complete = any('安装成功' in line or '安装失败' in line or '异常' in line for line in logs)
+        
+        # 估算进度
+        progress = 0
+        if any('Collecting torch' in line for line in logs):
+            progress = 20
+        if any('Installing collected packages' in line for line in logs):
+            progress = 80
+        if any('Successfully installed' in line or '安装成功' in line for line in logs):
+            progress = 100
+        
+        return jsonify({
+            'status': 'complete' if is_complete else 'running',
+            'progress': progress,
+            'logs': logs
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/check-mode-environment/<mode>', methods=['GET'])
