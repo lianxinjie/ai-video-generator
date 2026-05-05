@@ -877,12 +877,20 @@ def api_cleanup_models():
         error_detail = traceback.format_exc()
         print(f"[FFmpeg 下载] ❌ 错误：{str(e)}")
         print(f"[FFmpeg 下载] ❌ 堆栈：{error_detail}")
+        
+        # 判断是否是 URL 验证失败
+        if '无法验证下载链接' in str(e) or 'head' in str(e).lower():
+            status_code = 503
+        else:
+            status_code = 500
+        
         return jsonify({
             'success': False,
             'error': str(e),
             'traceback': error_detail,
-            'debug_note': '请查看 Web 服务日志获取详细错误信息'
-        }), 500
+            'system': system,
+            'url': url if 'url' in locals() else 'N/A'
+        }), status_code
 
 
 @app.route('/api/models/delete', methods=['POST'])
@@ -935,12 +943,20 @@ def api_delete_model():
         error_detail = traceback.format_exc()
         print(f"[FFmpeg 下载] ❌ 错误：{str(e)}")
         print(f"[FFmpeg 下载] ❌ 堆栈：{error_detail}")
+        
+        # 判断是否是 URL 验证失败
+        if '无法验证下载链接' in str(e) or 'head' in str(e).lower():
+            status_code = 503
+        else:
+            status_code = 500
+        
         return jsonify({
             'success': False,
             'error': str(e),
             'traceback': error_detail,
-            'debug_note': '请查看 Web 服务日志获取详细错误信息'
-        }), 500
+            'system': system,
+            'url': url if 'url' in locals() else 'N/A'
+        }), status_code
 
 
 @app.route('/api/models/analyze', methods=['GET'])
@@ -1037,12 +1053,20 @@ def api_analyze_models():
         error_detail = traceback.format_exc()
         print(f"[FFmpeg 下载] ❌ 错误：{str(e)}")
         print(f"[FFmpeg 下载] ❌ 堆栈：{error_detail}")
+        
+        # 判断是否是 URL 验证失败
+        if '无法验证下载链接' in str(e) or 'head' in str(e).lower():
+            status_code = 503
+        else:
+            status_code = 500
+        
         return jsonify({
             'success': False,
             'error': str(e),
             'traceback': error_detail,
-            'debug_note': '请查看 Web 服务日志获取详细错误信息'
-        }), 500
+            'system': system,
+            'url': url if 'url' in locals() else 'N/A'
+        }), status_code
 
 
 @app.route('/api/check-dependencies', methods=['GET'])
@@ -2623,12 +2647,20 @@ def api_analyze_scenes():
         error_detail = traceback.format_exc()
         print(f"[FFmpeg 下载] ❌ 错误：{str(e)}")
         print(f"[FFmpeg 下载] ❌ 堆栈：{error_detail}")
+        
+        # 判断是否是 URL 验证失败
+        if '无法验证下载链接' in str(e) or 'head' in str(e).lower():
+            status_code = 503
+        else:
+            status_code = 500
+        
         return jsonify({
             'success': False,
             'error': str(e),
             'traceback': error_detail,
-            'debug_note': '请查看 Web 服务日志获取详细错误信息'
-        }), 500
+            'system': system,
+            'url': url if 'url' in locals() else 'N/A'
+        }), status_code
 
 
 @app.route('/api/scenes/confirm', methods=['POST'])
@@ -2863,12 +2895,20 @@ def api_check_resources():
         error_detail = traceback.format_exc()
         print(f"[FFmpeg 下载] ❌ 错误：{str(e)}")
         print(f"[FFmpeg 下载] ❌ 堆栈：{error_detail}")
+        
+        # 判断是否是 URL 验证失败
+        if '无法验证下载链接' in str(e) or 'head' in str(e).lower():
+            status_code = 503
+        else:
+            status_code = 500
+        
         return jsonify({
             'success': False,
             'error': str(e),
             'traceback': error_detail,
-            'debug_note': '请查看 Web 服务日志获取详细错误信息'
-        }), 500
+            'system': system,
+            'url': url if 'url' in locals() else 'N/A'
+        }), status_code
 
 
 @app.route('/api/download-ffmpeg', methods=['POST'])
@@ -2948,6 +2988,8 @@ def api_download_ffmpeg():
         
         # 下载
         # 选择最快的镜像
+        print(f"[FFmpeg 下载] ===== 开始下载流程 =====")
+        print(f"[FFmpeg 下载] 系统：{system}")
         url_list = urls.get(system, [])
         if not url_list:
             return jsonify({
@@ -3169,12 +3211,20 @@ def api_download_ffmpeg():
         error_detail = traceback.format_exc()
         print(f"[FFmpeg 下载] ❌ 错误：{str(e)}")
         print(f"[FFmpeg 下载] ❌ 堆栈：{error_detail}")
+        
+        # 判断是否是 URL 验证失败
+        if '无法验证下载链接' in str(e) or 'head' in str(e).lower():
+            status_code = 503
+        else:
+            status_code = 500
+        
         return jsonify({
             'success': False,
             'error': str(e),
             'traceback': error_detail,
-            'debug_note': '请查看 Web 服务日志获取详细错误信息'
-        }), 500
+            'system': system,
+            'url': url if 'url' in locals() else 'N/A'
+        }), status_code
 
 
 # ========== Resource Monitoring & Task Pause ==========
