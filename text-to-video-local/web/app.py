@@ -1093,6 +1093,7 @@ def api_check_dependencies():
                 'installed': False,
                 'version': None,
                 'description': 'Web 服务框架',
+                'module_name': 'flask',
                 'pip_name': 'flask'
             },
             'PIL': {
@@ -1101,6 +1102,7 @@ def api_check_dependencies():
                 'installed': False,
                 'version': None,
                 'description': '图像处理库',
+                'module_name': 'PIL',
                 'pip_name': 'pillow'
             },
             'psutil': {
@@ -1109,6 +1111,7 @@ def api_check_dependencies():
                 'installed': False,
                 'version': None,
                 'description': '系统监控库',
+                'module_name': 'psutil',
                 'pip_name': 'psutil'
             },
             'torch': {
@@ -1117,6 +1120,7 @@ def api_check_dependencies():
                 'installed': False,
                 'version': None,
                 'description': 'AI 深度学习框架（核心依赖）',
+                'module_name': 'torch',
                 'pip_name': 'torch',
                 'install_extra': '--index-url https://download.pytorch.org/whl/cpu'
             },
@@ -1126,6 +1130,7 @@ def api_check_dependencies():
                 'installed': False,
                 'version': None,
                 'description': '预训练模型库',
+                'module_name': 'transformers',
                 'pip_name': 'transformers'
             },
             'diffusers': {
@@ -1134,6 +1139,7 @@ def api_check_dependencies():
                 'installed': False,
                 'version': None,
                 'description': '扩散模型库',
+                'module_name': 'diffusers',
                 'pip_name': 'diffusers'
             },
             'huggingface_hub': {
@@ -1142,6 +1148,7 @@ def api_check_dependencies():
                 'installed': False,
                 'version': None,
                 'description': 'Huggingface 模型下载',
+                'module_name': 'huggingface_hub',
                 'pip_name': 'huggingface-hub'
             },
             'modelscope': {
@@ -1150,6 +1157,7 @@ def api_check_dependencies():
                 'installed': False,
                 'version': None,
                 'description': '通义千问模型下载',
+                'module_name': 'modelscope',
                 'pip_name': 'modelscope'
             },
             'edge_tts': {
@@ -1158,6 +1166,7 @@ def api_check_dependencies():
                 'installed': False,
                 'version': None,
                 'description': 'Microsoft Azure AI 配音（支持三层配音架构）',
+                'module_name': 'edge_tts',
                 'pip_name': 'edge-tts'
             },
             'pydub': {
@@ -1166,12 +1175,13 @@ def api_check_dependencies():
                 'installed': False,
                 'version': None,
                 'description': '音频处理库（配音混音必备）',
+                'module_name': 'pydub',
                 'pip_name': 'pydub'
             }
         }
         
         for module_name, info in packages.items():
-            spec = importlib.util.find_spec(module_name)
+            spec = importlib.util.find_spec(info.get('module_name', module_name))
             if spec is not None:
                 try:
                     # 特殊处理 PIL
@@ -1232,19 +1242,26 @@ def api_install_dependencies():
         
         # 定义包的安装信息
         package_info = {
-            'flask': {'pip_name': 'flask', 'extra': ''},
+            'flask': {'module_name': 'flask',
+                'pip_name': 'flask', 'extra': ''},
             'pillow': {'pip_name': 'pillow', 'extra': ''},
-            'psutil': {'pip_name': 'psutil', 'extra': ''},
+            'psutil': {'module_name': 'psutil',
+                'pip_name': 'psutil', 'extra': ''},
             'torch': {
+                'module_name': 'torch',
                 'pip_name': 'torch',
                 'extra': '--index-url https://download.pytorch.org/whl/cpu'
             },
-            'transformers': {'pip_name': 'transformers', 'extra': ''},
-            'diffusers': {'pip_name': 'diffusers', 'extra': ''},
+            'transformers': {'module_name': 'transformers',
+                'pip_name': 'transformers', 'extra': ''},
+            'diffusers': {'module_name': 'diffusers',
+                'pip_name': 'diffusers', 'extra': ''},
             'huggingface-hub': {'pip_name': 'huggingface-hub', 'extra': ''},
-            'modelscope': {'pip_name': 'modelscope', 'extra': ''},
+            'modelscope': {'module_name': 'modelscope',
+                'pip_name': 'modelscope', 'extra': ''},
             'edge-tts': {'pip_name': 'edge-tts', 'extra': ''},
-            'pydub': {'pip_name': 'pydub', 'extra': ''}
+            'pydub': {'module_name': 'pydub',
+                'pip_name': 'pydub', 'extra': ''}
         }
         
         # 构建 pip 安装命令
