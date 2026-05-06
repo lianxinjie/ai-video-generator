@@ -1086,12 +1086,15 @@ def api_analyze_models():
 
 
 @app.route('/api/check-dependencies', methods=['GET'])
+@app.route('/api/check-dependencies')
 def api_check_dependencies():
-    """API: 检查 Python 依赖安装状态"""
+    """API: 检查依赖安装状态"""
     try:
+        import sys
         import importlib.util
         import importlib.metadata
         
+        # 每次检测都重新初始化包列表（避免缓存）
         packages = {
             'flask': {
                 'name': 'Flask',
@@ -1186,26 +1189,46 @@ def api_check_dependencies():
             }
         }
         
+        # 真实检测每个包
+        print(f"\n[依赖检测] ====== 开始检测 {len(packages)} 个包 ======")
+        print(f"[依赖检测] Python: {sys.executable}")
+        
         for module_name, info in packages.items():
             import_name = info.get('module_name', module_name)
-            print(f"[依赖检测] ====== 检查 {module_name} ======")
-            print(f"[依赖检测]   模块名：{import_name}")
-            spec = importlib.util.find_spec(import_name)
-            print(f"[依赖检测]   spec 结果：{spec}")
-            if spec is not None:
+            try:
+                # 步骤 1: 检查模块是否存在
+                spec = importlib.util.find_spec(import_name)
+                
+                if spec is None:
+                    print(f"[依赖检测] ✗ {module_name}: 模块未找到")
+                    packages[module_name]['installed'] = False
+                    continue
+                
+                # 步骤 2: 尝试导入模块
+                module = importlib.import_module(import_name)
+                
+                # 步骤 3: 获取版本信息
                 try:
-                    module = importlib.import_module(import_name)
-                    print(f"[依赖检测]   import 成功：{module}")
-                    packages[module_name]['installed'] = True
-                    try:
-                        version = importlib.metadata.version(info['pip_name'])
-                        packages[module_name]['version'] = version
-                    except:
-                        packages[module_name]['version'] = getattr(module, '__version__', 'unknown')
-                except:
-                    pass
+                    version = importlib.metadata.version(info['pip_name'])
+                except importlib.metadata.PackageNotFoundError:
+                    version = getattr(module, '__version__', 'unknown')
+                
+                # 步骤 4: 标记为已安装
+                packages[module_name]['installed'] = True
+                packages[module_name]['version'] = version
+                print(f"[依赖检测] ✓ {module_name}: {version}")
+                
+            except ModuleNotFoundError as e:
+                print(f"[依赖检测] ✗ {module_name}: 模块导入失败 - {str(e)[:50]}")
+                packages[module_name]['installed'] = False
+            except ImportError as e:
+                print(f"[依赖检测] ✗ {module_name}: 导入错误 - {str(e)[:50]}")
+                packages[module_name]['installed'] = False
+            except Exception as e:
+                print(f"[依赖检测] ✗ {module_name}: 未知错误 - {str(e)[:50]}")
+                packages[module_name]['installed'] = False
         
-        # 统计
+        # 统计结果
         total = len(packages)
         installed = sum(1 for p in packages.values() if p['installed'])
         required_missing = [name for name, info in packages.items() if info['required'] and not info['installed']]
@@ -1222,12 +1245,15 @@ def api_check_dependencies():
             }
         }
         
+        print(f"[依赖检测] 汇总：{installed}/{total} 已安装")
+        print(f"[依赖检测] 缺少必需：{required_missing if required_missing else '无'}")
+        print(f"[依赖检测] ====== 检测完成 ======\n")
+        
         return jsonify(result)
     
     except Exception as e:
         import traceback
         return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
-
 
 @app.route('/api/install-dependencies', methods=['POST'])
 def api_install_dependencies():
