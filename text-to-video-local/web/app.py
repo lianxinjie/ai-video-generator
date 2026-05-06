@@ -447,6 +447,12 @@ def api_install_status(task_id):
                 result['log'] = f.read()[-10000:]
             result['returncode'] = task.get('returncode')
         
+        print(f"[依赖检测] ========== 返回结果 ==========")
+        for name, info in packages.items():
+            print(f"[依赖检测]   {name}: installed={info['installed']}, version={info['version']}")
+        print(f"[依赖检测]  汇总：{installed}/{total} 已安装")
+        print(f"[依赖检测] ========== 返回结果结束 ==========")
+        
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
