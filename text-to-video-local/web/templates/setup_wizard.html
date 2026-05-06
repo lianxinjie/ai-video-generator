@@ -303,6 +303,18 @@
         
         // 切换步骤
         function nextStep(step) {
+            // 保存勾选的依赖列表（从步骤 1 到步骤 2 时）
+            if (step === 2) {
+                window.dependenciesToInstall = [];
+                const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+                checkboxes.forEach(cb => {
+                    // 使用 data-pipname 属性
+                    const pipName = cb.getAttribute('data-pipname') || cb.value;
+                    window.dependenciesToInstall.push(pipName);
+                });
+                console.log('已勾选的依赖（pip 名）:', window.dependenciesToInstall);
+            }
+            
             document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
             document.querySelector(`.step[data-step="${step}"]`).classList.add('active');
             
@@ -369,7 +381,7 @@
                         
                         item.innerHTML = `
                             <span class="status-icon">✗</span>
-                            <input type="checkbox" id="pkg_${name}" value="${pipName}" data-name="${info.name}" data-required="${info.required}" data-description="${info.description}" style="margin: 0 10px 0 5px;" ${info.required ? 'checked' : ''}>
+                            <input type="checkbox" id="pkg_${name}" value="${pipName}" data-name="${info.name}" data-pipname="${pipName}" data-required="${info.required}" data-description="${info.description}" style="margin: 0 10px 0 5px;" ${info.required ? 'checked' : ''}>
                             <label for="pkg_${name}" style="cursor: pointer;"><strong>${info.name}</strong>${required} - ${info.description}</label>
                             <span style="margin-left: auto; color: #666;">未安装</span>
                         `;
