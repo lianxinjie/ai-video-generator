@@ -1203,10 +1203,17 @@ def api_check_dependencies():
 @app.route('/api/install-dependencies', methods=['POST'])
 def api_install_dependencies():
     """API: 安装 Python 依赖"""
+    print(f"[pip 安装] ====== 收到安装请求 ======")
     try:
         import subprocess
+        
+        # 记录请求信息
+        print(f"[pip 安装] Content-Type: {request.content_type}")
+        print(f"[pip 安装] Raw data: {request.get_data()}")
+        
         data = request.get_json() or {}
         packages = data.get('packages', [])
+        print(f"[pip 安装] 包列表：{packages}")
         
         if not packages:
             return jsonify({'error': '请指定要安装的包'}), 400
@@ -1273,11 +1280,13 @@ def api_install_dependencies():
         thread.daemon = True
         thread.start()
         
-        return jsonify({
+        result_data = {
             'success': True,
             'task_id': task_id,
             'message': f'开始安装 {len(packages)} 个包'
-        })
+        }
+        print(f"[pip 安装] 返回：{result_data}")
+        return jsonify(result_data)
     
     except Exception as e:
         import traceback
