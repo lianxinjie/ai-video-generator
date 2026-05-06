@@ -1264,6 +1264,28 @@ def api_install_dependencies():
         cmd.extend(extra_args)
         cmd.append('--break-system-packages')
         
+        # 包分组：torch 需要单独使用 PyTorch 源
+        torch_packages = []
+        other_packages = []
+        
+        for pkg in packages:
+            if pkg in package_info:
+                info = package_info[pkg]
+                if info.get('extra'):
+                    torch_packages.append(info['pip_name'])
+                else:
+                    other_packages.append(info['pip_name'])
+        
+        # 分别安装
+        commands = []
+        if torch_packages:
+            cmd_torch = [sys.executable, '-m', 'pip', 'install'] + torch_packages + ['--index-url', 'https://download.pytorch.org/whl/cpu', '--break-system-packages']
+            commands.append(('torch (CPU 版)', cmd_torch))
+        
+        if other_packages:
+            cmd_other = [sys.executable, '-m', 'pip', 'install'] + other_packages + ['--break-system-packages']
+            commands.append(('其他依赖', cmd_other))
+        
         # 后台执行安装任务
         def install_task():
             log_file = Path(f'web/logs/install_{task_id}.log')
