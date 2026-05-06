@@ -343,8 +343,16 @@
             checklist.innerHTML = '<li class="checklist-item">正在检查...</li>';
             
             try {
-                const response = await fetch('/api/check-dependencies');
+                // 添加时间戳防止缓存
+                const response = await fetch('/api/check-dependencies?t=' + Date.now());
                 const data = await response.json();
+                
+                // 调试日志
+                console.log('[前端] 收到检测响应:', data);
+                console.log('[前端] 包数量:', Object.keys(data.packages).length);
+                for (const [name, info] of Object.entries(data.packages)) {
+                    console.log(`[前端] ${name}: installed=${info.installed}, version=${info.version}`);
+                }
                 
                 checklist.innerHTML = '';
                 let allOk = true;
