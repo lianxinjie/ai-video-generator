@@ -788,36 +788,6 @@ def run_collaborative_mode(
                         print(f"    → 云端失败，准备重试本地...")
                         continue
             
-            # 记录最终结果
-                
-                duration = time.time() - start_time
-                
-                if image_result:
-                    scheduler.record_completion(segment_idx, method, duration, success=True)
-                    completed_segments.append(segment_idx)
-                    
-                    method_cn = '本地' if method == 'local' else '云端'
-                    print(f"  ✓ {method_cn}生成成功，耗时：{duration:.1f}s")
-                    
-                    # 打印进度
-                    progress = scheduler.get_progress()
-                    bar_len = 40
-                    filled = int(progress['progress_percent'] / 100 * bar_len)
-                    bar = '█' * filled + '░' * (bar_len - filled)
-                    print(f"  进度：[{bar}] {progress['progress_percent']:.1f}%")
-                    
-                    if progress['estimated_remaining_time'] > 0:
-                        print(f"  预计剩余：{progress['estimated_remaining_time']:.0f}s")
-                else:
-                    scheduler.record_completion(segment_idx, method, duration, success=False)
-                    print(f"  ✗ 生成失败，将自动重试")
-                    
-            except Exception as e:
-                import traceback
-                print(f"  ✗ 生成异常：{e}")
-                traceback.print_exc()
-                scheduler.record_completion(segment_idx, method, time.time() - start_time, success=False)
-        
         # 显示最终统计
         scheduler.print_progress()
         
