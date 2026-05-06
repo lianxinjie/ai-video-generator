@@ -504,6 +504,16 @@ def api_task_status_enhanced(task_id):
     task = tasks[task_id]
     
     # 构建完整状态
+    # 尝试从日志文件读取最新日志
+    log_content = task.get('log', '')
+    if task.get('type') == 'install':
+        try:
+            log_file = Path(f'web/logs/install_{task_id}.log')
+            if log_file.exists():
+                log_content = log_file.read_text(encoding='utf-8')
+        except:
+            pass
+    
     status = {
         'task_id': task_id,
         'status': task.get('status', 'unknown'),
@@ -511,7 +521,7 @@ def api_task_status_enhanced(task_id):
         'prompt': task.get('prompt', ''),
         'mode': task.get('mode', ''),
         'start_time': task.get('start_time', ''),
-        'log': task.get('log', ''),
+        'log': log_content,
     }
     
     # 硬件信息
