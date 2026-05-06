@@ -1182,11 +1182,14 @@ def api_check_dependencies():
         
         for module_name, info in packages.items():
             import_name = info.get('module_name', module_name)
-            print(f"[依赖检测] 检查 {module_name} (模块名：{import_name})")
+            print(f"[依赖检测] ====== 检查 {module_name} ======")
+            print(f"[依赖检测]   模块名：{import_name}")
             spec = importlib.util.find_spec(import_name)
+            print(f"[依赖检测]   spec 结果：{spec}")
             if spec is not None:
                 try:
-                    module = importlib.import_module(info.get('module_name', module_name))
+                    module = importlib.import_module(import_name)
+                    print(f"[依赖检测]   import 成功：{module}")
                     packages[module_name]['installed'] = True
                     try:
                         version = importlib.metadata.version(info['pip_name'])
