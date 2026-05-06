@@ -1219,14 +1219,34 @@ def api_check_dependencies():
                 print(f"[依赖检测] ✓ {module_name}: {version}")
                 
             except ModuleNotFoundError as e:
-                print(f"[依赖检测] ✗ {module_name}: 模块导入失败 - {str(e)[:50]}")
-                packages[module_name]['installed'] = False
+                # Python 3.13 移除的模块
+                if 'audioop' in str(e) or 'pyaudioop' in str(e):
+                    print(f"[依赖检测] ⚠ {module_name}: Python 3.13 兼容性问题 - 需要安装 audioop-lts")
+                    packages[module_name]['installed'] = False
+                    packages[module_name]['error'] = '需要安装 audioop-lts: pip install audioop-lts'
+                else:
+                    print(f"[依赖检测] ✗ {module_name}: 模块未找到 - {str(e)[:80]}")
+                    packages[module_name]['installed'] = False
             except ImportError as e:
-                print(f"[依赖检测] ✗ {module_name}: 导入错误 - {str(e)[:50]}")
-                packages[module_name]['installed'] = False
+                err_msg = str(e)
+                # DLL 加载失败（缺少 VC++ 运行库）
+                if 'WinError 126' in err_msg or 'DLL load failed' in err_msg:
+                    print(f"[依赖检测] ⚠ {module_name}: 缺少 VC++ 运行库")
+                    packages[module_name]['installed'] = False
+                    packages[module_name]['error'] = '请安装 Microsoft Visual C++ Redistributable: https://aka.ms/vs/17/release/vc_redist.x64.exe'
+                else:
+                    print(f"[依赖检测] ✗ {module_name}: 导入错误 - {str(e)[:80]}")
+                    packages[module_name]['installed'] = False
             except Exception as e:
-                print(f"[依赖检测] ✗ {module_name}: 未知错误 - {str(e)[:50]}")
-                packages[module_name]['installed'] = False
+                err_msg = str(e)
+                # DLL 加载失败
+                if 'WinError 126' in err_msg or 'DLL load failed' in err_msg:
+                    print(f"[依赖检测] ⚠ {module_name}: 缺少 VC++ 运行库")
+                    packages[module_name]['installed'] = False
+                    packages[module_name]['error'] = '请安装 Microsoft Visual C++ Redistributable'
+                else:
+                    print(f"[依赖检测] ✗ {module_name}: 未知错误 - {str(e)[:80]}")
+                    packages[module_name]['installed'] = False
         
         # 统计结果
         total = len(packages)
