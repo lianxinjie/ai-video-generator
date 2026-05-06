@@ -1291,35 +1291,41 @@ def api_install_dependencies():
             log_file = Path(f'web/logs/install_{task_id}.log')
             log_file.parent.mkdir(parents=True, exist_ok=True)
             
+            all_success = True
+            failed = []
+            
             with open(log_file, 'w', encoding='utf-8') as log:
-                log.write(f"开始安装依赖：{', '.join(packages)}\n")
-                log.write(f"命令：{' '.join(cmd)}\n\n")
+                log.write(f"开始安装 {len(packages)} 个依赖...\n\n")
                 
-                try:
-                    result = subprocess.run(
-                        cmd,
-                        capture_output=True,
-                        text=True,
-                        timeout=600
-                    )
+                # 依次安装
+                for name, cmd in commands:
+                    log.write(f"【安装 {name}】\n")
+                    log.write(f"命令：{' '.join(cmd)}\n\n")
+                    print(f"[pip] 正在安装 {name}...")
+                    
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
                     
                     if result.returncode == 0:
-                        log.write("✓ 依赖安装成功\n")
-                        # 更新任务状态为完成
-                        if task_id in tasks:
-                            tasks[task_id]['status'] = 'completed'
-                            tasks[task_id]['progress'] = 100
+                        log.write(f"✓ {name} 安装成功\n\n")
+                        print(f"[pip] ✓ {name} 安装成功")
                     else:
-                        log.write(f"❌ 依赖安装失败：{result.stderr}\n")
-                        # 更新任务状态为失败
-                        if task_id in tasks:
-                            tasks[task_id]['status'] = 'failed'
-                            tasks[task_id]['error'] = result.stderr
-                    
-                except subprocess.TimeoutExpired:
-                    log.write("❌ 安装超时\n")
-                except Exception as e:
-                    log.write(f"❌ 安装异常：{str(e)}\n")
+                        log.write(f"❌ {name} 安装失败\n\n")
+                        print(f"[pip] ❌ {name} 安装失败")
+                        all_success = False
+                        failed.append(name)
+                
+                # 更新任务状态
+                if task_id in tasks:
+                    if all_success:
+                        log.write("\n\n✅ 所有依赖安装成功！\n")
+                        tasks[task_id]['status'] = 'completed'
+                        tasks[task_id]['progress'] = 100
+                        print("[pip] ✅ 所有依赖安装成功！")
+                    else:
+                        log.write(f"\n\n❌ 安装失败：{', '.join(failed)}\n")
+                        tasks[task_id]['status'] = 'failed'
+                        tasks[task_id]['error'] = f"安装失败：{', '.join(failed)}"
+                        print(f"[pip] ❌ 安装失败：{', '.join(failed)}")
         
         thread = threading.Thread(target=install_task)
         thread.daemon = True
