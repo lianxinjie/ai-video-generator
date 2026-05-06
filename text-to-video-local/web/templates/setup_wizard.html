@@ -169,6 +169,7 @@
             <div class="info-box">
                 <strong>💡 说明：</strong>
                 <p>正在检查您的 Python 环境和系统依赖，请稍候...</p>
+                <p style="margin-top: 10px;"><strong>✓ 可以勾选需要安装的依赖，然后点击"下一步"自动安装</strong></p>
             </div>
             
             <ul class="checklist" id="envChecklist">
@@ -336,6 +337,9 @@
                 checklist.innerHTML = '';
                 let allOk = true;
                 
+                // 全局变量保存勾选状态
+                window.dependenciesToInstall = [];
+                
                 for (const [name, info] of Object.entries(data.packages)) {
                     const item = document.createElement('li');
                     item.className = 'checklist-item';
@@ -346,17 +350,43 @@
                     const required = info.required ? ' (必需)' : ' (可选)';
                     
                     item.className += ` ${statusClass}`;
-                    item.innerHTML = `
-                        <span class="status-icon">${icon}</span>
-                        <span><strong>${info.name}</strong>${required} - ${info.description}</span>
-                        <span style="margin-left: auto; color: #666;">${info.version || '未安装'}</span>
-                    `;
-                    checklist.appendChild(item);
                     
-                    if (!info.installed && info.required) {
+                    // 未安装的显示复选框
+                    if (!info.installed) {
+                        const pipNames = {
+                            'flask': 'flask',
+                            'PIL': 'pillow',
+                            'psutil': 'psutil',
+                            'torch': 'torch',
+                            'transformers': 'transformers',
+                            'diffusers': 'diffusers',
+                            'huggingface_hub': 'huggingface-hub',
+                            'modelscope': 'modelscope',
+                            'edge_tts': 'edge-tts',
+                            'pydub': 'pydub'
+                        };
+                        const pipName = pipNames[name] || name;
+                        
+                        item.innerHTML = `
+                            <span class="status-icon">✗</span>
+                            <input type="checkbox" id="pkg_${name}" value="${pipName}" data-name="${info.name}" data-required="${info.required}" data-description="${info.description}" style="margin: 0 10px 0 5px;" ${info.required ? 'checked' : ''}>
+                            <label for="pkg_${name}" style="cursor: pointer;"><strong>${info.name}</strong>${required} - ${info.description}</label>
+                            <span style="margin-left: auto; color: #666;">未安装</span>
+                        `;
                         allOk = false;
+                    } else {
+                        item.innerHTML = `
+                            <span class="status-icon">✓</span>
+                            <span><strong>${info.name}</strong>${required} - ${info.description}</span>
+                            <span style="margin-left: auto; color: #666;">${info.version || '已安装'}</span>
+                        `;
                     }
+                    checklist.appendChild(item);
                 }
+                
+                // 显示下一步按钮
+                document.getElementById('btnStep2').classList.remove('hidden');
+                document.getElementById('btnStep2').textContent = '下一步：安装选中的依赖';
                 
                 if (allOk) {
                     document.getElementById('btnStep2').classList.remove('hidden');
@@ -378,21 +408,28 @@
                 const checkResponse = await fetch('/api/check-dependencies');
                 const checkData = await checkResponse.json();
                 
-                // 收集未安装的依赖
+                // 使用勾选的依赖列表（如果存在）
                 const packages = [];
-                for (const [name, info] of Object.entries(checkData.packages)) {
-                    if (!info.installed) {
-                        const pipNames = {
-                            'flask': 'flask',
-                            'PIL': 'pillow',
-                            'psutil': 'psutil',
-                            'torch': 'torch',
-                            'transformers': 'transformers',
-                            'diffusers': 'diffusers',
-                            'huggingface_hub': 'huggingface-hub',
-                            'modelscope': 'modelscope'
-                        };
-                        packages.push(pipNames[name] || name);
+                if (window.dependenciesToInstall && window.dependenciesToInstall.length > 0) {
+                    packages.push(...window.dependenciesToInstall);
+                } else {
+                    // 否则收集所有未安装的依赖
+                    for (const [name, info] of Object.entries(checkData.packages)) {
+                        if (!info.installed) {
+                            const pipNames = {
+                                'flask': 'flask',
+                                'PIL': 'pillow',
+                                'psutil': 'psutil',
+                                'torch': 'torch',
+                                'transformers': 'transformers',
+                                'diffusers': 'diffusers',
+                                'huggingface_hub': 'huggingface-hub',
+                                'modelscope': 'modelscope',
+                                'edge_tts': 'edge-tts',
+                                'pydub': 'pydub'
+                            };
+                            packages.push(pipNames[name] || name);
+                        }
                     }
                 }
                 
