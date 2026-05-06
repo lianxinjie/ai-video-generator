@@ -1249,14 +1249,19 @@ def api_install_dependencies():
         
         # 构建 pip 安装命令
         cmd = [sys.executable, '-m', 'pip', 'install']
+        extra_args = []
+        
         for pkg in packages:
             if pkg in package_info:
                 info = package_info[pkg]
+                cmd.append(info['pip_name'])
                 if info['extra']:
-                    cmd.extend([info['pip_name'], info['extra']])
-                else:
-                    cmd.append(info['pip_name'])
+                    # 拆分额外参数
+                    extra_parts = info['extra'].split()
+                    extra_args.extend(extra_parts)
         
+        # 先添加额外参数，再添加 --break-system-packages
+        cmd.extend(extra_args)
         cmd.append('--break-system-packages')
         
         # 后台执行安装任务
