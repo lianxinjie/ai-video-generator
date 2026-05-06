@@ -1288,6 +1288,8 @@ def api_install_dependencies():
         
         # 后台执行安装任务
         def install_task():
+            import importlib.util
+            
             log_file = Path(f'web/logs/install_{task_id}.log')
             log_file.parent.mkdir(parents=True, exist_ok=True)
             
@@ -1295,6 +1297,7 @@ def api_install_dependencies():
             failed = []
             
             with open(log_file, 'w', encoding='utf-8') as log:
+                log.write(f"当前 Python: {sys.executable}\n")
                 log.write(f"开始安装 {len(packages)} 个依赖...\n\n")
                 
                 # 依次安装
@@ -1317,10 +1320,29 @@ def api_install_dependencies():
                 # 更新任务状态
                 if task_id in tasks:
                     if all_success:
-                        log.write("\n\n✅ 所有依赖安装成功！\n")
-                        tasks[task_id]['status'] = 'completed'
-                        tasks[task_id]['progress'] = 100
-                        print("[pip] ✅ 所有依赖安装成功！")
+                        # 验证安装结果
+                        verify_log = "\n验证安装结果:\n"
+                        all_verified = True
+                        for pkg_name in ['torch', 'diffusers', 'modelscope', 'pydub', 'transformers', 'huggingface_hub', 'edge_tts', 'PIL', 'psutil', 'flask']:
+                            spec = importlib.util.find_spec(pkg_name.replace('-', '_'))
+                            if spec:
+                                verify_log += f"  ✓ {pkg_name}\n"
+                            else:
+                                verify_log += f"  ✗ {pkg_name} (未找到)\n"
+                                all_verified = False
+                        
+                        if not all_verified:
+                            log.write(f"⚠️ 警告：部分包安装后无法检测到\n{verify_log}")
+                            log.write(f"\n可能原因：pip 使用的 Python 与 Flask 不同\n")
+                            log.write(f"Flask Python: {sys.executable}\n")
+                            tasks[task_id]['status'] = 'failed'
+                            tasks[task_id]['error'] = "安装成功但检测不到，Python 环境不一致"
+                        else:
+                            log.write(f"✅ 验证通过\n{verify_log}")
+                            log.write("\n\n✅ 所有依赖安装成功！\n")
+                            tasks[task_id]['status'] = 'completed'
+                            tasks[task_id]['progress'] = 100
+                        print("[pip] ✅ 安装验证完成")
                     else:
                         log.write(f"\n\n❌ 安装失败：{', '.join(failed)}\n")
                         tasks[task_id]['status'] = 'failed'
