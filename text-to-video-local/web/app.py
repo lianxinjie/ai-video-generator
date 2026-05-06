@@ -1268,8 +1268,16 @@ def api_install_dependencies():
                     
                     if result.returncode == 0:
                         log.write("✓ 依赖安装成功\n")
+                        # 更新任务状态为完成
+                        if task_id in tasks:
+                            tasks[task_id]['status'] = 'completed'
+                            tasks[task_id]['progress'] = 100
                     else:
                         log.write(f"❌ 依赖安装失败：{result.stderr}\n")
+                        # 更新任务状态为失败
+                        if task_id in tasks:
+                            tasks[task_id]['status'] = 'failed'
+                            tasks[task_id]['error'] = result.stderr
                     
                 except subprocess.TimeoutExpired:
                     log.write("❌ 安装超时\n")
@@ -1279,6 +1287,19 @@ def api_install_dependencies():
         thread = threading.Thread(target=install_task)
         thread.daemon = True
         thread.start()
+        
+        # 注册任务到 tasks 字典
+        from datetime import datetime
+        tasks[task_id] = {
+            'status': 'running',
+            'progress': 10,
+            'log': f'开始安装 {len(packages)} 个依赖...',
+            'type': 'install',
+            'packages': packages,
+            'start_time': datetime.now().isoformat()
+        }
+        
+        print(f"[pip 安装] ✅ 任务已注册：{task_id}")
         
         result_data = {
             'success': True,
