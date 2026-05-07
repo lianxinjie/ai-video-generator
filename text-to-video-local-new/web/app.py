@@ -3122,11 +3122,12 @@ def api_download_ffmpeg():
         # 如果主镜像失败，自动切换到备用镜像
         urls = {
             'Windows': [
-                # 国内镜像优先（阿里云镜像）
-                'https://mirrors.aliyun.com/github-release/GyanD/codexffmpeg/releases/download/6.1/ffmpeg-6.1-essentials_build.zip',
-                # GitHub 镜像（备用）
+                # GitHub Releases - 支持 Range 请求，可多线程下载 ✅
                 'https://github.com/GyanD/codexffmpeg/releases/download/6.1/ffmpeg-6.1-essentials_build.zip',
+                # GitHub Builds - 支持 Range 请求，文件更大 ✅
                 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip',
+                # 国内镜像（如果 GitHub 访问慢，可尝试）
+                'https://ghp.ci/https://github.com/GyanD/codexffmpeg/releases/download/6.1/ffmpeg-6.1-essentials_build.zip',
                 # 官方备用
                 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
             ],
@@ -3312,11 +3313,12 @@ def api_download_ffmpeg():
         else:
             print(f"[FFmpeg 下载] 📌 使用单线程下载模式")
             if not supports_range:
-                print(f"[FFmpeg 下载] ℹ️  服务器不支持 Range 请求")
+                print(f"[FFmpeg 下载] ℹ️  服务器不支持断点续传 (Range 请求)")
+                print(f"[FFmpeg 下载] 💡 提示：这是服务器限制，不影响下载，只是无法多线程加速")
             elif file_total_size <= 10 * 1024 * 1024:
-                print(f"[FFmpeg 下载] ℹ️  文件较小，不需要多线程")
+                print(f"[FFmpeg 下载] ℹ️  文件较小 (< 10MB)，不需要多线程")
             elif remaining_size <= 5 * 1024 * 1024:
-                print(f"[FFmpeg 下载] ℹ️  剩余下载量较小，使用单线程")
+                print(f"[FFmpeg 下载] ℹ️  剩余下载量较小 (< 5MB)，使用单线程")
             
             # 单线程下载（原有逻辑）
             chunk_size = 8192
