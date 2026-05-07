@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 视频生成器 - 设置向导</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .step {
+            display: none;
+            padding: 30px;
+            background: #f8f9ff;
+            border-radius: 15px;
+            border-left: 4px solid #667eea;
+            margin-bottom: 20px;
+        }
+        .step.active {
+            display: block;
+        }
+        .step h2 {
+            color: #667eea;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        .progress-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+        }
+        .progress-step {
+            flex: 1;
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            margin: 0 5px;
+            background: #e2e8f0;
+            color: #718096;
+            font-weight: bold;
+        }
+        .progress-step.active {
+            background: #667eea;
+            color: white;
+        }
+        .progress-step.completed {
+            background: #48bb78;
+            color: white;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .checklist {
+            list-style: none;
+            margin: 20px 0;
+        }
+        .checklist-item {
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .checklist-item.status-ok {
+            border-left: 4px solid #48bb78;
+        }
+        .checklist-item.status-warn {
+            border-left: 4px solid #ed8936;
+        }
+        .checklist-item.status-error {
+            border-left: 4px solid #f56565;
+        }
+        .status-icon {
+            font-size: 24px;
+        }
+        .log {
+            background: #1a202c;
+            color: #48bb78;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        .info-box {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #2196f3;
+            margin: 20px 0;
+        }
+        .success-box {
+            background: #f0fff4;
+            padding: 30px;
+            border-radius: 10px;
+            border-left: 4px solid #48bb78;
+            text-align: center;
+        }
+        .success-icon {
+            font-size: 64px;
+            color: #48bb78;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 AI 视频生成器</h1>
+        <div class="subtitle">设置向导 - 个人电脑模式</div>
+        
+        <!-- 进度指示器 -->
+        <div class="progress-indicator">
+            <div class="progress-step active" data-step="1">1. 环境检查</div>
+            <div class="progress-step" data-step="2">2. 安装依赖</div>
+            <div class="progress-step" data-step="3">3. 下载模型</div>
+            <div class="progress-step" data-step="4">4. 完成设置</div>
+        </div>
+        
+        <!-- Step 1: 环境检查 -->
+        <div class="step active" data-step="1">
+            <h2>📋 步骤 1: 环境检查</h2>
+            <div class="info-box">
+                <strong>💡 说明：</strong>
+                <p>正在检查您的 Python 环境和系统依赖，请稍候...</p>
+                <p style="margin-top: 10px;"><strong>✓ 可以勾选需要安装的依赖，然后点击"下一步"自动安装</strong></p>
+            </div>
+            
+            <ul class="checklist" id="envChecklist">
+                <li class="checklist-item">正在检查...</li>
+            </ul>
+            
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn" onclick="checkEnvironment()">重新检查</button>
+                <button class="btn hidden" id="btnStep2" onclick="nextStep(2)">下一步</button>
+            </div>
+        </div>
+        
+        <!-- Step 2: 安装依赖 -->
+        <div class="step" data-step="2">
+            <h2>⚙️ 步骤 2: 安装 Python 依赖</h2>
+            
+            <div class="info-box">
+                <strong>📦 需要安装的依赖：</strong>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li>PyTorch - AI 深度学习框架</li>
+                    <li>Transformers - 预训练模型库</li>
+                    <li>Diffusers - 扩散模型库</li>
+                    <li>Huggingface Hub - Huggingface 模型下载</li>
+                    <li>ModelScope - 通义千问模型下载</li>
+                </ul>
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <button class="btn" onclick="installDependencies()">开始安装依赖</button>
+            </div>
+            
+            <div id="installProgress" style="display: none;">
+                <h4>安装进度</h4>
+                <div style="background: #e2e8f0; border-radius: 10px; height: 30px; overflow: hidden; margin: 10px 0;">
+                    <div id="progressBar" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <div class="log" id="installLog">准备安装...</div>
+            </div>
+            
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn btn-secondary" onclick="prevStep(1)">上一步</button>
+                <button class="btn hidden" id="btnStep3" onclick="nextStep(3)">下一步：下载模型</button>
+            </div>
+        </div>
+        
+        <!-- Step 3: 下载模型 -->
+        <div class="step" data-step="3">
+            <h2>🎯 步骤 3: 下载 AI 模型</h2>
+            
+            <div class="info-box">
+                <strong>💡 推荐：</strong>
+                <p>首次使用建议下载 <code>modelscope</code> 基础模型（2.5GB），后续可以根据需要下载更多模型。</p>
+            </div>
+            
+            <div id="modelList" style="margin: 20px 0;">
+                <!-- 模型列表将由 JavaScript 动态加载 -->
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <button class="btn" onclick="startModelDownload()">开始下载</button>
+            </div>
+            
+            <div id="downloadProgress" style="display: none;">
+                <h4>下载进度</h4>
+                <div class="log" id="downloadLog">准备下载...</div>
+            </div>
+            
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn btn-secondary" onclick="prevStep(3)">上一步</button>
+                <button class="btn hidden btn-next" onclick="nextStep(4)">下一步：模型管理</button>
+            </div>
+        </div>
+        
+        <!-- Step 4: 模型管理 -->
+        <div class="step" data-step="4">
+            <h2>📂 模型管理</h2>
+            
+            <div class="info-box">
+                <strong>💡 提示：</strong>
+                <p>可以查看已安装模型的详细占用情况，或清理缓存释放空间。</p>
+            </div>
+            
+            <button class="btn" onclick="analyzeModels()" style="margin-bottom: 15px;">
+                📊 分析模型占用空间
+            </button>
+            
+            <div id="modelAnalysis" style="display: none; margin: 20px 0;">
+                <!-- 模型分析结果将显示在这里 -->
+            </div>
+            
+            <div style="margin: 20px 0; padding: 15px; background: #f7fafc; border-left: 4px solid #667eea;">
+                <h4 style="margin-top: 0;">🧹 清理选项</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                    <button class="btn btn-secondary" onclick="cleanupModels('cache')" style="font-size: 13px;">
+                        🗑️ 清理缓存
+                    </button>
+                    <button class="btn btn-secondary" onclick="cleanupModels('temp')" style="font-size: 13px;">
+                        🗑️ 清理临时文件
+                    </button>
+                    <button class="btn btn-secondary" onclick="cleanupModels('all')" style="font-size: 13px;">
+                        🧽 全面清理
+                    </button>
+                </div>
+                <div id="cleanupResult" style="margin-top: 10px; font-size: 14px;"></div>
+            </div>
+            
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn btn-secondary" onclick="prevStep(3)">上一步</button>
+                <button class="btn" onclick="nextStep(5)">完成</button>
+            </div>
+        </div>
+        
+        <!-- Step 5: 完成 -->
+        <div class="step" data-step="5">
+            <div class="success-box">
+                <div class="success-icon">✅</div>
+                <h2>设置完成！</h2>
+                <p style="color: #666; margin: 20px 0;">
+                    所有环境和模型已准备就绪，可以开始使用 AI 视频生成功能了！
+                </p>
+                <a href="/" class="btn">进入主界面</a>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 页面加载时执行环境检查
+        window.onload = function() {
+            checkEnvironment();
+        };
+        
+        // 切换步骤
+        function nextStep(step) {
+            // 保存勾选的依赖列表（从步骤 1 到步骤 2 时）
+            if (step === 2) {
+                window.dependenciesToInstall = [];
+                const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+                checkboxes.forEach(cb => {
+                    // 使用 data-pipname 属性
+                    const pipName = cb.getAttribute('data-pipname') || cb.value;
+                    window.dependenciesToInstall.push(pipName);
+                });
+                console.log('已勾选的依赖（pip 名）:', window.dependenciesToInstall);
+            }
+            
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.querySelector(`.step[data-step="${step}"]`).classList.add('active');
+            
+            document.querySelectorAll('.progress-step').forEach((s, index) => {
+                s.classList.remove('active');
+                if (index + 1 === step) {
+                    s.classList.add('active');
+                } else if (index + 1 < step) {
+                    s.classList.add('completed');
+                }
+            });
+            
+            // 如果进入步骤 3，加载模型列表
+            if (step === 3) {
+                loadModels();
+            }
+        }
+        
+        function prevStep(step) {
+            nextStep(step);
+        }
+        
+        // 环境检查
+        async function checkEnvironment() {
+            const checklist = document.getElementById('envChecklist');
+            checklist.innerHTML = '<li class="checklist-item">正在检查...</li>';
+            
+            try {
+                // 添加时间戳防止缓存
+                const response = await fetch('/api/check-dependencies?t=' + Date.now());
+                const data = await response.json();
+                
+                // 调试日志
+                console.log('[前端] 收到检测响应:', data);
+                console.log('[前端] 包数量:', Object.keys(data.packages).length);
+                for (const [name, info] of Object.entries(data.packages)) {
+                    console.log(`[前端] ${name}: installed=${info.installed}, version=${info.version}`);
+                }
+                
+                checklist.innerHTML = '';
+                let allOk = true;
+                
+                // 全局变量保存勾选状态
+                window.dependenciesToInstall = [];
+                
+                for (const [name, info] of Object.entries(data.packages)) {
+                    const item = document.createElement('li');
+                    item.className = 'checklist-item';
+                    
+                    const icon = info.installed ? '✓' : '✗';
+                    const statusClass = info.installed ? 'status-ok' : 
+                                       info.required ? 'status-error' : 'status-warn';
+                    const required = info.required ? ' (必需)' : ' (可选)';
+                    
+                    item.className += ` ${statusClass}`;
+                    
+                    // 未安装的显示复选框
+                    if (!info.installed) {
+                        const pipNames = {
+                            'flask': 'flask',
+                            'PIL': 'pillow',
+                            'psutil': 'psutil',
+                            'torch': 'torch',
+                            'transformers': 'transformers',
+                            'diffusers': 'diffusers',
+                            'huggingface_hub': 'huggingface-hub',
+                            'modelscope': 'modelscope',
+                            'edge_tts': 'edge-tts',
+                            'pydub': 'pydub'
+                        };
+                        const pipName = pipNames[name] || name;
+                        
+                        item.innerHTML = `
+                            <span class="status-icon">✗</span>
+                            <input type="checkbox" id="pkg_${name}" value="${pipName}" data-name="${info.name}" data-pipname="${pipName}" data-required="${info.required}" data-description="${info.description}" style="margin: 0 10px 0 5px;" ${info.required ? 'checked' : ''}>
+                            <label for="pkg_${name}" style="cursor: pointer;"><strong>${info.name}</strong>${required} - ${info.description}</label>
+                            <span style="margin-left: auto; color: #666;">未安装</span>
+                        `;
+                        allOk = false;
+                    } else {
+                        item.innerHTML = `
+                            <span class="status-icon">✓</span>
+                            <span><strong>${info.name}</strong>${required} - ${info.description}</span>
+                            <span style="margin-left: auto; color: #666;">${info.version || '已安装'}</span>
+                        `;
+                    }
+                    checklist.appendChild(item);
+                }
+                
+                // 显示下一步按钮
+                document.getElementById('btnStep2').classList.remove('hidden');
+                document.getElementById('btnStep2').textContent = '下一步：安装选中的依赖';
+                
+                if (allOk) {
+                    document.getElementById('btnStep2').classList.remove('hidden');
+                }
+                
+            } catch (error) {
+                checklist.innerHTML = `<li class="checklist-item status-error">检查失败：${error.message}</li>`;
+            }
+        }
+        
+        // 安装依赖
+        async function installDependencies() {
+            document.getElementById('installProgress').style.display = 'block';
+            const logDiv = document.getElementById('installLog');
+            logDiv.textContent = '正在获取依赖列表...\n';
+            
+            try {
+                // 先获取依赖列表
+                const checkResponse = await fetch('/api/check-dependencies');
+                const checkData = await checkResponse.json();
+                
+                // 使用勾选的依赖列表（如果存在）
+                const packages = [];
+                if (window.dependenciesToInstall && window.dependenciesToInstall.length > 0) {
+                    packages.push(...window.dependenciesToInstall);
+                } else {
+                    // 否则收集所有未安装的依赖
+                    for (const [name, info] of Object.entries(checkData.packages)) {
+                        if (!info.installed) {
+                            const pipNames = {
+                                'flask': 'flask',
+                                'PIL': 'pillow',
+                                'psutil': 'psutil',
+                                'torch': 'torch',
+                                'transformers': 'transformers',
+                                'diffusers': 'diffusers',
+                                'huggingface_hub': 'huggingface-hub',
+                                'modelscope': 'modelscope',
+                                'edge_tts': 'edge-tts',
+                                'pydub': 'pydub'
+                            };
+                            packages.push(pipNames[name] || name);
+                        }
+                    }
+                }
+                
+                if (packages.length === 0) {
+                    logDiv.textContent = '✅ 所有依赖已安装完成！\n';
+                    document.getElementById('btnStep3').classList.remove('hidden');
+                    return;
+                }
+                
+                logDiv.textContent += `准备安装 ${packages.length} 个依赖：${packages.join(', ')}\n\n`;
+                
+                // 开始安装
+                const installResponse = await fetch('/api/install-dependencies', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({packages: packages})
+                });
+                
+                const result = await installResponse.json();
+                
+                // 轮询进度
+                pollInstallProgress(result.task_id);
+                
+            } catch (error) {
+                logDiv.textContent += `\n错误：${error.message}\n`;
+            }
+        }
+        
+        async function pollInstallProgress(taskId) {
+            const logDiv = document.getElementById('installLog');
+            const progressBar = document.getElementById('progressBar');
+            
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/task/${taskId}`);
+                    const data = await response.json();
+                    
+                    if (data.log) {
+                        logDiv.textContent = data.log;
+                        logDiv.scrollTop = logDiv.scrollHeight;
+                    }
+                    
+                    if (data.progress) {
+                        progressBar.style.width = data.progress + '%';
+                    }
+                    
+                    if (data.status === 'completed') {
+                        clearInterval(interval);
+                        logDiv.textContent += '\n✅ 依赖安装完成！\n';
+                        document.getElementById('btnStep3').classList.remove('hidden');
+                    } else if (data.status === 'failed') {
+                        clearInterval(interval);
+                        logDiv.textContent += `\n❌ 安装失败：${data.error || data.log}\n`;
+                    }
+                } catch (error) {
+                    logDiv.textContent += `\n查询进度失败：${error.message}\n`;
+                }
+            }, 2000);
+        }
+        
+        // 加载模型列表
+        async function loadModels() {
+            const modelList = document.getElementById('modelList');
+            modelList.innerHTML = '<li class="checklist-item">正在加载模型列表...</li>';
+            
+            try {
+                const response = await fetch('/api/models/list');
+                const result = await response.json();
+                
+                if (result.success) {
+                    renderModelList(result.models);
+                } else {
+                    modelList.innerHTML = `<li class="checklist-item status-error">加载失败：${result.error}</li>`;
+                }
+            } catch (error) {
+                modelList.innerHTML = `<li class="checklist-item status-error">加载失败：${error.message}</li>`;
+            }
+        }
+        
+        function renderModelList(models) {
+            const container = document.getElementById('modelList');
+            container.innerHTML = '';
+            
+            models.forEach(model => {
+                const item = document.createElement('div');
+                item.className = 'checklist-item';
+                item.style.cssText = 'background: white; border-left: 4px solid #667eea;';
+                
+                const disabled = model.installed ? 'disabled checked' : '';
+                const status = model.installed ? '✓ 已下载' : '';
+                
+                // 构建大小显示文本
+                let sizeText = `下载大小：${model.size_gb}GB`;
+                if (model.actual_size_gb && model.actual_size_gb > 0) {
+                    sizeText += ` | 实际占用：${model.actual_size_gb}GB`;
+                }
+                sizeText += ` | 来源：${model.source}`;
+                
+                item.innerHTML = `
+                    <input type="checkbox" id="model_${model.id}" ${disabled}>
+                    <label for="model_${model.id}" style="flex: 1; cursor: pointer;">
+                        <strong>${model.name}</strong> - ${model.description}
+                        <div style="font-size: 13px; color: #666;">
+                            ${sizeText}
+                        </div>
+                    </label>
+                    ${status ? `<span style="color: #48bb78;">${status}</span>` : ''}
+                `;
+                container.appendChild(item);
+            });
+            
+            // 默认选中推荐模型
+            const modelscopeCheckbox = document.getElementById('model_modelscope');
+            if (modelscopeCheckbox && !modelscopeCheckbox.disabled) {
+                modelscopeCheckbox.checked = true;
+            }
+        }
+        
+        // 开始下载模型
+        async function startModelDownload() {
+            document.getElementById('downloadProgress').style.display = 'block';
+            const logDiv = document.getElementById('downloadLog');
+            
+            const selectedModels = [];
+            document.querySelectorAll('#modelList input[type="checkbox"]:checked').forEach(cb => {
+                if (!cb.disabled) {
+                    selectedModels.push(cb.id.replace('model_', ''));
+                }
+            });
+            
+            if (selectedModels.length === 0) {
+                alert('请至少选择一个模型');
+                return;
+            }
+            
+            logDiv.textContent = `准备下载 ${selectedModels.length} 个模型...\n`;
+            
+            try {
+                const response = await fetch('/api/models/install', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({models: selectedModels})
+                });
+                
+                const result = await response.json();
+                pollModelDownloadProgress(result.task_id);
+                
+            } catch (error) {
+                logDiv.textContent += `\n错误：${error.message}\n`;
+            }
+        }
+        
+        async function pollModelDownloadProgress(taskId) {
+            const logDiv = document.getElementById('downloadLog');
+            
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/models/status/${taskId}`);
+                    const data = await response.json();
+                    
+                    if (data.log) {
+                        logDiv.textContent = data.log;
+                        logDiv.scrollTop = logDiv.scrollHeight;
+                    }
+                    
+                    if (data.status === 'completed') {
+                        clearInterval(interval);
+                        logDiv.textContent += '\n✅ 模型下载完成！\n';
+                        document.querySelector('#step3 .btn-next').classList.remove('hidden');
+                    } else if (data.status === 'failed') {
+                        clearInterval(interval);
+                        logDiv.textContent += `\n❌ 下载失败：${data.error}\n`;
+                    }
+                } catch (error) {
+                    logDiv.textContent += `\n查询进度失败：${error.message}\n`;
+                }
+            }, 2000);
+        }
+        
+        // 分析模型占用空间
+        async function analyzeModels() {
+            const container = document.getElementById('modelAnalysis');
+            container.style.display = 'block';
+            container.innerHTML = '<p>正在分析模型目录...</p>';
+            
+            try {
+                const response = await fetch('/api/models/analyze');
+                const data = await response.json();
+                
+                if (!data.success) {
+                    container.innerHTML = `<p style="color: red;">分析失败：${data.error}</p>`;
+                    return;
+                }
+                
+                let html = '';
+                
+                // 总体统计
+                const summary = data.summary;
+                html += `
+                    <div style="background: #f7fafc; padding: 15px; border-radius: 10px; margin-bottom: 15px;">
+                        <h4 style="margin-top: 0;">📊 总体统计</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                            <div>
+                                <div style="font-size: 12px; color: #666;">已安装模型</div>
+                                <div style="font-size: 20px; font-weight: bold; color: #667eea;">${summary.total_models} 个</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; color: #666;">下载总大小</div>
+                                <div style="font-size: 20px; font-weight: bold; color: #48bb78;">${summary.total_download_gb} GB</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; color: #666;">实际占用</div>
+                                <div style="font-size: 20px; font-weight: bold; color: #ed8936;">${summary.total_actual_gb} GB</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; color: #666;">膨胀比例</div>
+                                <div style="font-size: 20px; font-weight: bold; color: #f56565;">${summary.ratio}x</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // 模型详情
+                html += '<h4>🎯 模型详情</h4>';
+                data.models.forEach(model => {
+                    if (!model.installed) return;
+                    
+                    const statusColor = model.status === 'warning' ? '#f56565' : '#48bb78';
+                    const statusText = model.status === 'warning' ? '⚠️ 占用过大' : '✓ 正常';
+                    
+                    html += `
+                        <div style="background: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; border-left: 4px solid ${statusColor};">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <div>
+                                    <strong>${model.name}</strong>
+                                    <span style="color: ${statusColor}; margin-left: 10px;">${statusText}</span>
+                                </div>
+                                <button class="btn btn-secondary" onclick="deleteModel('${model.id}')" 
+                                    style="padding: 5px 10px; font-size: 12px;"
+                                    title="删除此模型">
+                                    🗑️ 删除
+                                </button>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; font-size: 14px;">
+                                <div>
+                                    <span style="color: #666;">下载大小：</span>
+                                    <strong>${model.download_size_gb} GB</strong>
+                                </div>
+                                <div>
+                                    <span style="color: #666;">实际占用：</span>
+                                    <strong style="color: #ed8936;">${model.actual_size_gb} GB</strong>
+                                </div>
+                                <div>
+                                    <span style="color: #666;">膨胀比例：</span>
+                                    <strong style="color: #f56565;">${model.ratio}x</strong>
+                                </div>
+                                <div>
+                                    <span style="color: #666;">文件数量：</span>
+                                    <strong>${model.file_count}</strong>
+                                </div>
+                            </div>
+                    `;
+                    
+                    // 目录结构分析
+                    if (model.breakdown && Object.keys(model.breakdown).length > 0) {
+                        html += '<div style="margin-top: 10px; font-size: 13px;">';
+                        html += '<strong>目录结构：</strong><br>';
+                        Object.entries(model.breakdown).forEach(([dir, info]) => {
+                            html += `  • ${dir}: ${info.size_gb} GB (${info.files} 文件)<br>`;
+                        });
+                        html += '</div>';
+                    }
+                    
+                    html += '</div>';
+                });
+                
+                // 建议
+                if (summary.ratio > 2.5) {
+                    html += `
+                        <div style="background: #fff3cd; padding: 15px; border-radius: 10px; margin-top: 15px; border-left: 4px solid #ffc107;">
+                            <strong>💡 建议：</strong>
+                            <p style="margin: 10px 0 0 0; font-size: 14px;">
+                                您的模型占用空间偏大（${summary.ratio}x）。建议执行"全面清理"来释放空间。
+                            </p>
+                        </div>
+                    `;
+                }
+                
+                container.innerHTML = html;
+                
+            } catch (error) {
+                container.innerHTML = `<p style="color: red;">分析失败：${error.message}</p>`;
+            }
+        }
+        
+        // 清理模型缓存
+        async function cleanupModels(target) {
+            const resultDiv = document.getElementById('cleanupResult');
+            resultDiv.innerHTML = '<span style="color: #667eea;">正在清理...</span>';
+            
+            try {
+                const response = await fetch('/api/models/cleanup', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({target: target})
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    const stats = data.stats;
+                    let html = `✅ ${data.message}<br>`;
+                    if (stats.details && stats.details.length > 0) {
+                        html += '<div style="font-size: 13px; color: #666; margin-top: 5px;">';
+                        html += stats.details.slice(0, 5).map(d => `• ${d}`).join('<br>');
+                        if (stats.details.length > 5) {
+                            html += `<br>... 还有 ${stats.details.length - 5} 项`;
+                        }
+                        html += '</div>';
+                    }
+                    resultDiv.innerHTML = html;
+                    
+                    // 重新分析
+                    setTimeout(() => analyzeModels(), 1000);
+                } else {
+                    resultDiv.innerHTML = `<span style="color: red;">清理失败：${data.error}</span>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span style="color: red;">清理失败：${error.message}</span>`;
+            }
+        }
+        
+        // 删除模型
+        async function deleteModel(modelId) {
+            if (!confirm(`确定要删除模型 ${modelId} 吗？这将释放磁盘空间，但可以重新下载。`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/models/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({model: modelId})
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`✅ ${data.message}`);
+                    analyzeModels(); // 刷新分析
+                } else {
+                    alert(`❌ 删除失败：${data.error}`);
+                }
+            } catch (error) {
+                alert(`❌ 删除失败：${error.message}`);
+            }
+        }
+        
+        // 进入步骤 4 时自动分析
+        const originalNextStep = nextStep;
+        nextStep = function(step) {
+            originalNextStep(step);
+            if (step === 4) {
+                setTimeout(() => analyzeModels(), 500);
+            }
+        };
+    </script>
+</body>
+</html>
+
+<!-- FFmpeg 检查和下载模态框 -->
+<div id="ffmpegModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div class="modal-content" style="background: white; padding: 40px; border-radius: 20px; max-width: 700px; width: 90%;">
+        <h2 style="color: #667eea; margin-bottom: 20px;">🎬 FFmpeg 检测与安装</h2>
+        
+        <div id="resourceCheck" style="margin-bottom: 20px;">
+            <h3>💻 系统资源检测</h3>
+            <div id="resourceStatus"></div>
+        </div>
+        
+        <div id="ffmpegStatus" style="margin-bottom: 20px;">
+            <h3>📦 FFmpeg 状态</h3>
+            <div id="ffmpegInfo"></div>
+        </div>
+        
+        <div id="downloadSection" style="display: none; margin-top: 20px;">
+            <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 20px;">
+                <strong>⚠️ FFmpeg 未安装</strong>
+                <p style="margin: 10px 0 0 0; font-size: 14px;">FFmpeg 是视频处理必需工具，用于视频合成和音频处理</p>
+            </div>
+            
+            <div style="display: flex; gap: 15px;">
+                <button class="btn" onclick="downloadFFmpeg()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    📥 自动下载 FFmpeg
+                </button>
+                <button class="btn btn-secondary" onclick="showManualGuide()" style="background: #e2e8f0; color: #4a5568;">
+                    📖 手动安装指南
+                </button>
+            </div>
+            
+            <div id="downloadProgress" style="display: none; margin-top: 20px;">
+                <p>正在下载 FFmpeg...</p>
+                <div style="background: #e2e8f0; border-radius: 10px; height: 20px; overflow: hidden;">
+                    <div id="ffmpegProgressBar" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <p id="downloadMessage" style="font-size: 13px; color: #718096; margin-top: 10px;"></p>
+            </div>
+        </div>
+        
+        <div style="margin-top: 30px; display: flex; gap: 15px;">
+            <button class="btn" onclick="closeFFmpegModal()" style="background: #48bb78;">
+                ✅ 完成
+            </button>
+            <button class="btn btn-secondary" onclick="refreshFFmpegCheck()" style="background: #e2e8f0; color: #4a5568;">
+                🔄 重新检测
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+let resourceData = null;
+
+function checkFFmpeg() {
+    // 先检查资源
+    fetch('/api/check-resources')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                resourceData = data;
+                displayResourceStatus(data);
+            }
+        });
+    
+    // 检查 FFmpeg 状态
+    fetch('/api/check-ffmpeg')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                displayFFmpegStatus(data);
+            }
+        });
+}
+
+function displayResourceStatus(data) {
+    const statusDiv = document.getElementById('resourceStatus');
+    const status = data.status;
+    const system = data.system;
+    
+    statusDiv.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 15px;">
+            <div style="text-align: center; padding: 15px; background: ${status.cpu === '✅' ? '#f0fff4' : '#fff5f5'}; border-radius: 10px;">
+                <div style="font-size: 24px; margin-bottom: 5px;">${status.cpu}</div>
+                <div style="font-size: 13px; color: #718096;">CPU</div>
+                <div style="font-size: 14px; font-weight: bold;">${system.cpu_cores} 核心</div>
+            </div>
+            <div style="text-align: center; padding: 15px; background: ${status.memory === '✅' ? '#f0fff4' : '#fff5f5'}; border-radius: 10px;">
+                <div style="font-size: 24px; margin-bottom: 5px;">${status.memory}</div>
+                <div style="font-size: 13px; color: #718096;">内存</div>
+                <div style="font-size: 14px; font-weight: bold;">${system.available_memory_gb}GB / ${system.total_memory_gb}GB</div>
+            </div>
+            <div style="text-align: center; padding: 15px; background: ${status.disk === '✅' ? '#f0fff4' : '#fff5f5'}; border-radius: 10px;">
+                <div style="font-size: 24px; margin-bottom: 5px;">${status.disk}</div>
+                <div style="font-size: 13px; color: #718096;">磁盘</div>
+                <div style="font-size: 14px; font-weight: bold;">${system.free_disk_gb}GB 可用</div>
+            </div>
+        </div>
+        ${data.suggestions.length > 0 ? `
+            <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 10px;">
+                <strong>💡 优化建议:</strong>
+                <ul style="margin: 10px 0 0 20px; font-size: 14px;">
+                    ${data.suggestions.map(s => `<li>${s}</li>`).join('')}
+                </ul>
+            </div>
+        ` : '<div style="text-align: center; color: #48bb78; font-weight: bold;">✅ 系统资源充足，可以安装 FFmpeg</div>'}
+    `;
+}
+
+function displayFFmpegStatus(data) {
+    const infoDiv = document.getElementById('ffmpegInfo');
+    const downloadSection = document.getElementById('downloadSection');
+    
+    if (data.installed) {
+        infoDiv.innerHTML = `
+            <div style="background: #f0fff4; border-left: 4px solid #48bb78; padding: 15px; border-radius: 10px;">
+                <strong style="color: #276749;">✅ FFmpeg 已安装</strong>
+                <p style="margin: 10px 0 0 0; font-size: 14px;">
+                    路径：${data.path}<br>
+                    版本：${data.version || '未知'}<br>
+                    来源：${data.source === 'system' ? '系统 PATH' : '项目本地'}
+                </p>
+            </div>
+        `;
+        downloadSection.style.display = 'none';
+    } else {
+        infoDiv.innerHTML = `
+            <div style="background: #fff5f5; border-left: 4px solid #f56565; padding: 15px; border-radius: 10px;">
+                <strong style="color: #c53030;">❌ FFmpeg 未安装</strong>
+                <p style="margin: 10px 0 0 0; font-size: 14px;">需要安装 FFmpeg 才能进行视频生成</p>
+            </div>
+        `;
+        downloadSection.style.display = 'block';
+    }
+}
+
+function downloadFFmpeg() {
+    if (resourceData && !resourceData.can_install) {
+        alert('系统资源不足，请先释放资源后再下载');
+        return;
+    }
+    
+    const progressDiv = document.getElementById('downloadProgress');
+    const progressBar = document.getElementById('ffmpegProgressBar');
+    const messageEl = document.getElementById('downloadMessage');
+    
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '20%';
+    messageEl.textContent = '正在准备下载...';
+    
+    fetch('/api/download-ffmpeg', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            progressBar.style.width = '100%';
+            
+            if (data.success) {
+                messageEl.textContent = '✅ 下载完成！请重启 Web 服务以使用 FFmpeg';
+                messageEl.style.color = '#48bb78';
+                setTimeout(() => {
+                    refreshFFmpegCheck();
+                }, 2000);
+            } else {
+                messageEl.textContent = '❌ 下载失败：' + (data.error || '未知错误');
+                messageEl.style.color = '#f56565';
+                if (data.suggestions && data.suggestions.length > 0) {
+                    messageEl.innerHTML += '<br><small>' + data.suggestions.join('<br>') + '</small>';
+                }
+            }
+        })
+        .catch(error => {
+            progressBar.style.width = '100%';
+            messageEl.textContent = '❌ 下载失败：' + error.message;
+            messageEl.style.color = '#f56565';
+        });
+}
+
+function showManualGuide() {
+    alert('手动安装指南:\n\nWindows:\n  choco install ffmpeg\n  或下载：https://ffmpeg.org/download.html\n\nLinux (Ubuntu):\n  sudo apt install ffmpeg\n\nmacOS:\n  brew install ffmpeg\n\n安装完成后重启 Web 服务');
+}
+
+function refreshFFmpegCheck() {
+    document.getElementById('resourceStatus').innerHTML = '<div style="text-align: center; padding: 20px;">⏳ 检测中...</div>';
+    document.getElementById('ffmpegInfo').innerHTML = '<div style="text-align: center; padding: 20px;">⏳ 检测中...</div>';
+    checkFFmpeg();
+}
+
+function closeFFmpegModal() {
+    document.getElementById('ffmpegModal').style.display = 'none';
+}
+
+function openFFmpegModal() {
+    document.getElementById('ffmpegModal').style.display = 'flex';
+    checkFFmpeg();
+}
+
+// 页面加载时检测
+window.addEventListener('DOMContentLoaded', checkFFmpeg);
+</script>

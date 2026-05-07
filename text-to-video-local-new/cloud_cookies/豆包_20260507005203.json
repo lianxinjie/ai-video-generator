@@ -1,0 +1,20 @@
+{
+  "service_name": "豆包",
+  "domain": null,
+  "cookies": [
+    {
+      "name": "USER_TOKEN",
+      "value": "db_usr_tk_abc123xyz789",
+      "domain": ".doubao.com"
+    },
+    {
+      "name": "SESSION_ID",
+      "value": "db_sess_id_456def789",
+      "domain": ".doubao.com"
+    }
+  ],
+  "api_endpoint": "https://api.doubao.com/v1/chat/completions",
+  "model": "doubao-chat-latest",
+  "created_at": "2026-05-07T00:52:03.334058",
+  "last_used": "2026-05-07T00:52:03.334084"
+}

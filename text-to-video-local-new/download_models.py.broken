@@ -1,0 +1,797 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+智能模型下载器
+根据系统扫描结果自动选择最优下载方案
+"""
+
+import os
+import sys
+import time
+from pathlib import Path
+from typing import List, Dict
+import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+
+
+class ModelDownloader:
+    """智能模型下载器"""
+
+    def __init__(self, output_dir: str = "./models", max_workers: int = 1):
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.max_workers = max_workers
+
+        # 模型仓库映射
+        self.model_repos = {
+            "modelscope": {
+                "type": "modelscope",
+                "repo": "damo/text-to-video-synthesis",
+                "size_gb": 2.5,
+                "required": True
+            },
+            "animatediff": {
+                "type": "huggingface",
+                "repo": "guoyww/animatediff-motion-adapter-v1-5-2",
+                "size_gb": 4.0,
+                "required": False
+            },
+            "animatediff_sd": {
+                "type": "huggingface",
+                "repo": "frankjoshua/toonyou_beta6",
+                "size_gb": 4.0,
+                "required": False,
+                "depends_on": "animatediff"
+            },
+            "cogvideox": {
+                "type": "huggingface",
+                "repo": "THUDM/CogVideoX-5b",
+                "size_gb": 20.0,
+                "required": False
+            },
+            "svd": {
+                "type": "huggingface",
+                "repo": "stabilityai/stable-video-diffusion-img2vid-xt",
+                "size_gb": 12.0,
+                "variant": "fp16",
+                "required": False
+            }
+        }
+
+def download_from_huggingface(self, repo_id: str, variant: str = None, resume: bool = True) -> str:
+        """从 HuggingFace 下载模型（支持续传）"""
+        try:
+            from huggingface_hub import snapshot_download, HfFolder, get_hf_api_info
+            import requests
+            import os
+
+            # 检查是否需要续传
+            if resume:
+                model_path = self._resume_huggingface_download(repo_id, variant)
+                if model_path:
+                    return model_path
+
+            # 全新下载
+            kwargs = {
+                "repo_id": repo_id,
+                "cache_dir": str(self.output_dir),
+                "repo_type": "model",
+            }
+
+            if variant:
+                kwargs["variant"] = variant
+
+            print(f"  正在下载 {repo_id}...")
+
+            model_path = snapshot_download(**kwargs)
+
+            return model_path
+
+        except ImportError:
+            print("  错误：需要安装 huggingface_hub")
+            print("  运行：pip install huggingface_hub")
+            raise
+        except Exception as e:
+            print(f"  错误：下载失败 - {e}")
+            raise
+
+    def _resume_huggingface_download(self, repo_id: str, variant: str = None) -> str:
+        """支持续传的 HuggingFace 模型下载"""
+        try:
+            from huggingface_hub import get_hf_api_info
+            import requests
+            import zipfile
+            from tqdm import tqdm
+
+            # 1. 计算模型存储路径
+            repo_parts = repo_id.split("/")
+            if len(repo_parts) != 2:
+                return None
+
+            model_dir = self.output_dir / f"models--{repo_parts[0]}--{repo_parts[1]}"
+
+            # 2. 如果目录不存在，返回None表示需要全新下载
+            if not model_dir.exists():
+
+
+            # 3. 获取模型文件列表
+
+            all_files = [f.rfilename for f in api_info.siblings]
+
+            # 4. 检查已有文件
+            existing_files = set()
+            for root, _, files in os.walk(model_dir):
+                for file in files:
+                    rel_path = os.path.relpath(os.path.join(root, file), model_dir)
+                    existing_files.add(rel_path)
+
+            # 5. 计算需要续传的文件
+            files_to_download = [f for f in all_files if f not in existing_files]
+
+            if not files_to_download:
+                print("  ✅ 所有文件已下载完成，跳过下载")
+                return str(model_dir)
+
+            # 6. 显示续传信息
+            print(f"  ⏳ 续传中：找到 {len(files_to_download)} 个未下载文件")
+
+            # 7. 下载未完成的文件
+            for file_path in tqdm(files_to_download, desc="  下载进度"):
+                full_file_path = model_dir / file_path
+                full_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # 构造下载URL
+                download_url = f"https://huggingface.co/{repo_id}/resolve/main/{file_path}"
+
+                # 支持断点续传的下载
+                with requests.get(download_url, stream=True, timeout=300) as response:
+                    response.raise_for_status()
+
+                    # 获取文件总大小
+                    total_size = int(response.headers.get("content-length", 0))
+
+                    # 检查是否已存在部分下载的文件
+                    if full_file_path.exists():
+                        downloaded_size = os.path.getsize(full_file_path)
+                        if downloaded_size >= total_size:
+                            continue  # 已下载完成，跳过
+
+                        # 支持断点续传的关键：设置Range header
+                        headers = {"Range": f"bytes={downloaded_size}-{total_size-1}"}
+                        response = requests.get(download_url, headers=headers, stream=True, timeout=300)
+                    else:
+                        downloaded_size = 0
+                        headers = {}
+
+                    # 写入文件
+                    mode = "ab" if downloaded_size > 0 else "wb"
+                    with open(full_file_path, mode) as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+                            progress = (downloaded_size / total_size) * 100 if total_size > 0 else 0
+                            # tqdm会自动显示进度，无需额外打印
+
+            print(f"  ✅ 续传完成：{len(files_to_download)} 个文件已下载")
+            return str(model_dir)
+
+        except Exception as e:
+            print(f"  ⚠️ 续传失败，将尝试全新下载：{e}")
+            return None
+
+def download_from_modelscope(self, repo_id: str, resume: bool = True) -> str:
+        """从 ModelScope 下载模型（支持续传）"""
+        try:
+            from modelscope import snapshot_download
+            import os
+            import requests
+            from tqdm import tqdm
+
+            # 检查是否需要续传
+            if resume:
+                model_path = self._resume_modelscope_download(repo_id)
+                if model_path:
+                    return model_path
+
+            # 全新下载
+            print(f"  正在下载 {repo_id} (ModelScope)...")
+
+            model_path = snapshot_download(
+                repo_id,
+                cache_dir=str(self.output_dir)
+            )
+
+            return model_path
+
+        except ImportError:
+            print("  错误：需要安装 modelscope")
+            print("  运行：pip install modelscope")
+            raise
+        except Exception as e:
+            print(f"  错误：下载失败 - {e}")
+            raise
+
+    def _resume_modelscope_download(self, repo_id: str) -> str:
+        """支持续传的ModelScope模型下载"""
+        try:
+            import os
+            import requests
+            from tqdm import tqdm
+            import json
+
+            # 1. 计算模型存储路径
+            repo_parts = repo_id.split("/")
+            if len(repo_parts) != 2:
+                return None
+
+            # ModelScope的缓存路径格式
+            cache_dir = self.output_dir / "modelscope" / "hub" / "cache"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+            # 模型存储路径
+            model_dir = cache_dir / repo_id.replace("/", "_")
+
+            # 2. 如果目录不存在，返回None表示需要全新下载
+            if not model_dir.exists():
+                return None
+
+            # 3. 获取模型文件列表（从ModelScope API获取）
+            api_url = f"https://modelscope.cn/api/v1/models/{repo_id}/snapshot"
+            response = requests.get(api_url, timeout=30)
+            response.raise_for_status()
+
+            model_info = response.json()
+            all_files = []
+
+            # 递归获取所有文件路径
+            def get_all_files(item, current_path=""):
+                if isinstance(item, dict):
+                    for k, v in item.items():
+                        get_all_files(v, f"{current_path}/{k}")
+                elif isinstance(item, list):
+                    for i, v in enumerate(item):
+                        get_all_files(v, f"{current_path}/{i}")
+                else:
+                    if current_path.endswith(".bin") or current_path.endswith(".py") or current_path.endswith(".json"):
+                        all_files.append(current_path.lstrip("/"))
+
+            get_all_files(model_info.get("snapshot", {}))
+
+            # 4. 检查已有文件
+            existing_files = set()
+            for root, _, files in os.walk(model_dir):
+                for file in files:
+                    rel_path = os.path.relpath(os.path.join(root, file), model_dir)
+                    existing_files.add(rel_path)
+
+            # 5. 计算需要续传的文件
+            files_to_download = [f for f in all_files if f not in existing_files]
+
+            if not files_to_download:
+                print("  ✅ 所有文件已下载完成，跳过下载")
+                return str(model_dir)
+
+            # 6. 显示续传信息
+            print(f"  ⏳ 续传中：找到 {len(files_to_download)} 个未下载文件")
+
+            # 7. 下载未完成的文件
+            for file_path in tqdm(files_to_download, desc="  下载进度"):
+                full_file_path = model_dir / file_path
+                full_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # 构造下载URL
+                download_url = f"https://modelscope.cn/api/v1/models/{repo_id}/blobs/{file_path}"
+
+                # 支持断点续传的下载
+                with requests.get(download_url, stream=True, timeout=300) as response:
+                    response.raise_for_status()
+
+                    # 获取文件总大小
+                    total_size = int(response.headers.get("content-length", 0))
+
+                    # 检查是否已存在部分下载的文件
+                    if full_file_path.exists():
+                        downloaded_size = os.path.getsize(full_file_path)
+                        if downloaded_size >= total_size:
+                            continue  # 已下载完成，跳过
+
+                        # 支持断点续传的关键：设置Range header
+                        headers = {"Range": f"bytes={downloaded_size}-{total_size-1}"}
+                        response = requests.get(download_url, headers=headers, stream=True, timeout=300)
+                    else:
+                        downloaded_size = 0
+                        headers = {}
+
+                    # 写入文件
+                    mode = "ab" if downloaded_size > 0 else "wb"
+                    with open(full_file_path, mode) as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+
+            print(f"  ✅ 续传完成：{len(files_to_download)} 个文件已下载")
+            return str(model_dir)
+
+        except Exception as e:
+            print(f"  ⚠️ 续传失败，将尝试全新下载：{e}")
+            return None
+
+    def download_single(self, model_name: str) -> Dict:
+        """下载单个模型"""
+        model_info = self.model_repos.get(model_name)
+
+        if not model_info:
+            return {
+                "name": model_name,
+                "success": False,
+                "error": "未知模型",
+                "path": None
+            }
+
+        # 检查依赖
+        if "depends_on" in model_info:
+            dep_path = self.output_dir / model_info["depends_on"]
+            if not dep_path.exists():
+                return {
+                    "name": model_name,
+                    "success": False,
+                    "error": f"依赖模型不存在：{model_info['depends_on']}",
+                    "path": None
+                }
+
+        try:
+            if model_info["type"] == "huggingface":
+                path = self.download_from_huggingface(
+                    model_info["repo"],
+                    model_info.get("variant")
+                )
+            elif model_info["type"] == "modelscope":
+                path = self.download_from_modelscope(model_info["repo"])
+            else:
+                return {
+                    "name": model_name,
+                    "success": False,
+                    "error": f"未知下载类型：{model_info['type']}",
+                    "path": None
+                }
+
+            return {
+                "name": model_name,
+                "success": True,
+                "error": None,
+                "path": path
+            }
+
+        except Exception as e:
+            return {
+                "name": model_name,
+                "success": False,
+                "error": str(e),
+                "path": None
+            }
+
+    def extract_model_zip(self, zip_path: str, extract_to: str = None) -> str:
+        """解压模型ZIP包到指定目录"""
+        try:
+            import zipfile
+            import os
+            from tqdm import tqdm
+
+            # 计算默认解压路径
+            if not extract_to:
+                extract_to = str(self.output_dir)
+
+            # 确保目录存在
+            extract_to = Path(extract_to)
+            extract_to.mkdir(parents=True, exist_ok=True)
+
+            # 检查ZIP文件是否存在
+            zip_path = Path(zip_path)
+            if not zip_path.exists():
+                raise FileNotFoundError(f"ZIP文件不存在：{zip_path}")
+
+            # 获取ZIP文件大小
+            zip_size = os.path.getsize(zip_path) / (1024 * 1024)  # 转换为MB
+            print(f"  📦 正在解压模型：{zip_path} ({zip_size:.2f} MB)")
+
+            # 解压ZIP文件（显示进度）
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                # 获取所有文件列表
+                file_list = zip_ref.namelist()
+                total_files = len(file_list)
+
+                print(f"  📋 发现 {total_files} 个文件，开始解压...")
+
+                # 显示进度条解压
+                for file in tqdm(file_list, desc="  解压进度"):
+                    zip_ref.extract(file, extract_to)
+
+            # 验证解压结果
+            extracted_files = list(extract_to.rglob("*"))
+            if len(extracted_files) == 0:
+                raise Exception("解压后未找到任何文件，可能ZIP文件损坏")
+
+            # 清理空目录
+            for root, dirs, files in os.walk(extract_to, topdown=False):
+                for dir in dirs:
+                    try:
+                        os.rmdir(os.path.join(root, dir))
+                    except:
+                        pass
+
+            print(f"  ✅ 解压成功：{len(extracted_files)} 个文件解压到 {extract_to}")
+            return str(extract_to)
+
+        except Exception as e:
+            print(f"  ❌ 解压失败：{e}")
+            raise
+
+    def create_model_zip(self, model_name: str, output_zip: str = None, compress_level: int = 9, auto_extract: bool = True) -> dict:
+        """
+        将模型打包为zip文件，支持自动解压
+        :param model_name: 模型名称
+        :param output_zip: 输出zip文件路径
+        :param compress_level: 压缩级别（1-9，9最高）
+        :param auto_extract: 是否自动解压到模型目录
+        :return: 包含打包和提取结果的字典
+        """
+        try:
+            import zipfile
+            import os
+            import shutil
+            from tqdm import tqdm
+
+            # 1. 获取模型信息
+            model_info = self.model_repos.get(model_name)
+            if not model_info:
+                raise ValueError(f"未知模型：{model_name}")
+
+            # 2. 下载模型（如果不存在）
+            if model_info["type"] == "huggingface":
+                model_path = self.download_from_huggingface(model_info["repo"], resume=True)
+            elif model_info["type"] == "modelscope":
+                model_path = self.download_from_modelscope(model_info["repo"], resume=True)
+            else:
+                raise ValueError(f"不支持的模型类型：{model_info['type']}")
+
+            # 3. 计算输出zip路径
+            if not output_zip:
+                output_zip = self.output_dir / f"{model_name}_package.zip"
+
+            # 4. 打包模型
+            print(f"  🎒 正在打包模型 {model_name}...")
+
+            with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=compress_level) as zipf:
+                # 遍历所有文件
+                total_files = 0
+                for root, _, files in os.walk(model_path):
+                    total_files += len(files)
+
+                print(f"  📋 发现 {total_files} 个文件，开始打包...")
+
+                # 显示进度条打包
+                processed_files = 0
+                for root, _, files in os.walk(model_path):
+                    for file in tqdm(files, desc="  打包进度", total=total_files, initial=processed_files):
+                        file_path = os.path.join(root, file)
+                        # 计算相对路径
+                        rel_path = os.path.relpath(file_path, model_path)
+                        # 写入zip文件
+                        zipf.write(file_path, rel_path)
+                        processed_files += 1
+
+            # 5. 计算打包后的大小
+            zip_size = os.path.getsize(output_zip) / (1024 * 1024)  # 转换为MB
+            print(f"  ✅ 打包完成：{output_zip} ({zip_size:.2f} MB)")
+
+            # 6. 自动解压（如果启用）
+            extract_result = None
+            if auto_extract:
+                try:
+                    extract_path = self.extract_model_zip(output_zip)
+                    extract_result = {
+                        "success": True,
+                        "extract_path": extract_path,
+                        "message": f"模型已自动解压到：{extract_path}"
+                    }
+                    print(f"  📍 {extract_result['message']}")
+                except Exception as e:
+                    extract_result = {
+                        "success": False,
+                        "error": str(e),
+                        "message": f"自动解压失败：{e}"
+                    }
+                    print(f"  ⚠️ {extract_result['message']}")
+
+            # 7. 返回结果
+            return {
+                "success": True,
+                "model_name": model_name,
+                "zip_path": str(output_zip),
+                "zip_size_mb": zip_size,
+                "auto_extract": auto_extract,
+                "extract_result": extract_result
+            }
+
+        except Exception as e:
+            print(f"  ❌ 打包失败：{e}")
+            raise
+        """
+        将模型打包为zip文件，提高下载速度
+        :param model_name: 模型名称
+        :param output_zip: 输出zip文件路径
+        :param compress_level: 压缩级别（1-9，9最高）
+        :return: 打包后的zip文件路径
+        """
+        try:
+            import zipfile
+            import os
+            import shutil
+            from tqdm import tqdm
+
+            # 1. 获取模型信息
+            model_info = self.model_repos.get(model_name)
+            if not model_info:
+                raise ValueError(f"未知模型：{model_name}")
+
+            # 2. 下载模型（如果不存在）
+            if model_info["type"] == "huggingface":
+                model_path = self.download_from_huggingface(model_info["repo"], resume=True)
+            elif model_info["type"] == "modelscope":
+                model_path = self.download_from_modelscope(model_info["repo"], resume=True)
+            else:
+                raise ValueError(f"不支持的模型类型：{model_info['type']}")
+
+            # 3. 计算输出zip路径
+            if not output_zip:
+                output_zip = self.output_dir / f"{model_name}_package.zip"
+
+            # 4. 打包模型
+            print(f"  🎒 正在打包模型 {model_name}...")
+
+            with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=compress_level) as zipf:
+                # 遍历所有文件
+                for root, _, files in os.walk(model_path):
+                    for file in tqdm(files, desc="  打包进度"):
+                        file_path = os.path.join(root, file)
+                        # 计算相对路径
+                        rel_path = os.path.relpath(file_path, model_path)
+                        # 写入zip文件
+                        zipf.write(file_path, rel_path)
+
+            # 5. 计算打包后的大小
+            zip_size = os.path.getsize(output_zip) / (1024 * 1024)  # 转换为MB
+            print(f"  ✅ 打包完成：{output_zip} ({zip_size:.2f} MB)")
+
+            return str(output_zip)
+
+        except Exception as e:
+            print(f"  ❌ 打包失败：{e}")
+            raise
+
+    def download_batch(self, model_names: List[str], show_progress: bool = True) -> List[Dict]:
+        """批量下载模型"""
+        results = []
+
+        if show_progress:
+            total_size = sum([
+                self.model_repos.get(m, {}).get("size_gb", 0)
+                for m in model_names
+            ])
+
+            print(f"\n{'='*70}")
+            print(f"下载计划:")
+            print(f"  模型数量：{len(model_names)}")
+            print(f"  总大小：约 {total_size:.1f}GB")
+            print(f"  并行数：{self.max_workers}")
+            print(f"  目录：{self.output_dir.absolute()}")
+            print(f"{'='*70}\n")
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_model = {
+                executor.submit(self.download_single, model): model
+                for model in model_names
+            }
+
+            for future in as_completed(future_to_model):
+                model = future_to_model[future]
+                result = future.result()
+                results.append(result)
+
+                if result["success"]:
+                    print(f"✓ {model} 下载成功: {result['path']}")
+                else:
+                    print(f"✗ {model} 下载失败: {result['error']}")
+
+        return results
+
+    def check_existing_models(self, model_names: List[str]) -> Dict[str, bool]:
+        """检查已下载的模型 - 修复路径不匹配问题"""
+        existing = {}
+
+        for model_name in model_names:
+            model_info = self.model_repos.get(model_name)
+            if not model_info:
+                existing[model_name] = False
+                continue
+
+            # 根据类型检查路径
+            if model_info["type"] == "huggingface":
+                # HuggingFace 缓存检查
+                repo_parts = model_info["repo"].split("/")
+                if len(repo_parts) == 2:
+                    check_path = self.output_dir / f"models--{repo_parts[0]}--{repo_parts[1]}"
+                else:
+                    existing[model_name] = False
+                    continue
+
+                if check_path.exists():
+                    file_count = sum(1 for f in check_path.rglob('*') if f.is_file())
+                    existing[model_name] = file_count > 0
+                else:
+                    existing[model_name] = False
+
+            elif model_info["type"] == "modelscope":
+                # ModelScope 缓存检查 - 修复路径不匹配
+                repo_parts = model_info["repo"].split("/")
+
+                # 尝试多种可能的路径
+                check_paths = [
+                    self.output_dir / model_info["repo"],  # models/damo/text-to-video-synthesis
+                    self.output_dir / repo_parts[-1],      # models/text-to-video-synthesis
+                    self.output_dir / model_name,          # models/modelscope
+                ]
+
+                found = False
+                for check_path in check_paths:
+                    if check_path.exists():
+                        file_count = sum(1 for f in check_path.rglob('*') if f.is_file())
+                        if file_count > 0:
+                            existing[model_name] = True
+                            found = True
+                            break
+
+                if not found:
+                    existing[model_name] = False
+            else:
+                existing[model_name] = False
+
+        return existing
+
+
+def main():
+    parser = argparse.ArgumentParser(description="智能模型下载器")
+
+    parser.add_argument(
+        "--models", "-m",
+        nargs="+",
+        choices=["modelscope", "animatediff", "cogvideox", "svd", "all"],
+        default=["modelscope"],
+        help="要下载的模型"
+    )
+
+    parser.add_argument(
+        "--output", "-o",
+        default="./models",
+        help="模型输出目录"
+    )
+
+    parser.add_argument(
+        "--parallel", "-j",
+        type=int,
+        default=1,
+        help="并行下载数量"
+    )
+
+    parser.add_argument(
+        "--check-only",
+        action="store_true",
+        help="仅检查已下载模型，不下载"
+    )
+
+    parser.add_argument(
+        "--force", "-f",
+        action="store_true",
+        help="强制重新下载已存在的模型"
+    )
+
+    parser.add_argument(
+        "--from-scan",
+        action="store_true",
+        help="从扫描结果读取推荐模型"
+    )
+
+    args = parser.parse_args()
+
+    # 从扫描结果读取
+    if args.from_scan:
+        scan_file = Path("scan_report.json")
+        if scan_file.exists():
+            import json
+            with open(scan_file, "r", encoding="utf-8") as f:
+                report = json.load(f)
+
+            if report.get("recommendation"):
+                args.models = report["recommendation"]["download_priority"]
+                print(f"从扫描报告读取推荐模型：{', '.join(args.models)}")
+        else:
+            print("警告：未找到 scan_report.json，使用默认模型")
+
+    # 展开"all"
+    if "all" in args.models:
+        args.models = ["modelscope", "animatediff", "cogvideox", "svd"]
+
+    # 创建下载器
+    downloader = ModelDownloader(
+        output_dir=args.output,
+        max_workers=args.parallel
+    )
+
+    # 仅检查
+    if args.check_only:
+        print("检查已下载的模型...")
+        existing = downloader.check_existing_models(args.models)
+
+        print(f"\n{'='*70}")
+        print("模型状态:")
+        for model, exists in existing.items():
+            status = "✓ 已存在" if exists else "✗ 未下载"
+            print(f"  {model}: {status}")
+        print(f"{'='*70}")
+
+        return
+
+    # 强制模式：删除已存在的模型
+    if args.force:
+        print("强制模式：清理已存在的模型...")
+        existing = downloader.check_existing_models(args.models)
+        for model, exists in existing.items():
+            if exists:
+                print(f"  标记重新下载：{model}")
+
+    # 过滤已存在的模型
+    if not args.force:
+        existing = downloader.check_existing_models(args.models)
+        models_to_download = [m for m in args.models if not existing[m]]
+
+        if not models_to_download:
+            print("✓ 所有模型已下载完成！")
+            return
+
+        print(f"需要下载 {len(models_to_download)} 个模型，跳过 {len(args.models) - len(models_to_download)} 个已存在模型")
+        args.models = models_to_download
+
+    # 开始下载
+    start_time = time.time()
+
+    results = downloader.download_batch(args.models)
+
+    elapsed = time.time() - start_time
+
+    # 统计结果
+    success_count = sum([1 for r in results if r["success"]])
+    fail_count = len(results) - success_count
+
+    print(f"\n{'='*70}")
+    print("下载完成统计:")
+    print(f"  成功：{success_count}/{len(results)}")
+    print(f"  失败：{fail_count}/{len(results)}")
+    print(f"  耗时：{elapsed/60:.1f} 分钟")
+    print(f"{'='*70}")
+
+    if fail_count > 0:
+        print("\n失败的模型:")
+        for result in results:
+            if not result["success"]:
+                print(f"  - {result['name']}: {result['error']}")
+
+        print("\n提示：可以重新运行以下命令重试失败的模型:")
+        failed_models = [r["name"] for r in results if not r["success"]]
+        print(f"  python3 download_models.py -m {' '.join(failed_models)}")
+
+    return 0 if fail_count == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

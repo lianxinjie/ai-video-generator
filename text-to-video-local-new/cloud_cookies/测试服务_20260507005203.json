@@ -1,0 +1,14 @@
+{
+  "service_name": "测试服务",
+  "domain": null,
+  "cookies": [
+    {
+      "name": "TEST",
+      "value": "123"
+    }
+  ],
+  "api_endpoint": "https://api.test.com/v1/chat",
+  "model": "test-model",
+  "created_at": "2026-05-07T00:52:03.334524",
+  "last_used": "2026-05-07T00:52:03.334528"
+}

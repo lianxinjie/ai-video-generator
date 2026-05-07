@@ -1,0 +1,30 @@
+# Core dependencies
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+
+# Model loading
+transformers>=4.30.0
+diffusers>=0.30.0
+accelerate>=0.20.0
+
+# Video processing
+imageio>=2.30.0
+imageio-ffmpeg>=0.4.8
+opencv-python>=4.8.0
+
+# System monitoring
+psutil>=5.9.0
+pynvml>=11.0.0
+
+# Utilities
+click>=8.1.0
+pillow>=10.0.0
+numpy>=1.24.0
+
+# Optional: API integration
+requests>=2.30.0
+
+# Optional: Format support
+av>=10.0.0
+scikit-video>=1.1.11
