@@ -2863,6 +2863,146 @@ def api_get_tasks():
             'success': False
         }), 500
 
+
+def _download_ffmpeg_multithread(session, url, file_path, resume_pos=0, total_size=0, thread_count=4):
+    """
+    多线程下载 FFmpeg 文件，支持断点续传
+    
+    参数:
+        session: requests Session 对象
+        url: 下载 URL
+        file_path: 目标文件路径
+        resume_pos: 续传起始位置
+        total_size: 文件总大小
+        thread_count: 线程数
+    
+    返回:
+        (success, downloaded_size): 是否成功，下载的字节数
+    """
+    import threading
+    
+    print(f"[FFmpeg 多线程] 🚀 启动 {thread_count} 个线程开始下载")
+    
+    # 计算每个线程的下载范围
+    remaining_size = total_size - resume_pos
+    segment_size = remaining_size // thread_count
+    
+    # 创建线程和进度跟踪
+    lock = threading.Lock()
+    downloaded_segments = []
+    errors = []
+    progress_lock = threading.Lock()
+    total_downloaded = 0
+    start_time = time.time()
+    
+    def download_segment(thread_id, start_pos, end_pos):
+        """下载文件片段"""
+        nonlocal total_downloaded
+        
+        segment_path = file_path.parent / f"{file_path.name}.part{thread_id}"
+        
+        try:
+            # 检查是否需要跳过此线程（续传情况）
+            if segment_path.exists():
+                existing_size = segment_path.stat().st_size
+                expected_size = end_pos - start_pos + 1
+                if existing_size >= expected_size:
+                    print(f"[FFmpeg 多线程] ✅ 线程 {thread_id} 片段已完整，跳过")
+                    with lock:
+                        downloaded_segments.append((thread_id, segment_path))
+                    return
+            
+            print(f"[FFmpeg 多线程] 📡 线程 {thread_id} 开始：{start_pos/(1024*1024):.2f}MB - {end_pos/(1024*1024):.2f}MB")
+            
+            headers = {'Range': f'bytes={start_pos}-{end_pos}'}
+            
+            response = session.get(url, headers=headers, stream=True, timeout=(10, 300))
+            
+            if response.status_code not in [200, 206]:
+                raise Exception(f"HTTP {response.status_code}")
+            
+            # 下载片段到临时文件
+            with open(segment_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        with progress_lock:
+                            total_downloaded += len(chunk)
+                            # 每下载 2MB 更新一次进度
+                            if total_downloaded % (2 * 1024 * 1024) < 8192:
+                                elapsed = time.time() - start_time
+                                speed = total_downloaded / (1024 * 1024) / elapsed if elapsed > 0 else 0
+                                percent = ((resume_pos + total_downloaded) / total_size * 100) if total_size > 0 else 0
+                                print(f"  📊 多线程进度：{percent:.1f}% ({(resume_pos + total_downloaded)/(1024*1024):.1f}MB/{total_size/(1024*1024):.1f}MB) - 速度：{speed:.2f}MB/s")
+            
+            print(f"[FFmpeg 多线程] ✅ 线程 {thread_id} 完成")
+            
+            with lock:
+                downloaded_segments.append((thread_id, segment_path))
+        
+        except Exception as e:
+            print(f"[FFmpeg 多线程] ❌ 线程 {thread_id} 失败：{e}")
+            with lock:
+                errors.append((thread_id, str(e)))
+    
+    # 创建并启动线程
+    threads = []
+    for i in range(thread_count):
+        start = resume_pos + i * segment_size
+        # 最后一个线程下载剩余所有数据
+        end = total_size - 1 if i == thread_count - 1 else start + segment_size - 1
+        
+        if start >= total_size:
+            continue
+        
+        thread = threading.Thread(target=download_segment, args=(i, start, end))
+        threads.append(thread)
+        thread.start()
+    
+    # 等待所有线程完成
+    for thread in threads:
+        thread.join(timeout=600)  # 每个线程最多等待 10 分钟
+    
+    # 检查是否有错误
+    if errors:
+        print(f"[FFmpeg 多线程] ❌ {len(errors)}/{thread_count} 个线程失败")
+        for tid, err in errors:
+            print(f"  - 线程 {tid}: {err}")
+        return False, 0
+    
+    # 按顺序合并片段
+    print(f"[FFmpeg 多线程] 🔗 合并 {len(downloaded_segments)} 个片段")
+    
+    try:
+        # 按线程 ID 排序
+        downloaded_segments.sort(key=lambda x: x[0])
+        
+        # 打开目标文件
+        mode = 'wb' if resume_pos == 0 else 'ab'
+        with open(file_path, mode) as target:
+            for thread_id, segment_path in downloaded_segments:
+                print(f"[FFmpeg 多线程]   合并片段 {thread_id}: {segment_path.name}")
+                with open(segment_path, 'rb') as segment:
+                    # 复制内容到目标文件
+                    while True:
+                        chunk = segment.read(1024 * 1024)  # 每次 1MB
+                        if not chunk:
+                            break
+                        target.write(chunk)
+                
+                # 删除临时片段文件
+                segment_path.unlink()
+                print(f"[FFmpeg 多线程]   ✅ 删除临时片段")
+        
+        print(f"[FFmpeg 多线程] ✅ 合并完成，总大小：{file_path.stat().st_size / (1024*1024):.2f}MB")
+        return True, total_downloaded
+    
+    except Exception as e:
+        print(f"[FFmpeg 多线程] ❌ 合并失败：{e}")
+        return False, 0
+
+
+
 def _extract_ffmpeg(file_path, output_dir, temp_dir, system):
     """解压 FFmpeg 到目标目录（辅助函数）"""
     import zipfile
@@ -3124,82 +3264,121 @@ def api_download_ffmpeg():
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         
-        # 分块下载，支持断点续传
-        chunk_size = 8192
-        downloaded = resume_pos  # 从断点处开始
-        mode = 'wb' if resume_pos == 0 else 'ab'  # 续传用追加模式
+        # ==== 多线程下载（增强版）====
+        import threading
         
+        # 获取文件总大小
         try:
-            # 配置 Range 请求头实现断点续传
-            headers = {}
-            if resume_pos > 0:
-                headers['Range'] = f'bytes={resume_pos}-'
-                print(f"[FFmpeg 下载] 📡 发送 Range 请求：bytes={resume_pos}-")
-            
-            response = session.get(url, stream=True, headers=headers, timeout=(10, 300))
-            
-            # 检查是否是 206 Partial Content
-            if response.status_code == 206:
-                print(f"[FFmpeg 下载] ✅ 服务器支持断点续传 (HTTP 206)")
-            elif response.status_code == 200 and resume_pos > 0:
-                print(f"[FFmpeg 下载] ⚠️  服务器不支持续传，重新下载 (HTTP 200)")
-                downloaded = 0
-                mode = 'wb'
-            
-            response.raise_for_status()
-            total_size = int(response.headers.get('content-length', 0))
-            if downloaded > 0:
-                # 如果是续传，total_size 是剩余部分的大小
-                actual_total = downloaded + total_size
-                total_mb = actual_total / (1024 * 1024)
-                print(f"[FFmpeg 下载] 剩余下载量：{total_size / 1024 / 1024:.2f}MB (总：{actual_total / 1024 / 1024:.2f}MB)")
-            else:
-                total_mb = total_size / (1024 * 1024)
-            
-            with open(file_path, mode) as f:
-                chunk_count = 0
-                start_time = time.time()
-                
-                for chunk in response.iter_content(chunk_size=chunk_size):
-                    if chunk:  # 过滤 keep-alive 块
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        chunk_count += 1
-                        
-                        # 每下载 1MB 打印进度（避免输出过多）
-                        if chunk_count % 128 == 0:  # 128 * 8KB = 1MB
-                            elapsed = time.time() - start_time
-                            actual_downloaded = downloaded - resume_pos if resume_pos > 0 else downloaded
-                            speed = actual_downloaded / (1024 * 1024) / elapsed if elapsed > 0 else 0  # MB/s
-                            percent = (downloaded / (downloaded + total_size - resume_pos) * 100) if resume_pos > 0 else (downloaded / total_size * 100) if total_size > 0 else 0
-                            print(f"  进度：{percent:.1f}% ({downloaded/(1024*1024):.1f}MB/{total_mb:.1f}MB) - 速度：{speed:.2f}MB/s")
-            
-        except requests.exceptions.ChunkedEncodingError as e:
-            print(f"[FFmpeg 下载] ⚠️  网络连接中断：{e}")
-            if file_path.exists() and file_path.stat().st_size > 0:
-                downloaded_mb = file_path.stat().st_size / (1024 * 1024)
-                print(f"[FFmpeg 下载] ℹ️  已下载 {downloaded_mb:.2f}MB，可尝试续传")
-            return jsonify({
-                'success': False,
-                'error': f'网络连接中断：{str(e)}',
-                'partial_download': True,
-                'downloaded_mb': downloaded_mb if file_path.exists() else 0,
-                'suggestion': '请检查网络连接后重试，支持断点续传'
-            }), 500
-        except requests.exceptions.RequestException as e:
-            print(f"[FFmpeg 下载] ❌  网络错误：{e}")
-            return jsonify({
-                'success': False,
-                'error': f'网络错误：{str(e)}',
-                'suggestion': '请检查网络连接或尝试备用镜像'
-            }), 500
+            head_resp = session.head(url, timeout=10)
+            file_total_size = int(head_resp.headers.get('content-length', 0))
+            supports_range = head_resp.headers.get('accept-ranges', '').lower() == 'bytes'
         except Exception as e:
-            print(f"[FFmpeg 下载] ❌  下载失败：{e}")
-            return jsonify({
-                'success': False,
-                'error': f'下载失败：{str(e)}',
-                'suggestion': '请检查网络连接或手动下载 FFmpeg'
-            }), 500
+            print(f"[FFmpeg 下载] ⚠️  无法获取文件大小：{e}")
+            file_total_size = 0
+            supports_range = False
+        
+        # 计算剩余需要下载的大小
+        remaining_size = file_total_size - resume_pos if file_total_size > 0 else 0
+        
+        # 决定是否使用多线程
+        # 条件：文件 > 10MB，支持 Range 请求，剩余下载量 > 5MB
+        use_multi_thread = (
+            file_total_size > 10 * 1024 * 1024 and
+            supports_range and
+            remaining_size > 5 * 1024 * 1024
+        )
+        
+        if use_multi_thread:
+            print(f"[FFmpeg 下载] 🚀 启用多线程下载模式（4 线程）")
+            print(f"[FFmpeg 下载] 📊 文件总大小：{file_total_size / 1024 / 1024:.2f}MB")
+            print(f"[FFmpeg 下载] 📊 已下载：{resume_pos / 1024 / 1024:.2f}MB")
+            print(f"[FFmpeg 下载] 📊 剩余：{remaining_size / 1024 / 1024:.2f}MB")
+            
+            # 使用多线程下载
+            success, downloaded_size = _download_ffmpeg_multithread(
+                session, url, file_path, resume_pos, file_total_size
+            )
+            
+            if not success:
+                return jsonify({
+                    'success': False,
+                    'error': '多线程下载失败',
+                    'downloaded_mb': file_path.stat().st_size / 1024 / 1024 if file_path.exists() else 0
+                }), 500
+            
+            downloaded = resume_pos + downloaded_size
+            total_mb = file_total_size / 1024 / 1024
+            print(f"[FFmpeg 下载] ✅ 多线程下载完成：{downloaded / 1024 / 1024:.2f}MB")
+        else:
+            print(f"[FFmpeg 下载] 📌 使用单线程下载模式")
+            if not supports_range:
+                print(f"[FFmpeg 下载] ℹ️  服务器不支持 Range 请求")
+            elif file_total_size <= 10 * 1024 * 1024:
+                print(f"[FFmpeg 下载] ℹ️  文件较小，不需要多线程")
+            elif remaining_size <= 5 * 1024 * 1024:
+                print(f"[FFmpeg 下载] ℹ️  剩余下载量较小，使用单线程")
+            
+            # 单线程下载（原有逻辑）
+            chunk_size = 8192
+            downloaded = resume_pos
+            mode = 'wb' if resume_pos == 0 else 'ab'
+            
+            try:
+                headers = {}
+                if resume_pos > 0:
+                    headers['Range'] = f'bytes={resume_pos}-'
+                
+                response = session.get(url, stream=True, headers=headers, timeout=(10, 300))
+                
+                if response.status_code == 206:
+                    print(f"[FFmpeg 下载] ✅ 服务器支持断点续传 (HTTP 206)")
+                elif response.status_code == 200 and resume_pos > 0:
+                    print(f"[FFmpeg 下载] ⚠️  服务器不支持续传，重新下载 (HTTP 200)")
+                    downloaded = 0
+                    mode = 'wb'
+                
+                response.raise_for_status()
+                total_size = int(response.headers.get('content-length', 0))
+                if downloaded > 0:
+                    actual_total = downloaded + total_size
+                    total_mb = actual_total / (1024 * 1024)
+                    print(f"[FFmpeg 下载] 剩余下载量：{total_size / 1024 / 1024:.2f}MB (总：{actual_total / 1024 / 1024:.2f}MB)")
+                else:
+                    total_mb = total_size / (1024 * 1024)
+                
+                with open(file_path, mode) as f:
+                    chunk_count = 0
+                    start_time = time.time()
+                    
+                    for chunk in response.iter_content(chunk_size=chunk_size):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            chunk_count += 1
+                            
+                            if chunk_count % 128 == 0:
+                                elapsed = time.time() - start_time
+                                actual_downloaded = downloaded - resume_pos if resume_pos > 0 else downloaded
+                                speed = actual_downloaded / (1024 * 1024) / elapsed if elapsed > 0 else 0
+                                percent = (downloaded / (downloaded + total_size - resume_pos) * 100) if resume_pos > 0 else (downloaded / total_size * 100) if total_size > 0 else 0
+                                print(f"  进度：{percent:.1f}% ({downloaded/(1024*1024):.1f}MB/{total_mb:.1f}MB) - 速度：{speed:.2f}MB/s")
+            
+            except requests.exceptions.ChunkedEncodingError as e:
+                print(f"[FFmpeg 下载] ⚠️  网络连接中断：{e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'网络连接中断：{str(e)}',
+                    'partial_download': True,
+                    'downloaded_mb': file_path.stat().st_size / (1024 * 1024) if file_path.exists() else 0,
+                    'suggestion': '请检查网络连接后重试'
+                }), 500
+            except requests.exceptions.RequestException as e:
+                print(f"[FFmpeg 下载] ❌  网络错误：{e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'网络错误：{str(e)}',
+                    'suggestion': '请检查网络连接或尝试备用镜像'
+                }), 500
         
         # ==== 验证下载结果 ====
         print(f"[FFmpeg 下载] 下载完成，验证文件...")
