@@ -2863,7 +2863,6 @@ def api_get_tasks():
             'success': False
         }), 500
 
-@app.route('/api/download-ffmpeg', methods=['POST'])
 def _extract_ffmpeg(file_path, output_dir, temp_dir, system):
     """解压 FFmpeg 到目标目录（辅助函数）"""
     import zipfile
@@ -2939,6 +2938,7 @@ def _extract_ffmpeg(file_path, output_dir, temp_dir, system):
         }), 500
 
 
+@app.route('/api/download-ffmpeg', methods=['POST'])
 def api_download_ffmpeg():
     """API: 自动下载 FFmpeg（增强版 - 支持多线程和断点续传）"""
     import psutil  # 导入 psutil 用于资源检查
