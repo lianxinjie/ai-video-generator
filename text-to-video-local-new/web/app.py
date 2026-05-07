@@ -2864,6 +2864,81 @@ def api_get_tasks():
         }), 500
 
 @app.route('/api/download-ffmpeg', methods=['POST'])
+def _extract_ffmpeg(file_path, output_dir, temp_dir, system):
+    """解压 FFmpeg 到目标目录（辅助函数）"""
+    import zipfile
+    import tarfile
+    import shutil
+    import stat
+    
+    try:
+        extracted_files = []
+        
+        if system == 'Windows':
+            # Windows: 解压 ZIP 文件
+            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                names = zip_ref.namelist()
+                
+                # 找到顶层目录
+                ffmpeg_dir = None
+                for name in names:
+                    if 'ffmpeg' in name.lower() and ('ffmpeg.exe' in name or 'ffprobe' in name):
+                        ffmpeg_dir = name.split('/')[0]
+                        break
+                
+                if not ffmpeg_dir:
+                    for name in names:
+                        if '/' in name and name.endswith('/'):
+                            ffmpeg_dir = name.rstrip('/')
+                            break
+                
+                if ffmpeg_dir:
+                    zip_ref.extractall(temp_dir)
+                    src_bin = temp_dir / ffmpeg_dir / 'bin'
+                    if src_bin.exists():
+                        shutil.copytree(src_bin, output_dir, dirs_exist_ok=True)
+                        extracted_files = ['ffmpeg.exe', 'ffprobe.exe']
+                    else:
+                        for name in names:
+                            if name.endswith('ffmpeg.exe') or name.endswith('ffprobe.exe'):
+                                zip_ref.extract(name, temp_dir)
+                                src = temp_dir / name
+                                dst = output_dir / src.name
+                                shutil.copy2(src, dst)
+                                extracted_files.append(src.name)
+        else:
+            # Linux/macOS: 解压 TAR.XZ 文件
+            import subprocess
+            result = subprocess.run(['tar', '-xf', str(file_path), '-C', str(temp_dir)], 
+                          capture_output=True, text=True)
+            if result.returncode != 0:
+                raise Exception(f"解压失败：{result.stderr}")
+            
+            for ffmpeg_file in temp_dir.rglob('ffmpeg'):
+                if ffmpeg_file.is_file():
+                    shutil.copy2(ffmpeg_file, output_dir / 'ffmpeg')
+                    extracted_files.append('ffmpeg')
+                    break
+        
+        # 清理临时文件
+        if file_path.exists():
+            file_path.unlink()
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        return jsonify({
+            'success': True,
+            'path': str(output_dir.parent),
+            'message': f'FFmpeg 解压完成',
+            'files': ', '.join(extracted_files),
+            'note': '请重启 Web 服务以使用 FFmpeg'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'解压失败：{str(e)}'
+        }), 500
+
+
 def api_download_ffmpeg():
     """API: 自动下载 FFmpeg（增强版 - 支持多线程和断点续传）"""
     import psutil  # 导入 psutil 用于资源检查
@@ -2968,6 +3043,23 @@ def api_download_ffmpeg():
         filename = 'ffmpeg.zip' if system == 'Windows' else 'ffmpeg.tar.xz'
         file_path = temp_dir / filename
         
+        # ==== 断点续传检查 ====
+        resume_pos = 0
+        if file_path.exists():
+            file_size = file_path.stat().st_size
+            if file_size > 0 and file_size < 100 * 1024 * 1024:  # 0 < size < 100MB
+                resume_pos = file_size
+                print(f"[FFmpeg 下载] ✅ 发现部分下载的文件：{file_path} ({file_size / 1024 / 1024:.2f}MB)")
+                print(f"[FFmpeg 下载] ℹ️  将从 {resume_pos / 1024 / 1024:.2f}MB 处继续下载")
+            elif file_size >= 100 * 1024 * 1024:  # >= 100MB，可能是完整文件
+                print(f"[FFmpeg 下载] ⚠️  文件已存在且大小合理：{file_size / 1024 / 1024:.2f}MB")
+                print(f"[FFmpeg 下载] ℹ️  跳过下载，直接解压")
+                # 直接跳到解压步骤
+                return _extract_ffmpeg(file_path, output_dir, temp_dir, system)
+            else:
+                print(f"[FFmpeg 下载] ⚠️  文件存在但大小为 0 或异常，删除后重新下载")
+                file_path.unlink()
+        
         # 使用流式下载，避免内存占用过大
         # 先验证 URL 可用性
         print(f"[FFmpeg 下载] 主镜像：{url[:80]}...")
@@ -3032,21 +3124,43 @@ def api_download_ffmpeg():
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         
-        # 分块下载，支持断开重连
+        # 分块下载，支持断点续传
         chunk_size = 8192
-        downloaded = 0
+        downloaded = resume_pos  # 从断点处开始
+        mode = 'wb' if resume_pos == 0 else 'ab'  # 续传用追加模式
         
         try:
-            response = session.get(url, stream=True, timeout=(10, 300))
+            # 配置 Range 请求头实现断点续传
+            headers = {}
+            if resume_pos > 0:
+                headers['Range'] = f'bytes={resume_pos}-'
+                print(f"[FFmpeg 下载] 📡 发送 Range 请求：bytes={resume_pos}-")
+            
+            response = session.get(url, stream=True, headers=headers, timeout=(10, 300))
+            
+            # 检查是否是 206 Partial Content
+            if response.status_code == 206:
+                print(f"[FFmpeg 下载] ✅ 服务器支持断点续传 (HTTP 206)")
+            elif response.status_code == 200 and resume_pos > 0:
+                print(f"[FFmpeg 下载] ⚠️  服务器不支持续传，重新下载 (HTTP 200)")
+                downloaded = 0
+                mode = 'wb'
+            
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))
-            total_mb = total_size / (1024 * 1024)
+            if downloaded > 0:
+                # 如果是续传，total_size 是剩余部分的大小
+                actual_total = downloaded + total_size
+                total_mb = actual_total / (1024 * 1024)
+                print(f"[FFmpeg 下载] 剩余下载量：{total_size / 1024 / 1024:.2f}MB (总：{actual_total / 1024 / 1024:.2f}MB)")
+            else:
+                total_mb = total_size / (1024 * 1024)
             
-            with open(file_path, 'wb') as f:
+            with open(file_path, mode) as f:
                 chunk_count = 0
                 start_time = time.time()
                 
-                for chunk in response.iter_content(chunk_size=8192):
+                for chunk in response.iter_content(chunk_size=chunk_size):
                     if chunk:  # 过滤 keep-alive 块
                         f.write(chunk)
                         downloaded += len(chunk)
@@ -3055,8 +3169,9 @@ def api_download_ffmpeg():
                         # 每下载 1MB 打印进度（避免输出过多）
                         if chunk_count % 128 == 0:  # 128 * 8KB = 1MB
                             elapsed = time.time() - start_time
-                            speed = downloaded / (1024 * 1024) / elapsed if elapsed > 0 else 0  # MB/s
-                            percent = (downloaded / total_size * 100) if total_size > 0 else 0
+                            actual_downloaded = downloaded - resume_pos if resume_pos > 0 else downloaded
+                            speed = actual_downloaded / (1024 * 1024) / elapsed if elapsed > 0 else 0  # MB/s
+                            percent = (downloaded / (downloaded + total_size - resume_pos) * 100) if resume_pos > 0 else (downloaded / total_size * 100) if total_size > 0 else 0
                             print(f"  进度：{percent:.1f}% ({downloaded/(1024*1024):.1f}MB/{total_mb:.1f}MB) - 速度：{speed:.2f}MB/s")
             
         except requests.exceptions.ChunkedEncodingError as e:
