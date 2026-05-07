@@ -645,6 +645,68 @@ def api_cleanup_models():
 
 
 @app.route('/api/models/delete', methods=['POST'])
+
+@app.route('/api/models/resume', methods=['POST'])
+def api_models_resume():
+    """API: 恢复模型下载任务 - 复用安装逻辑"""
+    import json
+    
+    try:
+        # 获取请求数据
+        data = request.get_json() or {}
+        task_id = data.get('task_id')
+        
+        # 如果没有指定 task_id，使用默认的 modelscope 模型
+        if not task_id:
+            task_id = 'modelscope'
+        
+        # 检查是否已完成的任务
+        if 'tasks' in globals() and task_id in tasks:
+            task = tasks[task_id]
+            if task.get('status') == 'completed':
+                return jsonify({
+                    'success': True,
+                    'message': '下载已完成，无需重新下载',
+                    'path': task.get('path')
+                })
+            elif task.get('status') == 'failed':
+                pass  # 继续重新下载
+        
+        # 尝试从 download_models 导入
+        from pathlib import Path
+        output_dir = Path('./models')
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            from download_models import ModelDownloader
+            downloader = ModelDownloader(output_dir=str(output_dir), max_workers=1)
+            
+            # 检查已存在的模型
+            existing = downloader.check_existing_models([task_id])
+            if existing.get(task_id, False):
+                return jsonify({
+                    'success': True,
+                    'message': '模型已存在，跳过下载',
+                    'path': str(output_dir / task_id)
+                })
+            
+            # 开始下载（支持续传）
+            result = downloader.download_single(task_id)
+            return jsonify(result)
+            
+        except ImportError as e:
+            return jsonify({
+                'success': False,
+                'error': f'依赖未安装：{e}',
+                'suggestion': '请运行 pip install modelscope huggingface_hub'
+            }), 400
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            "traceback": str(traceback.format_exc())
+        }), 500
 def api_delete_model():
     """API: 删除已安装的模型"""
     try:
