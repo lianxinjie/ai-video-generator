@@ -43,14 +43,51 @@ class ModelDownloader:
     
     def download_from_modelscope(self, repo_id: str, resume: bool = True) -> str:
         """从 ModelScope 下载模型（支持续传）"""
+        import logging
         try:
             from modelscope import snapshot_download
+            from modelscope.utils.constant import DEFAULT_MODEL_REVISION
+            import os
             
-            print(f"正在下载 {repo_id} (ModelScope)...")
+            # 计算本地缓存路径
+            repo_parts = repo_id.split("/")
+            if len(repo_parts) == 2:
+                cache_path = self.output_dir / "modelscope" / "hub" / "cache" / repo_id.replace("/", "_")
+            else:
+                cache_path = self.output_dir / repo_id
+            
+            # 检查是否已存在
+            if resume and cache_path.exists():
+                existing_files = sum(1 for f in cache_path.rglob("*") if f.is_file())
+                existing_size = sum(f.stat().st_size for f in cache_path.rglob("*") if f.is_file())
+                print(f"[ModelScope 下载] ✅ 发现已下载部分文件")
+                print(f"  📁 路径：{cache_path}")
+                print(f"  📦 已有文件：{existing_files} 个")
+                print(f"  💾 已下载：{existing_size / 1024 / 1024:.2f}MB")
+                print(f"  🔄 检查续传中...")
+            
+            print(f"[ModelScope 下载] 开始下载 {repo_id}...")
+            
+            # 配置日志级别，显示更详细的进度
+            logging.getLogger("modelscope").setLevel(logging.INFO)
+            
             model_path = snapshot_download(
                 repo_id,
-                cache_dir=str(self.output_dir)
+                cache_dir=str(self.output_dir / "modelscope"),
+                revision=DEFAULT_MODEL_REVISION
             )
+            
+            # 验证下载结果
+            if os.path.exists(model_path):
+                total_files = sum(1 for f in Path(model_path).rglob("*") if f.is_file())
+                total_size = sum(f.stat().st_size for f in Path(model_path).rglob("*") if f.is_file())
+                print(f"[ModelScope 下载] ✅ 下载完成")
+                print(f"  📁 路径：{model_path}")
+                print(f"  📦 文件数：{total_files} 个")
+                print(f"  💾 总大小：{total_size / 1024 / 1024:.2f}MB")
+            else:
+                print(f"[ModelScope 下载] ❌ 下载失败：路径不存在")
+            
             return model_path
             
         except Exception as e:
