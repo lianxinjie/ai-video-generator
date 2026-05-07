@@ -2866,6 +2866,8 @@ def api_get_tasks():
 @app.route('/api/download-ffmpeg', methods=['POST'])
 def api_download_ffmpeg():
     """API: 自动下载 FFmpeg（增强版 - 支持多线程和断点续传）"""
+    import psutil  # 导入 psutil 用于资源检查
+    
     try:
         import sys
         sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -2873,19 +2875,25 @@ def api_download_ffmpeg():
         # ==== 调试日志 ====
         print("[FFmpeg 下载] ====== 开始下载流程 ======")
         
-        # 先检查资源
-        resource_check = api_check_resources()
-        resource_data = resource_check.get_json() if hasattr(resource_check, 'get_json') else {}
-        
-        if not resource_data.get('can_install', True):
-            return jsonify({
-                'success': False,
-                'error': '系统资源不足，请先释放资源',
-                'suggestions': resource_data.get('suggestions', [])
-            }), 400
-        
+        # 提前定义 system 变量，避免后续 except 块引用未定义
         system = platform.system()
         machine = platform.machine()
+        
+        # 资源检查（简化版）
+        try:
+            cpu_percent = psutil.cpu_percent(interval=0.5)
+            memory_percent = psutil.virtual_memory().percent
+            disk_percent = psutil.disk_usage('/').percent if system != 'Windows' else psutil.disk_usage('C:').percent
+            
+            if cpu_percent > 95 or memory_percent > 95 or disk_percent > 98:
+                print(f"[FFmpeg 下载] ⚠️  系统资源紧张：CPU {cpu_percent}%, 内存 {memory_percent}%, 磁盘 {disk_percent}%")
+                return jsonify({
+                    'success': False,
+                    'error': '系统资源不足，请关闭其他程序后重试',
+                    'resource_usage': f'CPU: {cpu_percent}%, 内存：{memory_percent}%, 磁盘：{disk_percent}%'
+                }), 400
+        except Exception as e:
+            print(f"[FFmpeg 下载] ⚠️  资源检查失败：{e}，继续下载流程")
         arch = 'amd64' if machine in ['x86_64', 'AMD64'] else 'arm64' if machine in ['arm64', 'aarch64'] else machine
         
         # FFmpeg 静态编译版本下载地址
