@@ -1857,16 +1857,52 @@ def api_install_mode_components(mode):
                 '或者使用云端生成模式（不需要本地模型）'
             ]
         
-        # 4. 检测 FFmpeg
+        # 4. 检测 FFmpeg (严格验证)
         ffmpeg_path = shutil.which('ffmpeg')
-        local_ffmpeg = Path('./ffmpeg/bin/ffmpeg.exe')
-        if ffmpeg_path or local_ffmpeg.exists():
+        local_ffmpeg_exe = Path('./ffmpeg/bin/ffmpeg.exe')
+        
+        def is_valid_ffmpeg(path):
+            """验证 FFmpeg 是否真实可用"""
+            if not path or not Path(path).exists():
+                return False
+            # 检查文件大小（有效的 ffmpeg.exe 至少 50MB）
+            size = Path(path).stat().st_size
+            if size < 50 * 1024 * 1024:  # 小于 50MB 认为无效
+                print(f"[FFmpeg 检测] ❌ 文件过小：{path} ({size / 1024 / 1024:.2f}MB)")
+                return False
+            # 检查是否是 zip 文件（临时下载文件）
+            if str(path).endswith('.zip') or str(path).endswith('.xz'):
+                print(f"[FFmpeg 检测] ❌ 未解压的压缩包：{path}")
+                return False
+            # 尝试执行获取版本
+            try:
+                import subprocess
+                result = subprocess.run(
+                    [str(path), '-version'],
+                    capture_output=True,
+                    timeout=5
+                )
+                return result.returncode == 0
+            except Exception as e:
+                print(f"[FFmpeg 检测] ❌ 无法执行：{e}")
+                return False
+        
+        if is_valid_ffmpeg(ffmpeg_path):
             checks['ffmpeg']['status'] = 'ok'
-            path = ffmpeg_path or str(local_ffmpeg)
-            checks['ffmpeg']['message'] = f'FFmpeg 已安装：{path}'
-            checks['ffmpeg']['details'] = [f'路径：{path}']
+            checks['ffmpeg']['message'] = f'FFmpeg 已安装 (系统 PATH)'
+            checks['ffmpeg']['details'] = [f'路径：{ffmpeg_path}']
+        elif is_valid_ffmpeg(str(local_ffmpeg_exe)):
+            checks['ffmpeg']['status'] = 'ok'
+            checks['ffmpeg']['message'] = f'FFmpeg 已安装 (本地)'
+            checks['ffmpeg']['details'] = [f'路径：{local_ffmpeg_exe}']
         else:
             checks['ffmpeg']['status'] = 'warning'
+            checks['ffmpeg']['message'] = 'FFmpeg 未安装'
+            checks['ffmpeg']['details'] = [
+                'FFmpeg 是视频合并所必需的',
+                '可通过 Web 界面 → FFmpeg → 自动下载',
+                '或手动下载后放到 ./ffmpeg/bin/ffmpeg.exe'
+            ]
             checks['ffmpeg']['message'] = 'FFmpeg 未安装'
             checks['ffmpeg']['details'] = [
                 'FFmpeg 是视频合并所必需的',
@@ -2622,103 +2658,85 @@ def scenes_confirm_page():
 
 @app.route('/api/check-ffmpeg', methods=['GET'])
 def api_check_ffmpeg():
-    """API: 检查 FFmpeg 安装状态"""
+    """API: 检查 FFmpeg 安装状态（严格验证）"""
     import platform
     import shutil
     import subprocess
     from pathlib import Path
     
     try:
-        # 检查 FFmpeg 是否在 PATH 中
-        ffmpeg_path = shutil.which('ffmpeg')
-        
-        if ffmpeg_path:
-            # 获取版本信息
-            result = subprocess.run(
-                ['ffmpeg', '-version'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            version_line = result.stdout.split('\n')[0] if result.stdout else '未知版本'
+        def verify_ffmpeg(path):
+            """严格验证 FFmpeg 是否真实可用"""
+            if not path or not Path(path).exists():
+                return None
             
+            # 检查文件大小（有效的 ffmpeg.exe 至少 50MB）
+            size = Path(path).stat().st_size
+            if size < 50 * 1024 * 1024:
+                print(f"[FFmpeg 检测] ❌ 文件过小：{path} ({size / 1024 / 1024:.2f}MB)")
+                return None
+            
+            # 检查是否是压缩包
+            if str(path).endswith('.zip') or str(path).endswith('.xz') or str(path).endswith('.7z'):
+                print(f"[FFmpeg 检测] ❌ 未解压的压缩包：{path}")
+                return None
+            
+            # 尝试执行获取版本
+            try:
+                result = subprocess.run(
+                    [str(path), '-version'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    version_line = result.stdout.split('\n')[0] if result.stdout else '本地版本'
+                    return {'path': str(path), 'version': version_line}
+                else:
+                    print(f"[FFmpeg 检测] ❌ 执行失败：{result.stderr[:200] if result.stderr else '未知错误'}")
+                    return None
+            except Exception as e:
+                print(f"[FFmpeg 检测] ❌ 无法执行：{e}")
+                return None
+        
+        # 1. 检查系统PATH中的 FFmpeg
+        ffmpeg_path = shutil.which('ffmpeg')
+        result = verify_ffmpeg(ffmpeg_path)
+        if result:
             return jsonify({
                 'success': True,
                 'installed': True,
-                'path': ffmpeg_path,
-                'version': version_line,
+                'path': result['path'],
+                'version': result['version'],
                 'source': 'system'
             })
-        else:
-            # 检查项目目录是否有 FFmpeg
-            local_ffmpeg = Path('./ffmpeg')
-            if local_ffmpeg.exists():
-                # 可能的 ffmpeg 路径（按优先级排序）
-                possible_paths = []
-                
-                if platform.system() == 'Windows':
-                    possible_paths = [
-                        local_ffmpeg / 'bin' / 'ffmpeg.exe',  # 新下载脚本的路径
-                        local_ffmpeg / 'ffmpeg.exe',  # 旧版本路径
-                        local_ffmpeg / 'ffmpeg-win64-static' / 'ffmpeg.exe',
-                    ]
-                else:
-                    possible_paths = [
-                        local_ffmpeg / 'bin' / 'ffmpeg',  # 新下载脚本的路径
-                        local_ffmpeg / 'ffmpeg',  # 旧版本路径
-                    ]
-                
-                # 优先检查标准路径
-                for ffmpeg_exe in possible_paths:
-                    if ffmpeg_exe.exists():
-                        return jsonify({
-                            'success': True,
-                            'installed': True,
-                            'path': str(ffmpeg_exe),
-                            'version': '本地版本',
-                            'source': 'local'
-                        })
-                
-                # 如果还没找到，递归搜索
-                for ffmpeg_exe in local_ffmpeg.rglob('ffmpeg*'):
-                    if ffmpeg_exe.is_file():
-                        # 验证是否为可执行文件
-                        if platform.system() != 'Windows':
-                            import os
-                            if not os.access(ffmpeg_exe, os.X_OK):
-                                continue
-                        return jsonify({
-                            'success': True,
-                            'installed': True,
-                            'path': str(ffmpeg_exe),
-                            'version': '本地版本',
-                            'source': 'local'
-                        })
-            
+        
+        # 2. 检查本地 ./ffmpeg/bin/ffmpeg.exe
+        local_ffmpeg = Path('./ffmpeg/bin/ffmpeg.exe')
+        result = verify_ffmpeg(str(local_ffmpeg))
+        if result:
             return jsonify({
                 'success': True,
-                'installed': False,
-                'message': 'FFmpeg 未安装'
+                'installed': True,
+                'path': result['path'],
+                'version': result['version'],
+                'source': 'local'
             })
-            
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/check-resources', methods=['GET'])
-def api_check_resources():
-    """API: 检查系统资源是否满足 FFmpeg 要求"""
-    import platform
-    
-    try:
-        # 1. 检测磁盘空间
-        import shutil
-        total_space = shutil.disk_usage('/')
-        free_space_gb = total_space.free / (1024 ** 3)
         
+        # 3. 未找到可用的 FFmpeg
+        return jsonify({
+            'success': True,
+            'installed': False,
+            'path': None,
+            'version': None,
+            'source': None,
+            'message': 'FFmpeg 未安装或无效',
+            'suggestions': [
+                '请通过 Web 界面 → FFmpeg → 自动下载',
+                '或手动下载后放到 ./ffmpeg/bin/ffmpeg.exe',
+                '系统安装：sudo apt install ffmpeg (Linux)'
+            ]
+        })
         # 2. 检测内存
         import psutil
         total_memory = psutil.virtual_memory().total / (1024 ** 3)
