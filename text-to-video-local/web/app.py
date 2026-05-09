@@ -18,6 +18,13 @@ import os
 import sys
 import json
 import shutil
+import platform
+import time
+import stat
+import re
+import zipfile
+import tarfile
+import requests
 from pathlib import Path
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_from_directory
@@ -25,9 +32,19 @@ from werkzeug.utils import secure_filename
 import subprocess
 import threading
 import uuid
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# 导入 AI API Manager
+try:
+    from api_manager import MultiAPIManager
+    ai_api_manager = MultiAPIManager(verbose=False)
+except Exception as e:
+    print(f"警告：AI API Manager 加载失败：{e}")
+    ai_api_manager = None
 
 app = Flask(__name__, 
             template_folder='templates',
@@ -46,6 +63,12 @@ app.config['OUTPUT_FOLDER'].mkdir(parents=True, exist_ok=True)
 # 任务状态存储
 tasks = {}
 packages = {}  # package_id -> package_dir
+
+
+def log(message, level="INFO"):
+    """日志记录函数"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] [{level}] {message}")
 
 
 def allowed_file(filename):
@@ -69,6 +92,17 @@ def setup_wizard():
 def install_page():
     """依赖管理页面"""
     return render_template('install.html')
+
+@app.route('/ai-apis')
+def ai_apis_page():
+    """AI API 管理页面"""
+    return render_template('ai_apis.html')
+
+@app.route('/config')
+def config_page():
+    """通用配置页面（重定向到 AI API）"""
+    from flask import redirect
+    return redirect('/ai-apis')
 
 
 @app.route('/api/generate', methods=['POST'])
@@ -131,6 +165,14 @@ def api_generate():
         output_dir = app.config['OUTPUT_FOLDER'] / task_id
         output_dir.mkdir(parents=True, exist_ok=True)
         
+        # 根据 mode 动态设置超时时间
+        timeout_map = {
+            'standard': 600,       # 10 分钟
+            'optimized': 1200,     # 20 分钟  
+            'collaborative': 1800  # 30 分钟（涉及云端交互和多次 AI 调用）
+        }
+        exec_timeout = timeout_map.get(mode, 600)
+        
         # 构建命令行
         cmd = [
             sys.executable,
@@ -140,6 +182,33 @@ def api_generate():
             '-d', str(duration),
             '-o', str(output_dir / 'output.mp4')
         ]
+        
+        # 协同模式专用参数
+        if mode == 'collaborative':
+            local_ratio = float(request.form.get('local_ratio', 0.5))
+            segment_duration = float(request.form.get('segment_duration', 2.0))
+            enable_scene_refine = request.form.get('enable_scene_refine', 'true').lower() == 'true'
+            auto_adjust = request.form.get('auto_adjust', 'true').lower() == 'true'
+            
+            cmd.extend(['--segment-duration', str(segment_duration)])
+            cmd.extend(['--local-ratio', str(local_ratio)])
+            cmd.append('--auto-adjust' if auto_adjust else '--no-auto-adjust')
+            cmd.append('--enable-scene-refine' if enable_scene_refine else '--no-scene-refine')
+            
+            # 传递 AI API 配置（用于云平台图片生成）
+            if ai_api_manager:
+                try:
+                    apis = ai_api_manager.list_apis()
+                    for api_name, config in apis.items():
+                        if config.get('enabled') and config.get('api_key'):
+                            # 优先使用通义千问（支持通义万相图片生成）
+                            if 'qwen' in api_name.lower() or 'dashscope' in api_name.lower():
+                                cmd.extend(['--ai-api-key', config['api_key']])
+                                cmd.extend(['--ai-api-base', config.get('api_base', '')])
+                                cmd.extend(['--ai-model-type', 'qwen'])
+                                break
+                except Exception as e:
+                    log(f"读取 AI API 配置失败：{e}", "WARNING")
         
         # 添加参考图片参数
         if ref_images_path:
@@ -178,7 +247,7 @@ def api_generate():
                     encoding='utf-8',
                     errors='replace',
                     cwd=Path(__file__).parent.parent,
-                    timeout=600  # 10 分钟超时
+                    timeout=exec_timeout  # 动态超时时间
                 )
                 
                 # 记录标准输出
@@ -216,14 +285,39 @@ def api_generate():
                 
             except subprocess.TimeoutExpired:
                 tasks[task_id]['status'] = 'failed'
-                tasks[task_id]['error'] = '任务执行超时（10 分钟）'
-                log_lines.append("❌ 超时错误：任务执行超过 10 分钟")
+                tasks[task_id]['error'] = f'任务执行超时 ({exec_timeout/60:.0f}分钟)'
+                log_lines.append(f"❌ 超时错误：任务执行超过 {exec_timeout/60:.0f}分钟")
                 tasks[task_id]['log'] = '\n'.join(log_lines)
                 
             except Exception as e:
                 import traceback
+                error_type = type(e).__name__
+                error_msg = str(e)
+                
+                # 智能错误分类和提示
+                if error_type == 'ModuleNotFoundError':
+                    missing_module = getattr(e, 'name', error_msg.split()[1] if error_msg else 'unknown')
+                    tasks[task_id]['error'] = f"缺少 Python 依赖包：{missing_module}\n请运行：pip install {missing_module}"
+                elif error_type == 'FileNotFoundError':
+                    tasks[task_id]['error'] = f"文件未找到：{getattr(e, 'filename', error_msg)}"
+                elif 'No module named' in error_msg:
+                    import re
+                    match = re.search(r'No module named \'([^\']+)\'', error_msg)
+                    if match:
+                        module = match.group(1)
+                        tasks[task_id]['error'] = f"缺少模块：{module}\n建议安装：pip install {module}"
+                    else:
+                        tasks[task_id]['error'] = f"{error_type}: {error_msg}"
+                else:
+                    tasks[task_id]['error'] = f"{error_type}: {error_msg}"
+                
+                log_lines.append(f"\n❌ 异常类型：{error_type}")
+                log_lines.append(f"❌ 错误详情：{tasks[task_id]['error']}")
+                log_lines.append("\n" + "="*50)
+                log_lines.append("调用堆栈:")
+                log_lines.append(traceback.format_exc())
+                tasks[task_id]['log'] = '\n'.join(log_lines)
                 tasks[task_id]['status'] = 'failed'
-                tasks[task_id]['error'] = str(e)
                 log_lines.append(f"❌ 异常：{e}")
                 log_lines.append(traceback.format_exc())
                 tasks[task_id]['progress'] = 100
@@ -241,337 +335,48 @@ def api_generate():
         })
     
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-
-@app.route('/api/output/<task_id>/<filename>')
-def api_output_file(task_id, filename):
-    """API: 获取输出文件"""
-    output_dir = app.config['OUTPUT_FOLDER'] / task_id
-    return send_from_directory(output_dir, filename)
-
-
-@app.route('/static/<path:filename>')
-def serve_static(filename):
-    """提供静态文件"""
-    return send_from_directory('static', filename)
-
-
-if __name__ == '__main__':
-    print("\n" + "="*70)
-    print("  AI 视频生成器 - Web 服务")
-    print("="*70)
-    print("\n访问地址：http://localhost:5000")
-    print("\nAPI 接口:")
-    print("  POST /api/generate - 生成视频")
-    print("  GET  /api/task/<id> - 查询任务状态")
-    print("  GET  /api/output/<id>/<file> - 获取输出文件")
-    print("\n按 Ctrl+C 停止服务\n")
-    
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
-
-
-# ========== 硬件扫描与一键安装 API (新增) ==========
-
-@app.route('/api/scanner/report', methods=['GET'])
-def api_scanner_report():
-    """API: 获取扫描报告"""
-    try:
-        sys.path.insert(0, str(Path(__file__).parent.parent))
-        from scanner import SystemScanner
-        from dataclasses import asdict
-        
-        scanner = SystemScanner()
-        scanner.scan_all()
-        scanner.analyze()
-        
-        hw = scanner.hardware
-        rec = scanner.recommendation
-        
-        summary = {
-            'cpu': f"{hw.cpu_model} ({hw.cpu_cores}核)",
-            'gpu': hw.gpu_models[0] if hw.gpu_models else '无独立 GPU',
-            'gpu_memory': f"{sum(hw.gpu_memory_total):.1f}GB" if hw.gpu_memory_total else 'N/A',
-            'ram': f"{hw.ram_total}GB",
-            'disk_available': f"{hw.disk_available}GB",
-            'recommended_mode': rec.mode if rec else 'unknown',
-            'confidence': rec.confidence if rec else 'low',
-            'suitable_models': rec.suitable_models if rec else [],
-            'warnings': rec.warnings if rec else [],
-            'optimization_tips': rec.optimization_tips if rec else []
-        }
-        
-        return jsonify({'success': True, 'summary': summary})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/scanner/generate-package', methods=['POST'])
-def api_generate_package():
-    """API: 生成个性化离线安装包"""
-    try:
-        import uuid
-        data = request.get_json() or {}
-        task_id = data.get('task_id', str(uuid.uuid4()))
-        package_dir = data.get('package_dir', f'web/outputs/offline-package-{task_id}')
-        
-        sys.path.insert(0, str(Path(__file__).parent.parent))
-        from scanner import SystemScanner
-        from dataclasses import asdict
-        
-        scanner = SystemScanner()
-        scanner.scan_all()
-        scanner.analyze()
-        
-        output_path = Path(package_dir)
-        scanner.generate_offline_package(str(output_path))
-        
-        package_files = []
-        for file in output_path.glob('*'):
-            if file.is_file():
-                package_files.append({'name': file.name, 'size': file.stat().st_size})
-        
-        # 存储 package 映射
-        packages[task_id] = str(output_path.absolute())
-        
-        return jsonify({
-            'success': True,
-            'package_id': task_id,
-            'package_name': f'offline-package-{task_id}.zip',
-            'package_dir': str(output_path.absolute()),
-            'files': package_files,
-            'recommendation': asdict(scanner.recommendation) if scanner.recommendation else None
-        })
-    except Exception as e:
         import traceback
-        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+        log(f"视频生成 API 错误：{e}", "ERROR")
+        log(traceback.format_exc(), "ERROR")
+        return jsonify({
+            'error': f'服务器内部错误：{str(e)}',
+            'details': traceback.format_exc()
+        }), 500
 
 
-@app.route('/api/scanner/download-package', methods=['GET'])
-def api_download_package():
-    """API: 下载离线安装包（ZIP）"""
-    try:
-        import zipfile
-        from io import BytesIO
-        from flask import send_file
-        
-        package_id = request.args.get('package', '')
-        if not package_id:
-            return jsonify({'error': '缺少 package 参数'}), 400
-        
-        # 从映射中查找 package_dir
-        if package_id not in packages:
-            return jsonify({'error': f'安装包不存在：{package_id}'}), 404
-        
-        package_path = Path(packages[package_id])
-        if not package_path.exists():
-            return jsonify({'error': f'包目录不存在：{package_path}'}), 404
-        
-        # 创建 ZIP 文件
-        zip_path = package_path.with_suffix('.zip')
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for file in package_path.rglob('*'):
-                if file.is_file():
-                    arcname = file.relative_to(package_path)
-                    zipf.write(file, arcname)
-        
-        return send_file(zip_path, mimetype='application/zip', as_attachment=True, download_name=f'{package_path.name}.zip')
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/scanner/install', methods=['POST'])
-def api_install():
-    """API: 执行一键安装"""
-    try:
-        import uuid
-        data = request.get_json() or {}
-        package_dir = data.get('package_dir')
-        
-        if not package_dir:
-            return jsonify({'error': '缺少 package_dir 参数'}), 400
-        
-        install_script = Path(package_dir) / 'install.sh'
-        if not install_script.exists():
-            return jsonify({'error': '安装脚本不存在'}), 404
-        
-        task_id = str(uuid.uuid4())
-        
-        def run_install():
-            import subprocess
-            log_file = Path(f'{package_dir}.install.log')
-            with open(log_file, 'w') as f:
-                try:
-                    result = subprocess.run(
-                        ['bash', str(install_script)],
-                        stdout=f, stderr=subprocess.STDOUT,
-                        cwd=package_dir,
-                        timeout=600
-                    )
-                    tasks[task_id] = {
-                        'status': 'completed' if result.returncode == 0 else 'failed',
-                        'log_file': str(log_file),
-                        'returncode': result.returncode
-                    }
-                except subprocess.TimeoutExpired:
-                    tasks[task_id] = {'status': 'failed', 'error': '安装超时 (10 分钟)'}
-                except Exception as e:
-                    tasks[task_id] = {'status': 'failed', 'error': str(e)}
-        
-        tasks[task_id] = {'status': 'running', 'progress': 0, 'log': '正在启动安装...'}
-        threading.Thread(target=run_install, daemon=True).start()
-        
-        return jsonify({'success': True, 'task_id': task_id, 'message': '安装任务已启动'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/scanner/install-status/<task_id>', methods=['GET'])
-def api_install_status(task_id):
-    """API: 查询安装进度"""
-    try:
-        if task_id not in tasks:
-            return jsonify({'error': '任务不存在'}), 404
-        
-        task = tasks[task_id]
-        result = {
-            'task_id': task_id,
-            'status': task.get('status', 'unknown'),
-            'progress': task.get('progress', 0),
-            'log': task.get('log', '')
-        }
-        
-        if task.get('log_file') and Path(task['log_file']).exists():
-            with open(task['log_file'], 'r') as f:
-                result['log'] = f.read()[-10000:]
-            result['returncode'] = task.get('returncode')
-        
-        print(f"[依赖检测] ========== 返回结果 ==========")
-        for name, info in packages.items():
-            print(f"[依赖检测]   {name}: installed={info['installed']}, version={info['version']}")
-        print(f"[依赖检测]  汇总：{installed}/{total} 已安装")
-        print(f"[依赖检测] ========== 返回结果结束 ==========")
-        
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-# ========== 新增 API 路由 ==========
-
-@app.route('/api/tasks', methods=['GET'])
-def api_list_tasks():
-    """API: 列出所有任务"""
-    task_list = []
-    for task_id, task in tasks.items():
-        task_list.append({
-            'task_id': task_id,
-            'status': task.get('status', 'unknown'),
-            'prompt': task.get('prompt', ''),
-            'mode': task.get('mode', ''),
-            'start_time': task.get('start_time', ''),
-            'progress': task.get('progress', 0),
-        })
-    
-    # 按开始时间倒序排列
-    task_list.sort(key=lambda x: x.get('start_time', ''), reverse=True)
-    
-    return jsonify({'tasks': task_list})
-
-
-@app.route('/api/task/<task_id>/cancel', methods=['POST'])
-def api_cancel_task(task_id):
-    """API: 取消任务"""
-    if task_id not in tasks:
-        return jsonify({'error': '任务不存在'}), 404
-    
-    task = tasks[task_id]
-    if task.get('status') != 'running':
-        return jsonify({'error': '任务不在运行中', 'current_status': task.get('status')}), 400
-    
-    try:
-        # 简化版：没有实际进程时，允许取消并设置状态
-        task['status'] = 'cancelled'
-        task['log'] += '\n⚠️ 任务已被用户取消\n'
-        return jsonify({'success': True, 'message': '任务已取消'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-        return jsonify({'error': str(e)}), 500
-
-
-# 增强版 api_task_status - 替换原有简单版本
 @app.route('/api/task/<task_id>', methods=['GET'])
-def api_task_status_enhanced(task_id):
-    """API: 查询任务状态（增强版）"""
-    if task_id not in tasks:
-        return jsonify({'error': '任务不存在'}), 404
-    
-    task = tasks[task_id]
-    
-    # 构建完整状态
-    # 尝试从日志文件读取最新日志
-    log_content = task.get('log', '')
-    if task.get('type') == 'install':
-        try:
-            log_file = Path(f'web/logs/install_{task_id}.log')
-            if log_file.exists():
-                log_content = log_file.read_text(encoding='utf-8')
-        except:
-            pass
-    
-    status = {
-        'task_id': task_id,
-        'status': task.get('status', 'unknown'),
-        'progress': task.get('progress', 0),
-        'prompt': task.get('prompt', ''),
-        'mode': task.get('mode', ''),
-        'start_time': task.get('start_time', ''),
-        'log': log_content,
-    }
-    
-    # 硬件信息
-    if 'hardware' in task:
-        status['hardware'] = task['hardware']
-    
-    # 推荐信息
-    if 'recommendation' in task:
-        status['recommendation'] = task['recommendation']
-    
-    # 计算运行时间
-    if task.get('start_time'):
-        try:
-            start = datetime.fromisoformat(task['start_time'])
-            end = datetime.now()
-            duration = (end - start).total_seconds()
-            status['running_time'] = f"{duration:.0f}s"
-            status['running_time_seconds'] = duration
-        except:
-            status['running_time'] = 'N/A'
-    else:
-        status['running_time'] = 'N/A'
-    
-    # 输出文件
-    if task.get('output_file'):
-        status['output_file'] = task['output_file']
-        status['download_task_id'] = task_id
-    
-    return jsonify(status)
+def api_get_task(task_id):
+    """API: 获取单个任务状态"""
+    try:
+        if task_id in tasks:
+            return jsonify({
+                'task_id': task_id,
+                **tasks[task_id]
+            })
+        else:
+            return jsonify({
+                'error': '任务不存在',
+                'task_id': task_id
+            }), 404
+    except Exception as e:
+        return jsonify({
+            'error': str(e)
+        }), 500
 
 
 @app.route('/api/quick-start', methods=['POST'])
 def api_quick_start():
-    """API: 一键启动（自动检测硬件 + 推荐模式 + 启动任务）"""
+    """API: 快速启动视频生成（JSON 接口）"""
     try:
         data = request.get_json()
         if not data:
-            return jsonify({'error': '请求参数错误'}), 400
+            return jsonify({'error': '请求体必须为 JSON 格式', 'success': False}), 400
         
         prompt = data.get('prompt', '')
         if not prompt:
-            return jsonify({'error': '提示词不能为空'}), 400
+            return jsonify({'error': '提示词不能为空', 'success': False}), 400
         
-        mode = data.get('mode', 'personal')
+        mode = data.get('mode', 'optimized')
         duration = float(data.get('duration', 10))
         voiceover = data.get('voiceover', False)
         character_voice = data.get('character_voice', 'zh-CN-XiaoxiaoNeural')
@@ -579,144 +384,339 @@ def api_quick_start():
         # 生成任务 ID
         task_id = str(uuid.uuid4())
         
-        # 存储任务
+        # 创建输出目录
+        output_dir = app.config['OUTPUT_FOLDER'] / task_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 构建命令行
+        cmd = [
+            sys.executable,
+            'personal_mode/run.py',
+            '-p', prompt,
+            '-m', mode,
+            '-d', str(duration),
+            '-o', str(output_dir / 'output.mp4')
+        ]
+        
+        # 添加配音参数
+        if voiceover:
+            cmd.append('--voiceover')
+            cmd.extend(['--character-voice', character_voice])
+        
+        # 根据 mode 动态设置超时时间
+        timeout_map = {
+            'standard': 600,
+            'optimized': 1200,
+            'collaborative': 1800
+        }
+        exec_timeout = timeout_map.get(mode, 600)
+        
+        # 启动任务（后台运行）
         tasks[task_id] = {
             'status': 'running',
             'progress': 0,
             'prompt': prompt,
             'mode': mode,
-            'start_time': datetime.now().isoformat(),
-            'log': f'一键启动任务\n提示词：{prompt}\n模式：{mode}\n时长：{duration}s\n',
-            'hardware': {},
-            'recommendation': {},
+            'start_time': str(uuid.uuid4())
         }
         
-        # 启动异步任务（简化版，实际应该启动真实任务）
         def run_task():
-            import subprocess
-            import time
-            task = tasks[task_id]
+            log_lines = []
+            log_lines.append(f"开始执行命令：{' '.join(cmd)}")
+            log_lines.append(f"工作目录：{Path(__file__).parent.parent}")
+            log_lines.append("")
+            
             try:
-                # 这里应该调用实际的生成逻辑
-                # 简化演示：等待并更新进度
-                for i in range(10):
-                    time.sleep(1)
-                    task['progress'] = (i + 1) * 10
-                    task['log'] += f'进度：{task["progress"]}%\n'
-                task['status'] = 'completed'
-                task['log'] += '任务完成\n'
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    cwd=Path(__file__).parent.parent,
+                    timeout=exec_timeout
+                )
+                
+                if result.stdout:
+                    log_lines.append("=== 标准输出 ===")
+                    log_lines.append(result.stdout)
+                    log_lines.append("")
+                
+                if result.stderr:
+                    log_lines.append("=== 错误输出 ===")
+                    log_lines.append(result.stderr)
+                    log_lines.append("")
+                
+                if result.returncode == 0:
+                    tasks[task_id]['status'] = 'completed'
+                    log_lines.append("✅ 任务执行成功")
+                    
+                    video_files = list(output_dir.glob('*.mp4'))
+                    if video_files:
+                        tasks[task_id]['video_url'] = f'/api/output/{task_id}/{video_files[0].name}'
+                        log_lines.append(f"视频文件：{video_files[0].name}")
+                    else:
+                        log_lines.append("⚠️  未找到生成的视频文件")
+                        tasks[task_id]['status'] = 'failed'
+                        tasks[task_id]['error'] = '生成成功但未找到视频文件'
+                else:
+                    tasks[task_id]['status'] = 'failed'
+                    tasks[task_id]['error'] = result.stderr
+                    log_lines.append(f"❌ 任务执行失败，退出码：{result.returncode}")
+                
+                tasks[task_id]['progress'] = 100
+                tasks[task_id]['log'] = '\n'.join(log_lines)
+                
+            except subprocess.TimeoutExpired:
+                tasks[task_id]['status'] = 'failed'
+                tasks[task_id]['error'] = f'任务执行超时 ({exec_timeout/60:.0f}分钟)'
+                log_lines.append(f"❌ 超时错误：任务执行超过 {exec_timeout/60:.0f}分钟")
+                tasks[task_id]['log'] = '\n'.join(log_lines)
+                
             except Exception as e:
-                task['status'] = 'failed'
-                task['log'] += f'错误：{e}\n'
+                import traceback
+                tasks[task_id]['error'] = f"{type(e).__name__}: {str(e)}"
+                log_lines.append(f"\n❌ 异常：{e}")
+                log_lines.append(traceback.format_exc())
+                tasks[task_id]['log'] = '\n'.join(log_lines)
+                tasks[task_id]['status'] = 'failed'
+                tasks[task_id]['progress'] = 100
         
-        from threading import Thread
-        thread = Thread(target=run_task)
+        # 后台线程运行任务
+        thread = threading.Thread(target=run_task)
         thread.daemon = True
         thread.start()
         
         return jsonify({
-            'success': True,
             'task_id': task_id,
-            'mode': mode,
-            'message': '任务已启动'
+            'status': 'running',
+            'success': True,
+            'message': '任务已启动，正在生成视频...'
         })
-    except Exception as e:
-        import traceback
-        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
-
-
-# ========== 模型管理 API ==========
-
-@app.route('/api/models/list', methods=['GET'])
-def api_list_models():
-    """API: 列出所有可安装的模型"""
-    try:
-        sys.path.insert(0, str(Path(__file__).parent.parent))
-        from download_models import ModelDownloader
-        
-        downloader = ModelDownloader(output_dir='./models')
-        
-        # 检查已下载的模型
-        model_names = list(downloader.model_repos.keys())
-        existing = downloader.check_existing_models(model_names)
-        
-        # 构建返回数据
-        models = []
-        for name, info in downloader.model_repos.items():
-            # 计算实际占用空间
-            actual_size_gb = calculate_model_actual_size(name, info)
-            
-            models.append({
-                'id': name,
-                'name': name.upper(),
-                'source': 'ModelScope' if info['type'] == 'modelscope' else 'HuggingFace',
-                'repo': info['repo'],
-                'size_gb': info['size_gb'],
-                'actual_size_gb': actual_size_gb,
-                'required': info.get('required', False),
-                'installed': existing.get(name, False),
-                'description': get_model_description(name)
-            })
-        
-        return jsonify({'success': True, 'models': models})
     
     except Exception as e:
         import traceback
-        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+        log(f"快速启动 API 错误：{e}", "ERROR")
+        log(traceback.format_exc(), "ERROR")
+        return jsonify({
+            'error': f'服务器内部错误：{str(e)}',
+            'success': False
+        }), 500
 
 
-def get_model_description(model_name: str) -> str:
-    """获取模型描述"""
-    descriptions = {
-        'modelscope': '通义实验室视频生成模型（基础模型，推荐优先下载）',
-        'animatediff': 'AnimateDiff 动画生成模型（卡通风格）',
-        'animatediff_sd': 'AnimateDiff SD 模型（依赖 animatediff）',
-        'cogvideox': 'CogVideoX-5b 大型视频生成模型（高质量，需要大显存）',
-        'svd': 'Stable Video Diffusion 图像转视频（需要 CUDA 支持）'
-    }
-    return descriptions.get(model_name, '未知模型')
+@app.route('/api/task/<task_id>/cancel', methods=['POST'])
+def api_cancel_task(task_id):
+    """API: 取消任务"""
+    if task_id in tasks and tasks[task_id]['status'] == 'running':
+        tasks[task_id]['status'] = 'cancelled'
+        tasks[task_id]['error'] = '任务已由用户取消'
+        return jsonify({'success': True, 'message': '任务已取消'})
+    return jsonify({'success': False, 'error': '任务不存在或已完成'}), 404
 
 
-def calculate_model_actual_size(model_name: str, model_info: dict) -> float:
-    """计算模型实际占用的磁盘空间（GB）- 支持多种路径"""
+@app.route('/api/models/list', methods=['GET'])
+def api_list_models():
+    """API: 获取可用模型列表（包含安装状态）"""
     try:
-        models_dir = Path('./models')
+        import os
+        models_dir = Path(__file__).parent.parent / "models"
         
-        if model_info.get('type') == 'modelscope':
-            repo = model_info.get('repo', '')
-            check_paths = [
-                models_dir / repo,
-                models_dir / repo.split('/')[-1],
-                models_dir / model_name,
-            ]
-        elif model_info.get('type') == 'huggingface':
-            repo_parts = model_info.get('repo', '').split('/')
-            if len(repo_parts) == 2:
-                check_paths = [models_dir / f"models--{repo_parts[0]}--{repo_parts[1]}"]
-            else:
-                return 0.0
-        else:
-            return 0.0
+        # 预定义的模型配置
+        model_configs = {
+            "modelscope": {
+                "id": "modelscope",
+                "name": "ModelScope 基础模型",
+                "description": "阿里达摩院文本到视频基础模型",
+                "source": "modelscope",
+                "repo": "damo/text-to-video-synthesis",
+                "size_gb": 2.5,
+                "required": True,
+                "reason": "基础模型，推荐优先下载"
+            },
+            "animatediff": {
+                "id": "animatediff",
+                "name": "AnimateDiff",
+                "description": "卡通风格动画生成模型",
+                "source": "huggingface",
+                "repo": "guoyww/animatediff-motion-adapter-v1-5-2",
+                "size_gb": 4.0,
+                "required": False,
+                "reason": "适合卡通风格动画"
+            },
+            "cogvideox": {
+                "id": "cogvideox",
+                "name": "CogVideoX-5b",
+                "description": "高质量视频生成模型（需要大显存）",
+                "source": "huggingface",
+                "repo": "THUDM/CogVideoX-5b",
+                "size_gb": 20.0,
+                "required": False,
+                "reason": "质量最高但需要大显存"
+            },
+            "svd": {
+                "id": "svd",
+                "name": "Stable Video Diffusion",
+                "description": "图像转视频模型（需要 CUDA 支持）",
+                "source": "huggingface",
+                "repo": "stabilityai/stable-video-diffusion-img2vid-xt",
+                "size_gb": 12.0,
+                "required": False,
+                "reason": "用于图像转视频，需要 CUDA 支持"
+            },
+            "animatediff_sd": {
+                "id": "animatediff_sd",
+                "name": "AnimateDiff SD Checkpoint",
+                "description": "AnimateDiff 配套 SD 模型",
+                "source": "huggingface",
+                "repo": "frankjoshua/toonyou_beta6",
+                "size_gb": 4.0,
+                "required": False,
+                "reason": "AnimateDiff 配套使用"
+            }
+        }
         
-        actual_path = None
-        for path in check_paths:
-            if path.exists():
-                actual_path = path
-                break
+        # 获取已安装的模型（使用 ModelDownloader 的 check_existing_models 方法）
+        installed_models = set()
+        try:
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from download_models import ModelDownloader
+            downloader = ModelDownloader(output_dir=str(models_dir))
+            for mid in model_configs.keys():
+                exists, _ = downloader.check_existing(mid)
+                if exists:
+                    installed_models.add(mid)
+        except Exception as e:
+            log(f"检查已安装模型时出错：{e}", "WARNING")
         
-        if actual_path is None:
-            return 0.0
+        # 构建完整模型列表
+        models = []
+        for mid, config in model_configs.items():
+            is_installed = mid in installed_models
+            # 使用实际路径
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent))
+                from download_models import ModelDownloader
+                downloader = ModelDownloader(output_dir=str(models_dir))
+                model_info = downloader.MODELS_REGISTRY.get(mid, {})
+                # 优先使用 check_pattern（实际下载路径），回退到 path_pattern
+                check_pattern = model_info.get('check_pattern', model_info.get('path_pattern', mid))
+                actual_path = str(models_dir / check_pattern) if is_installed else None
+            except:
+                actual_path = None
+            
+            models.append({
+                'id': config['id'],
+                'name': config['name'],
+                'description': config['description'],
+                'source': config['source'],
+                'repo': config['repo'],
+                'size_gb': config['size_gb'],
+                'required': config['required'],
+                'reason': config['reason'],
+                'installed': is_installed,
+                'status': 'installed' if is_installed else 'available',
+                'path': actual_path
+            })
         
-        total_size = 0
-        for f in actual_path.rglob('*'):
-            if f.is_file():
-                total_size += f.stat().st_size
+        # 排序：已安装的在前，必需的在前
+        models.sort(key=lambda x: (not x['installed'], not x['required'], x['name']))
         
-        actual_gb = total_size / (1024 ** 3)
-        return round(actual_gb, 2)
-    except Exception:
-        return 0.0
+        return jsonify({
+            'models': models,
+            'total': len(models),
+            'installed_count': len(installed_models),
+            'success': True
+        })
+        
+    except Exception as e:
+        import traceback
+        log(f"模型列表 API 错误：{e}", "ERROR")
+        log(traceback.format_exc(), "ERROR")
+        return jsonify({
+            'error': f'获取模型列表失败：{str(e)}',
+            'models': [],
+            'total': 0,
+            'success': False
+        }), 500
 
+@app.route('/api/models/create-zip', methods=['POST'])
+def api_create_model_zip():
+    """API: 创建模型zip压缩包"""
+    try:
+        import uuid
+        data = request.get_json() or {}
+        model_name = data.get('model')
+        compress_level = data.get('compress_level', 9)
+        auto_extract = data.get('auto_extract', True)
+        
+        if not model_name:
+            return jsonify({'error': '请指定要打包的模型名称'}), 400
+        
+        task_id = str(uuid.uuid4())
+        
+        # 创建任务
+        tasks[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'type': 'model_zip',
+            'model': model_name,
+            'auto_extract': auto_extract,
+            'start_time': datetime.now().isoformat(),
+            'log': f'开始打包模型：{model_name}\n'
+        }
+        
+        # 后台线程执行打包
+        def run_packaging():
+            import sys
+            from io import StringIO
+            from contextlib import redirect_stdout
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from download_models import ModelDownloader
+            
+            task = tasks[task_id]
+            
+            try:
+                # 创建下载器
+                downloader = ModelDownloader(output_dir='./models', max_workers=1)
+                
+                # 重定向输出以捕获日志
+                output = StringIO()
+                with redirect_stdout(output):
+                    # 打包模型（支持自动解压）
+                    result = downloader.create_model_zip(
+                        model_name=model_name,
+                        compress_level=compress_level,
+                        auto_extract=auto_extract
+                    )
+                
+                task['log'] += output.getvalue()
+                task['status'] = 'completed'
+                task['progress'] = 100
+                task['result'] = {
+                    'success': True, 
+                    'message': f'模型 {model_name} 打包成功', 
+                    'zip_path': result.get('zip_path'),
+                    'extract_result': result.get('extract_result')
+                }
+                
+            except Exception as e:
+                task['log'] += f"错误：{str(e)}\n"
+                task['status'] = 'failed'
+                task['progress'] = 100
+                task['result'] = {'success': False, 'error': str(e)}
+        
+        # 启动线程
+        thread = threading.Thread(target=run_packaging)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({'task_id': task_id, 'success': True})
+    
+    except Exception as e:
+        import traceback
+        log(f"模型打包 API 错误：{e}", "ERROR")
+        log(traceback.format_exc(), "ERROR")
+        return jsonify({'error': f'服务器内部错误：{str(e)}'}), 500
 
 @app.route('/api/models/install', methods=['POST'])
 def api_install_models():
@@ -747,13 +747,14 @@ def api_install_models():
             from io import StringIO
             from contextlib import redirect_stdout
             sys.path.insert(0, str(Path(__file__).parent.parent))
-            from download_models import ModelDownloader
-            
-            task = tasks[task_id]
             
             try:
-                # 创建下载器
-                downloader = ModelDownloader(output_dir='./models', max_workers=2)
+                from download_models import SmartDownloader
+                
+                task = tasks[task_id]
+                
+                # 创建下载器（启用多线程）
+                downloader = SmartDownloader(output_dir='./models', use_multithread=True)
                 
                 # 检查已存在的模型
                 existing = downloader.check_existing_models(models)
@@ -910,6 +911,97 @@ def api_cleanup_models():
 
 
 @app.route('/api/models/delete', methods=['POST'])
+
+@app.route('/api/models/resume', methods=['POST'])
+def api_models_resume():
+    """API: 恢复模型下载任务（异步，返回 task_id）"""
+    import json
+    
+    try:
+        data = request.get_json() or {}
+        model_name = data.get('model') or data.get('task_id') or 'modelscope'
+        
+        task_id = str(uuid.uuid4())
+        
+        tasks[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'model_name': model_name,
+            'start_time': datetime.now().isoformat(),
+            'log': f'开始续传模型：{model_name}\n'
+        }
+        
+        def run_resume():
+            import sys
+            from io import StringIO
+            from contextlib import redirect_stdout
+            
+            log_lines = [f'开始续传模型：{model_name}']
+            output_dir = Path('./models')
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent))
+                from download_models import ModelDownloader
+                downloader = ModelDownloader(output_dir=str(output_dir), max_workers=1)
+                
+                # 检查已存在的模型
+                existing = downloader.check_existing_models([model_name])
+                if existing.get(model_name, False):
+                    tasks[task_id]['status'] = 'completed'
+                    tasks[task_id]['progress'] = 100
+                    tasks[task_id]['log'] = f'模型 {model_name} 已存在，跳过下载\n'
+                    tasks[task_id]['path'] = str(output_dir / model_name)
+                    return
+                
+                log_lines.append(f'需要下载模型：{model_name}')
+                tasks[task_id]['log'] = '\n'.join(log_lines)
+                
+                # 重定向输出以捕获日志
+                output = StringIO()
+                with redirect_stdout(output):
+                    result = downloader.download_single(model_name)
+                
+                log_lines.append(output.getvalue())
+                
+                if result.get('success'):
+                    tasks[task_id]['status'] = 'completed'
+                    tasks[task_id]['progress'] = 100
+                    tasks[task_id]['path'] = result.get('path', '')
+                    log_lines.append(f'✅ 模型 {model_name} 下载完成')
+                else:
+                    tasks[task_id]['status'] = 'failed'
+                    tasks[task_id]['error'] = result.get('error', '下载失败')
+                    log_lines.append(f'❌ 模型 {model_name} 下载失败：{result.get("error")}')
+                
+                tasks[task_id]['log'] = '\n'.join(log_lines)
+                
+            except ImportError as e:
+                tasks[task_id]['status'] = 'failed'
+                tasks[task_id]['error'] = f'依赖未安装：{e}'
+                tasks[task_id]['log'] = '\n'.join(log_lines) + f'\n❌ 依赖未安装：{e}'
+                
+            except Exception as e:
+                import traceback
+                tasks[task_id]['status'] = 'failed'
+                tasks[task_id]['error'] = str(e)
+                tasks[task_id]['log'] = '\n'.join(log_lines) + f'\n❌ 异常：{e}\n{traceback.format_exc()}'
+        
+        thread = threading.Thread(target=run_resume)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'message': f'开始续传模型 {model_name}'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 def api_delete_model():
     """API: 删除已安装的模型"""
     try:
@@ -920,22 +1012,17 @@ def api_delete_model():
             return jsonify({'success': False, 'error': '请指定模型'}), 400
         
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from download_models import ModelDownloader
+        from download_models import SmartDownloader
         
-        downloader = ModelDownloader(output_dir='./models')
-        model_info = downloader.model_repos.get(model_id)
+        downloader = SmartDownloader(output_dir='./models')
+        model_info = downloader.MODELS_REGISTRY.get(model_id)
         
         if not model_info:
             return jsonify({'success': False, 'error': f'未知模型：{model_id}'})
         
-        # 确定删除路径
-        if model_info.get('type') == 'huggingface':
-            repo_parts = model_info['repo'].split('/')
-            check_path = Path('./models') / f"models--{repo_parts[0]}--{repo_parts[1]}"
-        elif model_info.get('type') == 'modelscope':
-            check_path = Path('./models') / model_info['repo'].split('/')[-1]
-        else:
-            return jsonify({'success': False, 'error': '不支持的模型类型'})
+        # 使用 path_pattern 确定删除路径
+        path_pattern = model_info.get('path_pattern', model_id)
+        check_path = Path('./models') / path_pattern
         
         if not check_path.exists():
             return jsonify({'success': False, 'error': '模型未安装'})
@@ -984,23 +1071,18 @@ def api_analyze_models():
             return jsonify({'success': False, 'error': '模型目录不存在'})
         
         import shutil
+        
+        # 使用 SmartDownloader 的路径定义
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from download_models import SmartDownloader
+        
+        downloader = SmartDownloader(output_dir=str(models_dir))
         analysis = []
         
-        # 分析每个模型
-        sys.path.insert(0, str(Path(__file__).parent.parent))
-        from download_models import ModelDownloader
-        
-        downloader = ModelDownloader(output_dir='./models')
-        
-        for model_name, model_info in downloader.model_repos.items():
-            # 确定路径
-            if model_info.get('type') == 'huggingface':
-                repo_parts = model_info['repo'].split('/')
-                check_path = models_dir / f"models--{repo_parts[0]}--{repo_parts[1]}"
-            elif model_info.get('type') == 'modelscope':
-                check_path = models_dir / model_info['repo'].split('/')[-1]
-            else:
-                continue
+        for model_name, model_info in downloader.MODELS_REGISTRY.items():
+            # 使用 path_pattern 确定实际路径
+            path_pattern = model_info.get('path_pattern', model_name)
+            check_path = models_dir / path_pattern
             
             if check_path.exists():
                 # 计算大小和文件数
@@ -1026,19 +1108,19 @@ def api_analyze_models():
                     'name': model_name.upper(),
                     'path': str(check_path),
                     'installed': True,
-                    'download_size_gb': model_info.get('size_gb', 0),
+                    'download_size_gb': model_info.get('estimated_size_mb', 0) / 1024,
                     'actual_size_gb': round(total_size / (1024 ** 3), 2),
-                    'ratio': round(total_size / (1024 ** 3) / model_info.get('size_gb', 1), 2) if model_info.get('size_gb', 0) > 0 else 0,
+                    'ratio': round(total_size / (1024 ** 3) / (model_info.get('estimated_size_mb', 1) / 1024), 2) if model_info.get('estimated_size_mb', 0) > 0 else 0,
                     'file_count': file_count,
                     'breakdown': dir_breakdown,
-                    'status': 'ok' if total_size / (1024 ** 3) < model_info.get('size_gb', 1) * 3 else 'warning'
+                    'status': 'ok' if total_size / (1024 ** 3) < (model_info.get('estimated_size_mb', 1) / 1024) * 3 else 'warning'
                 })
             else:
                 analysis.append({
                     'id': model_name,
                     'name': model_name.upper(),
                     'installed': False,
-                    'download_size_gb': model_info.get('size_gb', 0)
+                    'download_size_gb': model_info.get('estimated_size_mb', 0) / 1024
                 })
         
         # 总体统计
@@ -2122,16 +2204,52 @@ def api_install_mode_components(mode):
                 '或者使用云端生成模式（不需要本地模型）'
             ]
         
-        # 4. 检测 FFmpeg
+        # 4. 检测 FFmpeg (严格验证)
         ffmpeg_path = shutil.which('ffmpeg')
-        local_ffmpeg = Path('./ffmpeg/bin/ffmpeg.exe')
-        if ffmpeg_path or local_ffmpeg.exists():
+        local_ffmpeg_exe = Path('./ffmpeg/bin/ffmpeg.exe')
+        
+        def is_valid_ffmpeg(path):
+            """验证 FFmpeg 是否真实可用"""
+            if not path or not Path(path).exists():
+                return False
+            # 检查文件大小（有效的 ffmpeg.exe 至少 50MB）
+            size = Path(path).stat().st_size
+            if size < 50 * 1024 * 1024:  # 小于 50MB 认为无效
+                print(f"[FFmpeg 检测] ❌ 文件过小：{path} ({size / 1024 / 1024:.2f}MB)")
+                return False
+            # 检查是否是 zip 文件（临时下载文件）
+            if str(path).endswith('.zip') or str(path).endswith('.xz'):
+                print(f"[FFmpeg 检测] ❌ 未解压的压缩包：{path}")
+                return False
+            # 尝试执行获取版本
+            try:
+                import subprocess
+                result = subprocess.run(
+                    [str(path), '-version'],
+                    capture_output=True,
+                    timeout=5
+                )
+                return result.returncode == 0
+            except Exception as e:
+                print(f"[FFmpeg 检测] ❌ 无法执行：{e}")
+                return False
+        
+        if is_valid_ffmpeg(ffmpeg_path):
             checks['ffmpeg']['status'] = 'ok'
-            path = ffmpeg_path or str(local_ffmpeg)
-            checks['ffmpeg']['message'] = f'FFmpeg 已安装：{path}'
-            checks['ffmpeg']['details'] = [f'路径：{path}']
+            checks['ffmpeg']['message'] = f'FFmpeg 已安装 (系统 PATH)'
+            checks['ffmpeg']['details'] = [f'路径：{ffmpeg_path}']
+        elif is_valid_ffmpeg(str(local_ffmpeg_exe)):
+            checks['ffmpeg']['status'] = 'ok'
+            checks['ffmpeg']['message'] = f'FFmpeg 已安装 (本地)'
+            checks['ffmpeg']['details'] = [f'路径：{local_ffmpeg_exe}']
         else:
             checks['ffmpeg']['status'] = 'warning'
+            checks['ffmpeg']['message'] = 'FFmpeg 未安装'
+            checks['ffmpeg']['details'] = [
+                'FFmpeg 是视频合并所必需的',
+                '可通过 Web 界面 → FFmpeg → 自动下载',
+                '或手动下载后放到 ./ffmpeg/bin/ffmpeg.exe'
+            ]
             checks['ffmpeg']['message'] = 'FFmpeg 未安装'
             checks['ffmpeg']['details'] = [
                 'FFmpeg 是视频合并所必需的',
@@ -2445,11 +2563,19 @@ DEFAULT_CONFIG = {
     'fps': 24,
     'guidance_scale': 7.5,
     'seed': -1,
-    # 云端 AI 配置
-    'ai_api_type': 'qwen',  # qwen, openai, clove
+    # 云端 AI 配置 - API Key 模式或 Cookie 模式
+    'ai_mode': 'api_key',  # 'api_key' or 'cookie'
+    # API Key 模式参数
+    'ai_integration_type': 'openai_chat',  # openai_chat, anthropic, dashscope, custom
+    'ai_api_provider': 'gpt-4o-mini',  # API provider name (e.g., gpt-4o-mini, claude-sonnet)
     'ai_api_key': '',
-    'ai_api_base': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    'ai_model_name': 'qwen-turbo',
+    'ai_api_base': 'https://api.openai.com/v1',
+    'ai_model_name': 'gpt-4o-mini',
+    # Cookie 模式参数
+    'cookie_apis': 'doubao',  # doubao, ernie, kimi, qwen-custom
+    'ai_cookie_value': '',
+    'cookie_refresh_url': '',
+    # 通用参数
     'ai_timeout': 60,
     'ai_max_retries': 3
 }
@@ -2523,12 +2649,6 @@ def api_set_config():
             'success': False,
             'error': str(e)
         }), 500
-
-
-@app.route('/config')
-def config_page():
-    """AI Configuration page"""
-    return render_template('ai_config.html')
 
 
 # ========== Project Management API ==========
@@ -2777,15 +2897,15 @@ def api_analyze_scenes():
                 'hint': '请运行：pip install requests'
             }), 500
         
-        # 获取 AI 配置
+        # 获取 AI 配置 (用于回退场景)
         config = load_config()
         
-        # 创建分析器实例（传入云端 AI 配置）
+        # 创建分析器实例（使用 MultiAPIManager）
         analyzer = AISceneAnalyzer(
-            model_type=config.get('ai_api_type', 'qwen'),
-            model_name=config.get('ai_model_name', 'qwen-turbo'),
-            api_base=config.get('ai_api_base', 'https://dashscope.aliyuncs.com/compatible-mode/v1'),
-            api_key=config.get('ai_api_key', '')
+            use_multi_api_manager=True,
+            priority_tags=['scene'],
+            timeout=30,
+            verbose=True
         )
         
         # 执行 AI 场景分析
@@ -2803,6 +2923,11 @@ def api_analyze_scenes():
             
             for scene in result['scenes']:
                 scene['duration'] = round(avg_duration, 1)
+                # 将 AI 返回的 text 字段映射为前端期望的 prompt 字段
+                if 'text' in scene and scene['text']:
+                    scene['prompt'] = scene['text']
+                elif 'prompt' not in scene:
+                    scene['prompt'] = ''
         
         return jsonify({
             'success': True,
@@ -2828,6 +2953,53 @@ def api_analyze_scenes():
             'system': system,
             'url': url if 'url' in locals() else 'N/A'
         }), status_code
+
+
+@app.route('/api/scenes', methods=['POST'])
+def api_save_scenes():
+    """API: 保存场景配置"""
+    try:
+        data = request.get_json() or {}
+        scenes = data.get('scenes', [])
+        
+        if not scenes:
+            return jsonify({
+                'success': False,
+                'error': '场景不能为空'
+            }), 400
+        
+        # 将场景信息保存到临时配置文件
+        import uuid
+        import json
+        from pathlib import Path
+        
+        task_id = str(uuid.uuid4())
+        config_dir = Path(app.config['UPLOAD_FOLDER']) / 'scene_configs'
+        config_dir.mkdir(parents=True, exist_ok=True)
+        
+        config_file = config_dir / f'{task_id}.json'
+        config_data = {
+            'task_id': task_id,
+            'scenes': scenes,
+            'created_at': datetime.now().isoformat()
+        }
+        
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, ensure_ascii=False, indent=2)
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'message': f'已保存 {len(scenes)} 个场景'
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 @app.route('/api/scenes/confirm', methods=['POST'])
@@ -2887,103 +3059,85 @@ def scenes_confirm_page():
 
 @app.route('/api/check-ffmpeg', methods=['GET'])
 def api_check_ffmpeg():
-    """API: 检查 FFmpeg 安装状态"""
+    """API: 检查 FFmpeg 安装状态（严格验证）"""
     import platform
     import shutil
     import subprocess
     from pathlib import Path
     
     try:
-        # 检查 FFmpeg 是否在 PATH 中
-        ffmpeg_path = shutil.which('ffmpeg')
-        
-        if ffmpeg_path:
-            # 获取版本信息
-            result = subprocess.run(
-                ['ffmpeg', '-version'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            version_line = result.stdout.split('\n')[0] if result.stdout else '未知版本'
+        def verify_ffmpeg(path):
+            """严格验证 FFmpeg 是否真实可用"""
+            if not path or not Path(path).exists():
+                return None
             
+            # 检查文件大小（有效的 ffmpeg.exe 至少 50MB）
+            size = Path(path).stat().st_size
+            if size < 50 * 1024 * 1024:
+                print(f"[FFmpeg 检测] ❌ 文件过小：{path} ({size / 1024 / 1024:.2f}MB)")
+                return None
+            
+            # 检查是否是压缩包
+            if str(path).endswith('.zip') or str(path).endswith('.xz') or str(path).endswith('.7z'):
+                print(f"[FFmpeg 检测] ❌ 未解压的压缩包：{path}")
+                return None
+            
+            # 尝试执行获取版本
+            try:
+                result = subprocess.run(
+                    [str(path), '-version'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    version_line = result.stdout.split('\n')[0] if result.stdout else '本地版本'
+                    return {'path': str(path), 'version': version_line}
+                else:
+                    print(f"[FFmpeg 检测] ❌ 执行失败：{result.stderr[:200] if result.stderr else '未知错误'}")
+                    return None
+            except Exception as e:
+                print(f"[FFmpeg 检测] ❌ 无法执行：{e}")
+                return None
+        
+        # 1. 检查系统PATH中的 FFmpeg
+        ffmpeg_path = shutil.which('ffmpeg')
+        result = verify_ffmpeg(ffmpeg_path)
+        if result:
             return jsonify({
                 'success': True,
                 'installed': True,
-                'path': ffmpeg_path,
-                'version': version_line,
+                'path': result['path'],
+                'version': result['version'],
                 'source': 'system'
             })
-        else:
-            # 检查项目目录是否有 FFmpeg
-            local_ffmpeg = Path('./ffmpeg')
-            if local_ffmpeg.exists():
-                # 可能的 ffmpeg 路径（按优先级排序）
-                possible_paths = []
-                
-                if platform.system() == 'Windows':
-                    possible_paths = [
-                        local_ffmpeg / 'bin' / 'ffmpeg.exe',  # 新下载脚本的路径
-                        local_ffmpeg / 'ffmpeg.exe',  # 旧版本路径
-                        local_ffmpeg / 'ffmpeg-win64-static' / 'ffmpeg.exe',
-                    ]
-                else:
-                    possible_paths = [
-                        local_ffmpeg / 'bin' / 'ffmpeg',  # 新下载脚本的路径
-                        local_ffmpeg / 'ffmpeg',  # 旧版本路径
-                    ]
-                
-                # 优先检查标准路径
-                for ffmpeg_exe in possible_paths:
-                    if ffmpeg_exe.exists():
-                        return jsonify({
-                            'success': True,
-                            'installed': True,
-                            'path': str(ffmpeg_exe),
-                            'version': '本地版本',
-                            'source': 'local'
-                        })
-                
-                # 如果还没找到，递归搜索
-                for ffmpeg_exe in local_ffmpeg.rglob('ffmpeg*'):
-                    if ffmpeg_exe.is_file():
-                        # 验证是否为可执行文件
-                        if platform.system() != 'Windows':
-                            import os
-                            if not os.access(ffmpeg_exe, os.X_OK):
-                                continue
-                        return jsonify({
-                            'success': True,
-                            'installed': True,
-                            'path': str(ffmpeg_exe),
-                            'version': '本地版本',
-                            'source': 'local'
-                        })
-            
+        
+        # 2. 检查本地 ./ffmpeg/bin/ffmpeg.exe
+        local_ffmpeg = Path('./ffmpeg/bin/ffmpeg.exe')
+        result = verify_ffmpeg(str(local_ffmpeg))
+        if result:
             return jsonify({
                 'success': True,
-                'installed': False,
-                'message': 'FFmpeg 未安装'
+                'installed': True,
+                'path': result['path'],
+                'version': result['version'],
+                'source': 'local'
             })
-            
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/check-resources', methods=['GET'])
-def api_check_resources():
-    """API: 检查系统资源是否满足 FFmpeg 要求"""
-    import platform
-    
-    try:
-        # 1. 检测磁盘空间
-        import shutil
-        total_space = shutil.disk_usage('/')
-        free_space_gb = total_space.free / (1024 ** 3)
         
+        # 3. 未找到可用的 FFmpeg
+        return jsonify({
+            'success': True,
+            'installed': False,
+            'path': None,
+            'version': None,
+            'source': None,
+            'message': 'FFmpeg 未安装或无效',
+            'suggestions': [
+                '请通过 Web 界面 → FFmpeg → 自动下载',
+                '或手动下载后放到 ./ffmpeg/bin/ffmpeg.exe',
+                '系统安装：sudo apt install ffmpeg (Linux)'
+            ]
+        })
         # 2. 检测内存
         import psutil
         total_memory = psutil.virtual_memory().total / (1024 ** 3)
@@ -3078,34 +3232,284 @@ def api_check_resources():
         }), status_code
 
 
-@app.route('/api/download-ffmpeg', methods=['POST'])
-def api_download_ffmpeg():
-    """API: 自动下载 FFmpeg 到项目目录"""
-    import platform
-    import requests
-    import zipfile
-    import tarfile
-    import time
-    import stat
-    from pathlib import Path
+
+@app.route('/api/tasks', methods=['GET'])
+def api_get_tasks():
+    """API: 获取所有任务状态"""
+    try:
+        # 返回全局 tasks 变量（如果存在）
+        all_tasks = {}
+        if 'tasks' in dir():
+            all_tasks = tasks
+        elif 'tasks' in globals():
+            all_tasks = globals()['tasks']
+        
+        # 转换为列表格式
+        task_list = []
+        for task_id, task_data in all_tasks.items():
+            task_list.append({
+                'task_id': task_id,
+                **task_data
+            })
+        
+        return jsonify({
+            'tasks': task_list,
+            'total': len(task_list),
+            'success': True
+        })
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'tasks': [],
+            'success': False
+        }), 500
+
+
+def _download_ffmpeg_multithread(session, url, file_path, resume_pos=0, total_size=0, thread_count=4):
+    """
+    多线程下载 FFmpeg 文件，支持断点续传
+    
+    参数:
+        session: requests Session 对象
+        url: 下载 URL
+        file_path: 目标文件路径
+        resume_pos: 续传起始位置
+        total_size: 文件总大小
+        thread_count: 线程数
+    
+    返回:
+        (success, downloaded_size): 是否成功，下载的字节数
+    """
+    import threading
+    
+    print(f"[FFmpeg 多线程] 🚀 启动 {thread_count} 个线程开始下载")
+    
+    # 计算每个线程的下载范围
+    remaining_size = total_size - resume_pos
+    segment_size = remaining_size // thread_count
+    
+    # 创建线程和进度跟踪
+    lock = threading.Lock()
+    downloaded_segments = []
+    errors = []
+    progress_lock = threading.Lock()
+    total_downloaded = 0
+    start_time = time.time()
+    
+    def download_segment(thread_id, start_pos, end_pos):
+        """下载文件片段"""
+        nonlocal total_downloaded
+        
+        segment_path = file_path.parent / f"{file_path.name}.part{thread_id}"
+        
+        try:
+            # 检查是否需要跳过此线程（续传情况）
+            if segment_path.exists():
+                existing_size = segment_path.stat().st_size
+                expected_size = end_pos - start_pos + 1
+                if existing_size >= expected_size:
+                    print(f"[FFmpeg 多线程] ✅ 线程 {thread_id} 片段已完整，跳过")
+                    with lock:
+                        downloaded_segments.append((thread_id, segment_path))
+                    return
+            
+            print(f"[FFmpeg 多线程] 📡 线程 {thread_id} 开始：{start_pos/(1024*1024):.2f}MB - {end_pos/(1024*1024):.2f}MB")
+            
+            headers = {'Range': f'bytes={start_pos}-{end_pos}'}
+            
+            response = session.get(url, headers=headers, stream=True, timeout=(10, 300))
+            
+            if response.status_code not in [200, 206]:
+                raise Exception(f"HTTP {response.status_code}")
+            
+            # 下载片段到临时文件
+            with open(segment_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        with progress_lock:
+                            total_downloaded += len(chunk)
+                            # 每下载 2MB 更新一次进度
+                            if total_downloaded % (2 * 1024 * 1024) < 8192:
+                                elapsed = time.time() - start_time
+                                speed = total_downloaded / (1024 * 1024) / elapsed if elapsed > 0 else 0
+                                percent = ((resume_pos + total_downloaded) / total_size * 100) if total_size > 0 else 0
+                                print(f"  📊 多线程进度：{percent:.1f}% ({(resume_pos + total_downloaded)/(1024*1024):.1f}MB/{total_size/(1024*1024):.1f}MB) - 速度：{speed:.2f}MB/s")
+            
+            print(f"[FFmpeg 多线程] ✅ 线程 {thread_id} 完成")
+            
+            with lock:
+                downloaded_segments.append((thread_id, segment_path))
+        
+        except Exception as e:
+            print(f"[FFmpeg 多线程] ❌ 线程 {thread_id} 失败：{e}")
+            with lock:
+                errors.append((thread_id, str(e)))
+    
+    # 创建并启动线程
+    threads = []
+    for i in range(thread_count):
+        start = resume_pos + i * segment_size
+        # 最后一个线程下载剩余所有数据
+        end = total_size - 1 if i == thread_count - 1 else start + segment_size - 1
+        
+        if start >= total_size:
+            continue
+        
+        thread = threading.Thread(target=download_segment, args=(i, start, end))
+        threads.append(thread)
+        thread.start()
+    
+    # 等待所有线程完成
+    for thread in threads:
+        thread.join(timeout=600)  # 每个线程最多等待 10 分钟
+    
+    # 检查是否有错误
+    if errors:
+        print(f"[FFmpeg 多线程] ❌ {len(errors)}/{thread_count} 个线程失败")
+        for tid, err in errors:
+            print(f"  - 线程 {tid}: {err}")
+        return False, 0
+    
+    # 按顺序合并片段
+    print(f"[FFmpeg 多线程] 🔗 合并 {len(downloaded_segments)} 个片段")
     
     try:
+        # 按线程 ID 排序
+        downloaded_segments.sort(key=lambda x: x[0])
+        
+        # 打开目标文件
+        mode = 'wb' if resume_pos == 0 else 'ab'
+        with open(file_path, mode) as target:
+            for thread_id, segment_path in downloaded_segments:
+                print(f"[FFmpeg 多线程]   合并片段 {thread_id}: {segment_path.name}")
+                with open(segment_path, 'rb') as segment:
+                    # 复制内容到目标文件
+                    while True:
+                        chunk = segment.read(1024 * 1024)  # 每次 1MB
+                        if not chunk:
+                            break
+                        target.write(chunk)
+                
+                # 删除临时片段文件
+                segment_path.unlink()
+                print(f"[FFmpeg 多线程]   ✅ 删除临时片段")
+        
+        print(f"[FFmpeg 多线程] ✅ 合并完成，总大小：{file_path.stat().st_size / (1024*1024):.2f}MB")
+        return True, total_downloaded
+    
+    except Exception as e:
+        print(f"[FFmpeg 多线程] ❌ 合并失败：{e}")
+        return False, 0
+
+
+
+def _extract_ffmpeg(file_path, output_dir, temp_dir, system):
+    """解压 FFmpeg 到目标目录（辅助函数）"""
+    import zipfile
+    import tarfile
+    import shutil
+    import stat
+    
+    try:
+        extracted_files = []
+        
+        if system == 'Windows':
+            # Windows: 解压 ZIP 文件
+            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                names = zip_ref.namelist()
+                
+                # 找到顶层目录
+                ffmpeg_dir = None
+                for name in names:
+                    if 'ffmpeg' in name.lower() and ('ffmpeg.exe' in name or 'ffprobe' in name):
+                        ffmpeg_dir = name.split('/')[0]
+                        break
+                
+                if not ffmpeg_dir:
+                    for name in names:
+                        if '/' in name and name.endswith('/'):
+                            ffmpeg_dir = name.rstrip('/')
+                            break
+                
+                if ffmpeg_dir:
+                    zip_ref.extractall(temp_dir)
+                    src_bin = temp_dir / ffmpeg_dir / 'bin'
+                    if src_bin.exists():
+                        shutil.copytree(src_bin, output_dir, dirs_exist_ok=True)
+                        extracted_files = ['ffmpeg.exe', 'ffprobe.exe']
+                    else:
+                        for name in names:
+                            if name.endswith('ffmpeg.exe') or name.endswith('ffprobe.exe'):
+                                zip_ref.extract(name, temp_dir)
+                                src = temp_dir / name
+                                dst = output_dir / src.name
+                                shutil.copy2(src, dst)
+                                extracted_files.append(src.name)
+        else:
+            # Linux/macOS: 解压 TAR.XZ 文件
+            import subprocess
+            result = subprocess.run(['tar', '-xf', str(file_path), '-C', str(temp_dir)], 
+                          capture_output=True, text=True)
+            if result.returncode != 0:
+                raise Exception(f"解压失败：{result.stderr}")
+            
+            for ffmpeg_file in temp_dir.rglob('ffmpeg'):
+                if ffmpeg_file.is_file():
+                    shutil.copy2(ffmpeg_file, output_dir / 'ffmpeg')
+                    extracted_files.append('ffmpeg')
+                    break
+        
+        # 清理临时文件
+        if file_path.exists():
+            file_path.unlink()
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        return jsonify({
+            'success': True,
+            'path': str(output_dir.parent),
+            'message': f'FFmpeg 解压完成',
+            'files': ', '.join(extracted_files),
+            'note': '请重启 Web 服务以使用 FFmpeg'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'解压失败：{str(e)}'
+        }), 500
+
+
+@app.route('/api/download-ffmpeg', methods=['POST'])
+def api_download_ffmpeg():
+    """API: 自动下载 FFmpeg（增强版 - 支持多线程和断点续传）"""
+    import psutil  # 导入 psutil 用于资源检查
+    
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        
         # ==== 调试日志 ====
         print("[FFmpeg 下载] ====== 开始下载流程 ======")
         
-        # 先检查资源
-        resource_check = api_check_resources()
-        resource_data = resource_check.get_json() if hasattr(resource_check, 'get_json') else {}
-        
-        if not resource_data.get('can_install', True):
-            return jsonify({
-                'success': False,
-                'error': '系统资源不足，请先释放资源',
-                'suggestions': resource_data.get('suggestions', [])
-            }), 400
-        
+        # 提前定义 system 变量，避免后续 except 块引用未定义
         system = platform.system()
         machine = platform.machine()
+        
+        # 资源检查（简化版）
+        try:
+            cpu_percent = psutil.cpu_percent(interval=0.5)
+            memory_percent = psutil.virtual_memory().percent
+            disk_percent = psutil.disk_usage('/').percent if system != 'Windows' else psutil.disk_usage('C:').percent
+            
+            if cpu_percent > 95 or memory_percent > 95 or disk_percent > 98:
+                print(f"[FFmpeg 下载] ⚠️  系统资源紧张：CPU {cpu_percent}%, 内存 {memory_percent}%, 磁盘 {disk_percent}%")
+                return jsonify({
+                    'success': False,
+                    'error': '系统资源不足，请关闭其他程序后重试',
+                    'resource_usage': f'CPU: {cpu_percent}%, 内存：{memory_percent}%, 磁盘：{disk_percent}%'
+                }), 400
+        except Exception as e:
+            print(f"[FFmpeg 下载] ⚠️  资源检查失败：{e}，继续下载流程")
         arch = 'amd64' if machine in ['x86_64', 'AMD64'] else 'arm64' if machine in ['arm64', 'aarch64'] else machine
         
         # FFmpeg 静态编译版本下载地址
@@ -3119,16 +3523,27 @@ def api_download_ffmpeg():
         # 如果主镜像失败，自动切换到备用镜像
         urls = {
             'Windows': [
-                # GitHub 镜像速度更快 (0.67-0.77MB/s vs 0.21MB/s)
+                # GitHub Releases - 支持 Range 请求，可多线程下载 ✅
                 'https://github.com/GyanD/codexffmpeg/releases/download/6.1/ffmpeg-6.1-essentials_build.zip',
+                # GitHub Builds - 支持 Range 请求，文件更大 ✅
                 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip',
-                'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',  # 官方备用
+                # 国内镜像（如果 GitHub 访问慢，可尝试）
+                'https://ghp.ci/https://github.com/GyanD/codexffmpeg/releases/download/6.1/ffmpeg-6.1-essentials_build.zip',
+                # 官方备用
+                'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
             ],
             'Linux': [
+                # 国内镜像优先
+                f'https://mirrors.aliyun.com/github-release/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-{arch}-gpl.tar.xz',
+                f'https://mirrors.aliyun.com/github-release/johnvansickle/ffmpeg/releases/ffmpeg-release-{arch}-static.tar.xz',
+                # 官方镜像（备用）
                 f'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-{arch}-gpl.tar.xz',
                 f'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-{arch}-static.tar.xz',
             ],
             'Darwin': [
+                # 国内镜像优先
+                'https://mirrors.aliyun.com/github-release/evermeet/ffmpeg/releases/download/5.1.2/ffmpeg-5.1.2.zip',
+                # 官方镜像（备用）
                 'https://evermeet.cx/ffmpeg/getrelease/zip',
                 'https://github.com/evermeet/ffmpeg/releases/download/5.1.2/ffmpeg-5.1.2.zip',
             ]
@@ -3169,6 +3584,23 @@ def api_download_ffmpeg():
         backup_urls = url_list[1:]
         filename = 'ffmpeg.zip' if system == 'Windows' else 'ffmpeg.tar.xz'
         file_path = temp_dir / filename
+        
+        # ==== 断点续传检查 ====
+        resume_pos = 0
+        if file_path.exists():
+            file_size = file_path.stat().st_size
+            if file_size > 0 and file_size < 100 * 1024 * 1024:  # 0 < size < 100MB
+                resume_pos = file_size
+                print(f"[FFmpeg 下载] ✅ 发现部分下载的文件：{file_path} ({file_size / 1024 / 1024:.2f}MB)")
+                print(f"[FFmpeg 下载] ℹ️  将从 {resume_pos / 1024 / 1024:.2f}MB 处继续下载")
+            elif file_size >= 100 * 1024 * 1024:  # >= 100MB，可能是完整文件
+                print(f"[FFmpeg 下载] ⚠️  文件已存在且大小合理：{file_size / 1024 / 1024:.2f}MB")
+                print(f"[FFmpeg 下载] ℹ️  跳过下载，直接解压")
+                # 直接跳到解压步骤
+                return _extract_ffmpeg(file_path, output_dir, temp_dir, system)
+            else:
+                print(f"[FFmpeg 下载] ⚠️  文件存在但大小为 0 或异常，删除后重新下载")
+                file_path.unlink()
         
         # 使用流式下载，避免内存占用过大
         # 先验证 URL 可用性
@@ -3216,27 +3648,140 @@ def api_download_ffmpeg():
                 'suggestion': '请检查网络连接'
             }), 503
         
-        response = requests.get(url, stream=True, timeout=(5, 300))  # 连接 5s，读取 300s
-        total_size = int(response.headers.get('content-length', 0))
-        total_mb = total_size / (1024 * 1024)  # 转换为 MB
+        # 使用会话和重试机制
+        session = requests.Session()
+        session.trust_env = True  # 使用系统代理设置
         
-        with open(file_path, 'wb') as f:
-            downloaded = 0
-            chunk_count = 0
-            start_time = time.time()
+        # 配置重试策略
+        from urllib3.util.retry import Retry
+        from requests.adapters import HTTPAdapter
+        
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        
+        # ==== 多线程下载（增强版）====
+        import threading
+        
+        # 获取文件总大小
+        try:
+            head_resp = session.head(url, timeout=10)
+            file_total_size = int(head_resp.headers.get('content-length', 0))
+            supports_range = head_resp.headers.get('accept-ranges', '').lower() == 'bytes'
+        except Exception as e:
+            print(f"[FFmpeg 下载] ⚠️  无法获取文件大小：{e}")
+            file_total_size = 0
+            supports_range = False
+        
+        # 计算剩余需要下载的大小
+        remaining_size = file_total_size - resume_pos if file_total_size > 0 else 0
+        
+        # 决定是否使用多线程
+        # 条件：文件 > 10MB，支持 Range 请求，剩余下载量 > 5MB
+        use_multi_thread = (
+            file_total_size > 10 * 1024 * 1024 and
+            supports_range and
+            remaining_size > 5 * 1024 * 1024
+        )
+        
+        if use_multi_thread:
+            print(f"[FFmpeg 下载] 🚀 启用多线程下载模式（4 线程）")
+            print(f"[FFmpeg 下载] 📊 文件总大小：{file_total_size / 1024 / 1024:.2f}MB")
+            print(f"[FFmpeg 下载] 📊 已下载：{resume_pos / 1024 / 1024:.2f}MB")
+            print(f"[FFmpeg 下载] 📊 剩余：{remaining_size / 1024 / 1024:.2f}MB")
             
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:  # 过滤 keep-alive 块
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    chunk_count += 1
+            # 使用多线程下载
+            success, downloaded_size = _download_ffmpeg_multithread(
+                session, url, file_path, resume_pos, file_total_size
+            )
+            
+            if not success:
+                return jsonify({
+                    'success': False,
+                    'error': '多线程下载失败',
+                    'downloaded_mb': file_path.stat().st_size / 1024 / 1024 if file_path.exists() else 0
+                }), 500
+            
+            downloaded = resume_pos + downloaded_size
+            total_mb = file_total_size / 1024 / 1024
+            print(f"[FFmpeg 下载] ✅ 多线程下载完成：{downloaded / 1024 / 1024:.2f}MB")
+        else:
+            print(f"[FFmpeg 下载] 📌 使用单线程下载模式")
+            if not supports_range:
+                print(f"[FFmpeg 下载] ℹ️  服务器不支持断点续传 (Range 请求)")
+                print(f"[FFmpeg 下载] 💡 提示：这是服务器限制，不影响下载，只是无法多线程加速")
+            elif file_total_size <= 10 * 1024 * 1024:
+                print(f"[FFmpeg 下载] ℹ️  文件较小 (< 10MB)，不需要多线程")
+            elif remaining_size <= 5 * 1024 * 1024:
+                print(f"[FFmpeg 下载] ℹ️  剩余下载量较小 (< 5MB)，使用单线程")
+            
+            # 单线程下载（原有逻辑）
+            chunk_size = 8192
+            downloaded = resume_pos
+            mode = 'wb' if resume_pos == 0 else 'ab'
+            
+            try:
+                headers = {}
+                if resume_pos > 0:
+                    headers['Range'] = f'bytes={resume_pos}-'
+                
+                response = session.get(url, stream=True, headers=headers, timeout=(10, 300))
+                
+                if response.status_code == 206:
+                    print(f"[FFmpeg 下载] ✅ 服务器支持断点续传 (HTTP 206)")
+                elif response.status_code == 200 and resume_pos > 0:
+                    print(f"[FFmpeg 下载] ⚠️  服务器不支持续传，重新下载 (HTTP 200)")
+                    downloaded = 0
+                    mode = 'wb'
+                
+                response.raise_for_status()
+                total_size = int(response.headers.get('content-length', 0))
+                if downloaded > 0:
+                    actual_total = downloaded + total_size
+                    total_mb = actual_total / (1024 * 1024)
+                    print(f"[FFmpeg 下载] 剩余下载量：{total_size / 1024 / 1024:.2f}MB (总：{actual_total / 1024 / 1024:.2f}MB)")
+                else:
+                    total_mb = total_size / (1024 * 1024)
+                
+                with open(file_path, mode) as f:
+                    chunk_count = 0
+                    start_time = time.time()
                     
-                    # 每下载 1MB 打印进度（避免输出过多）
-                    if chunk_count % 128 == 0:  # 128 * 8KB = 1MB
-                        elapsed = time.time() - start_time
-                        speed = downloaded / (1024 * 1024) / elapsed if elapsed > 0 else 0  # MB/s
-                        percent = (downloaded / total_size * 100) if total_size > 0 else 0
-                        print(f"  进度：{percent:.1f}% ({downloaded/(1024*1024):.1f}MB/{total_mb:.1f}MB) - 速度：{speed:.2f}MB/s")
+                    for chunk in response.iter_content(chunk_size=chunk_size):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            chunk_count += 1
+                            
+                            if chunk_count % 128 == 0:
+                                elapsed = time.time() - start_time
+                                actual_downloaded = downloaded - resume_pos if resume_pos > 0 else downloaded
+                                speed = actual_downloaded / (1024 * 1024) / elapsed if elapsed > 0 else 0
+                                percent = (downloaded / (downloaded + total_size - resume_pos) * 100) if resume_pos > 0 else (downloaded / total_size * 100) if total_size > 0 else 0
+                                print(f"  进度：{percent:.1f}% ({downloaded/(1024*1024):.1f}MB/{total_mb:.1f}MB) - 速度：{speed:.2f}MB/s")
+            
+            except requests.exceptions.ChunkedEncodingError as e:
+                print(f"[FFmpeg 下载] ⚠️  网络连接中断：{e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'网络连接中断：{str(e)}',
+                    'partial_download': True,
+                    'downloaded_mb': file_path.stat().st_size / (1024 * 1024) if file_path.exists() else 0,
+                    'suggestion': '请检查网络连接后重试'
+                }), 500
+            except requests.exceptions.RequestException as e:
+                print(f"[FFmpeg 下载] ❌  网络错误：{e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'网络错误：{str(e)}',
+                    'suggestion': '请检查网络连接或尝试备用镜像'
+                }), 500
         
         # ==== 验证下载结果 ====
         print(f"[FFmpeg 下载] 下载完成，验证文件...")
@@ -3643,3 +4188,211 @@ def check_resource_and_pause():
 import threading
 monitor_thread = threading.Thread(target=check_resource_and_pause, daemon=True)
 monitor_thread.start()
+
+
+# ============================================
+# AI API 管理相关 routes (新增)
+# ============================================
+
+@app.route('/api/ai-apis', methods=['GET'])
+def api_list_ai_apis():
+    """获取所有 AI API 配置"""
+    if not ai_api_manager:
+        return jsonify({'success': False, 'error': 'AI API Manager 未初始化'}), 500
+    
+    try:
+        apis = ai_api_manager.list_apis()
+        return jsonify({
+            'success': True,
+            'apis': apis,
+            'stats': ai_api_manager.get_stats()
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ai-apis/<name>', methods=['GET'])
+def api_get_ai_api(name: str):
+    """获取指定 AI API 配置"""
+    if not ai_api_manager:
+        return jsonify({'success': False, 'error': 'AI API Manager 未初始化'}), 500
+    
+    # 查询参数决定是否显示完整 API Key（用于编辑）
+    show_key = request.args.get('show_key', 'false').lower() == 'true'
+    
+    try:
+        config = ai_api_manager.get_api(name, show_key=show_key)
+        if config:
+            return jsonify({'success': True, 'config': config})
+        else:
+            return jsonify({'success': False, 'error': f'配置 {name} 不存在'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ai-apis', methods=['POST'])
+def api_add_ai_api():
+    """添加新 AI API 配置"""
+    if not ai_api_manager:
+        return jsonify({'success': False, 'error': 'AI API Manager 未初始化'}), 500
+    
+    try:
+        data = request.get_json() or {}
+        
+        # 必填字段检查
+        required = ['name', 'api_base']
+        for field in required:
+            if field not in data:
+                return jsonify({'success': False, 'error': f'缺少必填字段：{field}'}), 400
+        
+        # 自动检测模式
+        if 'auto_detect' in data and data['auto_detect']:
+            success, msg, config = ai_api_manager.auto_detect_and_add(
+                name=data['name'],
+                api_base=data['api_base'],
+                api_key=data.get('api_key', '')
+            )
+            if success:
+                return jsonify({'success': True, 'message': msg, 'config': config})
+            else:
+                return jsonify({'success': False, 'error': msg}), 400
+        else:
+            # 手动添加模式
+            success, msg = ai_api_manager.add_api(
+                name=data['name'],
+                api_type=data.get('api_type', 'openai_chat'),
+                provider=data.get('provider', ''),
+                api_key=data.get('api_key', ''),
+                api_base=data['api_base'],
+                model_name=data.get('model_name', ''),
+                timeout=data.get('timeout', 60),
+                max_retries=data.get('max_retries', 3),
+                priority=data.get('priority', 0),
+                usage_tags=data.get('usage_tags', [])
+            )
+            
+            if success:
+                return jsonify({'success': True, 'message': msg})
+            else:
+                return jsonify({'success': False, 'error': msg}), 400
+                
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ai-apis/<name>', methods=['PUT'])
+def api_update_ai_api(name: str):
+    """更新 AI API 配置"""
+    if not ai_api_manager:
+        return jsonify({'success': False, 'error': 'AI API Manager 未初始化'}), 500
+    
+    try:
+        data = request.get_json() or {}
+        data.pop('name', None)
+        
+        success, msg = ai_api_manager.update_api(name, **data)
+        
+        if success:
+            return jsonify({'success': True, 'message': msg})
+        else:
+            return jsonify({'success': False, 'error': msg}), 404
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ai-apis/<name>', methods=['DELETE'])
+def api_delete_ai_api(name: str):
+    """删除 AI API 配置"""
+    if not ai_api_manager:
+        return jsonify({'success': False, 'error': 'AI API Manager 未初始化'}), 500
+    
+    try:
+        success, msg = ai_api_manager.delete_api(name)
+        
+        if success:
+            return jsonify({'success': True, 'message': msg})
+        else:
+            return jsonify({'success': False, 'error': msg}), 404
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ai-apis/<name>/test', methods=['POST'])
+def api_test_ai_api(name: str):
+    """测试 AI API 连接"""
+    if not ai_api_manager:
+        return jsonify({'success': False, 'error': 'AI API Manager 未初始化'}), 500
+    
+    try:
+        success, msg = ai_api_manager.test_api(name)
+        
+        return jsonify({
+            'success': success,
+            'message': msg,
+            'connected': success
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ai-apis/detect', methods=['POST'])
+def api_detect_api_type():
+    """根据 URL 自动检测 API 类型并返回推荐配置"""
+    try:
+        data = request.get_json() or {}
+        api_base = data.get('api_base', '')
+        
+        if not api_base:
+            return jsonify({'success': False, 'error': '缺少 api_base 参数'}), 400
+        
+        from api_manager import AIAPIConfig, AIAPIWrapper
+        wrapper = AIAPIWrapper(AIAPIConfig(name="temp", api_base=api_base))
+        detected_type = wrapper.detect_api_type(api_base)
+        
+        presets = {
+            'openai_chat': {
+                'provider': 'gpt-4o-mini',
+                'model_name': 'gpt-4o-mini',
+                'example_base': 'https://api.openai.com/v1'
+            },
+            'anthropic': {
+                'provider': 'claude-sonnet',
+                'model_name': 'claude-3-5-sonnet-20240620',
+                'example_base': 'https://api.anthropic.com/v1'
+            },
+            'dashscope': {
+                'provider': 'qwen',
+                'model_name': 'qwen-max',
+                'example_base': 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+            },
+            'custom': {
+                'provider': '',
+                'model_name': '',
+                'example_base': ''
+            }
+        }
+        
+        preset = presets.get(detected_type, presets['custom'])
+        
+        return jsonify({
+            'success': True,
+            'detected_type': detected_type,
+            'recommended_config': preset
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+if __name__ == '__main__':
+    print("=" * 60)
+    print("AI 视频生成器 Web 服务")
+    print("=" * 60)
+    print("\n访问地址:")
+    print("  - http://localhost:5000")
+    print("  - http://localhost:5000/setup - 设置向导")
+    print("  - http://localhost:5000/config - AI 配置")
+    print("\n按 Ctrl+C 停止服务\n")
+    
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)

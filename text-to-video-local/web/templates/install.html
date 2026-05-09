@@ -232,11 +232,23 @@
         <div id="step2Models" class="step hidden">
             <h2>🎯 步骤 3: 选择模型</h2>
             <p style="color: #666; font-size: 14px; margin-bottom: 15px;">选择需要下载的 AI 视频生成模型</p>
+            
+            <!-- 模型下载增强功能提示 -->
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #667eea;">
+                <strong>🚀 模型下载增强功能：</strong>
+                <ul style="margin: 10px 0 0 20px; font-size: 13px; color: #666;">
+                    <li>✅ 支持断网续传：下载中断后可继续下载</li>
+                    <li>✅ 支持打包下载：一键获取完整模型压缩包</li>
+                    <li>✅ 自动检测已下载文件：避免重复下载</li>
+                </ul>
+            </div>
+            
             <div id="modelList" style="max-height: 400px; overflow-y: auto; margin-bottom: 20px;">
                 <!-- 模型列表将由 JavaScript 动态加载 -->
             </div>
+            
             <div style="background: #fff3cd; padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
-                <strong>💡 提示：</strong>
+                <strong>💡 模型选择建议：</strong>
                 <ul style="margin: 10px 0 0 20px; font-size: 13px; color: #666;">
                     <li>`modelscope` 是基础模型，推荐优先下载（2.5GB）</li>
                     <li>`animatediff` 适合卡通风格动画（4GB）</li>
@@ -244,11 +256,38 @@
                     <li>`svd` 用于图像转视频，需要 CUDA 支持（12GB）</li>
                 </ul>
             </div>
+            
             <div style="text-align: right; margin-bottom: 20px;">
                 <button class="btn btn-secondary" onclick="selectAllModels()">全选</button>
                 <button class="btn btn-secondary" onclick="deselectAllModels()">全不选</button>
                 <button class="btn btn-secondary" onclick="selectRecommended()">仅推荐</button>
+                <button class="btn btn-secondary" id="btnCheckExisting" onclick="checkExistingModels()">检查已下载</button>
             </div>
+            
+            <!-- 模型操作工具栏 -->
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: flex-end;">
+                <button id="btnResumeAll" class="btn btn-secondary" onclick="resumeAllModelDownloads()">🚦 续传所有中断模型</button>
+                <button id="btnCreateZipAll" class="btn btn-secondary" onclick="createZipForAllModels()">🎒 为所有模型创建压缩包</button>
+                <button id="btnExtractZip" class="btn btn-secondary" onclick="showExtractZipDialog()">📂 解压ZIP模型</button>
+            </div>
+            
+            <!-- ZIP解压对话框 -->
+            <div id="extractZipDialog" class="hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.3); z-index: 1000;">
+                <h3 style="margin-top: 0; color: #667eea;">📂 ZIP模型解压</h3>
+                <div style="margin: 15px 0;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">ZIP文件路径：</label>
+                    <input type="text" id="zipFilePath" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;" placeholder="/workspace/models/modelscope_package.zip">
+                </div>
+                <div style="margin: 15px 0;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">解压目标路径：</label>
+                    <input type="text" id="extractTargetPath" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;" value="./models" placeholder="模型存储目录（默认：./models）">
+                </div>
+                <div style="text-align: right; margin-top: 20px;">
+                    <button class="btn btn-secondary" onclick="hideExtractZipDialog()">取消</button>
+                    <button class="btn" onclick="startExtractZip()">开始解压</button>
+                </div>
+            </div>
+            
             <div style="margin-top: 20px; text-align: right;">
                 <button class="btn btn-secondary" onclick="showStep3FromModels()">跳过模型下载</button>
                 <button class="btn" onclick="startModelInstall()">开始下载模型</button>
@@ -619,6 +658,271 @@
             document.getElementById('step3').classList.remove('hidden');
             document.getElementById('installLog').innerHTML = '安装完成！\n';
             document.getElementById('btnFinishInstall').classList.remove('hidden');
+        }
+        
+        // 检查已下载模型状态
+        async function checkExistingModels() {
+            const logDiv = document.getElementById('installLog');
+            logDiv.innerHTML = '检查已下载模型状态...\n';
+            
+            try {
+                const response = await fetch('/api/models/list');
+                const result = await response.json();
+                
+                if (result.success) {
+                    models = result.models;
+                    
+                    // 更新模型列表显示状态
+                    models.forEach(model => {
+                        const checkbox = document.getElementById('model_' + model.id);
+                        if (checkbox) {
+                            if (model.installed) {
+                                checkbox.checked = true;
+                                checkbox.disabled = true;
+                            } else {
+                                checkbox.checked = false;
+                                checkbox.disabled = false;
+                            }
+                        }
+                    });
+                    
+                    logDiv.innerHTML = '✅ 模型状态检查完成：\n';
+                    models.forEach(model => {
+                        logDiv.innerHTML += `${model.name}: ${model.installed ? '已安装' : '未安装'}\n`;
+                    });
+                    
+                } else {
+                    logDiv.innerHTML = '❌ 检查失败：' + result.error + '\n';
+                }
+            } catch (error) {
+                logDiv.innerHTML = '❌ 检查失败：' + error.message + '\n';
+            }
+        }
+        
+        // 续传所有中断的模型下载
+        async function resumeAllModelDownloads() {
+            const selectedModels = [];
+            models.forEach(model => {
+                if (!model.installed) {
+                    selectedModels.push(model.id);
+                }
+            });
+            
+            if (selectedModels.length === 0) {
+                alert('没有需要续传的模型');
+                return;
+            }
+            
+            if (!confirm(`确定要续传 ${selectedModels.length} 个模型吗？已下载的部分将被保留`)) {
+                return;
+            }
+            
+            startModelResume(selectedModels);
+        }
+        
+        // 开始模型续传
+        async function startModelResume(modelNames) {
+            if (modelNames.length === 0) return;
+            
+            // 显示进度页面
+            document.getElementById('step2Models').classList.add('hidden');
+            document.getElementById('step3').classList.remove('hidden');
+            const logDiv = document.getElementById('installLog');
+            logDiv.innerHTML = `正在续传 ${modelNames.length} 个模型...\n\n`;
+            document.getElementById('installProgress').style.display = 'block';
+            document.getElementById('installProgressBar').style.width = '0%';
+            document.getElementById('installProgressBar').textContent = '0%';
+            document.getElementById('btnFinishInstall').classList.add('hidden');
+            
+            try {
+                // 按顺序续传每个模型
+                for (const modelName of modelNames) {
+                    logDiv.innerHTML += `\n=== 开始续传模型：${modelName} ===\n`;
+                    
+                    const response = await fetch('/api/models/resume', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({model: modelName})
+                    });
+                    
+                    const result = await response.json();
+                    currentInstallTask = result.task_id;
+                    
+                    // 轮询查看进度
+                    await waitForTaskCompletion('/api/task/' + result.task_id, modelName);
+                }
+                
+                logDiv.innerHTML += '\n✅ 所有模型续传完成！\n';
+                document.getElementById('btnFinishInstall').classList.remove('hidden');
+                
+            } catch (error) {
+                logDiv.innerHTML += '\n❌ 续传失败：' + error.message + '\n';
+            }
+        }
+        
+        // 等待任务完成（轮询）
+        async function waitForTaskCompletion(url, modelName) {
+            return new Promise((resolve, reject) => {
+                const interval = setInterval(async () => {
+                    try {
+                        const response = await fetch(url);
+                        const result = await response.json();
+                        
+                        const logDiv = document.getElementById('installLog');
+                        if (result.log) {
+                            logDiv.textContent = result.log;
+                            logDiv.scrollTop = logDiv.scrollHeight;
+                        }
+                        
+                        if (result.progress) {
+                            document.getElementById('installProgressBar').style.width = result.progress + '%';
+                            document.getElementById('installProgressBar').textContent = result.progress + '%';
+                        }
+                        
+                        if (result.status === 'completed' || result.status === 'failed') {
+                            clearInterval(interval);
+                            
+                            if (result.status === 'completed') {
+                                logDiv.innerHTML += `\n✅ ${modelName} 续传成功！\n`;
+                                // 重新加载模型列表以更新安装状态
+                                loadModels();
+                                resolve();
+                            } else {
+                                logDiv.innerHTML += `\n❌ ${modelName} 续传失败：${result.error}\n`;
+                                reject(new Error(result.error));
+                            }
+                        }
+                        
+                    } catch (error) {
+                        console.error('轮询失败:', error);
+                    }
+                }, 1000);
+            });
+        }
+        
+        // 为所有模型创建压缩包
+        async function createZipForAllModels() {
+            const selectedModels = [];
+            models.forEach(model => {
+                if (model.installed) {
+                    selectedModels.push(model.id);
+                }
+            });
+            
+            if (selectedModels.length === 0) {
+                alert('没有已安装的模型可打包');
+                return;
+            }
+            
+            if (!confirm(`确定要为 ${selectedModels.length} 个模型创建压缩包吗？这将提高后续下载速度`)) {
+                return;
+            }
+            
+            startModelZipCreation(selectedModels);
+        }
+        
+        // 显示ZIP解压对话框
+        function showExtractZipDialog() {
+            document.getElementById('extractZipDialog').classList.remove('hidden');
+        }
+        
+        // 隐藏ZIP解压对话框
+        function hideExtractZipDialog() {
+            document.getElementById('extractZipDialog').classList.add('hidden');
+        }
+        
+        // 开始解压ZIP模型
+        async function startExtractZip() {
+            const zipFilePath = document.getElementById('zipFilePath').value.trim();
+            const extractTargetPath = document.getElementById('extractTargetPath').value.trim();
+            
+            if (!zipFilePath) {
+                alert('请输入ZIP文件路径');
+                return;
+            }
+            
+            if (!extractTargetPath) {
+                alert('请输入解压目标路径');
+                return;
+            }
+            
+            hideExtractZipDialog();
+            
+            // 显示进度页面
+            document.getElementById('step2Models').classList.add('hidden');
+            document.getElementById('step3').classList.remove('hidden');
+            const logDiv = document.getElementById('installLog');
+            logDiv.innerHTML = `正在解压ZIP文件：${zipFilePath}\n目标路径：${extractTargetPath}\n\n`;
+            document.getElementById('installProgress').style.display = 'block';
+            document.getElementById('installProgressBar').style.width = '0%';
+            document.getElementById('installProgressBar').textContent = '0%';
+            document.getElementById('btnFinishInstall').classList.add('hidden');
+            
+            try {
+                const response = await fetch('/api/models/extract-zip', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        zip_path: zipFilePath,
+                        extract_to: extractTargetPath
+                    })
+                });
+                
+                const result = await response.json();
+                currentInstallTask = result.task_id;
+                
+                // 轮询查看进度
+                await waitForTaskCompletion('/api/task/' + result.task_id, 'ZIP解压');
+                
+                logDiv.innerHTML += '\n✅ ZIP解压完成！\n';
+                document.getElementById('btnFinishInstall').classList.remove('hidden');
+                
+                // 刷新模型列表
+                loadModels();
+                
+            } catch (error) {
+                logDiv.innerHTML += '\n❌ ZIP解压失败：' + error.message + '\n';
+            }
+        }
+        
+        // 开始创建模型压缩包
+        async function startModelZipCreation(modelNames) {
+            if (modelNames.length === 0) return;
+            
+            // 显示进度页面
+            document.getElementById('step2Models').classList.add('hidden');
+            document.getElementById('step3').classList.remove('hidden');
+            const logDiv = document.getElementById('installLog');
+            logDiv.innerHTML = `正在为 ${modelNames.length} 个模型创建压缩包...\n\n`;
+            document.getElementById('installProgress').style.display = 'block';
+            document.getElementById('installProgressBar').style.width = '0%';
+            document.getElementById('installProgressBar').textContent = '0%';
+            document.getElementById('btnFinishInstall').classList.add('hidden');
+            
+            try {
+                // 按顺序打包每个模型
+                for (const modelName of modelNames) {
+                    logDiv.innerHTML += `\n=== 开始打包模型：${modelName} ===\n`;
+                    
+                    const response = await fetch('/api/models/create-zip', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({model: modelName})
+                    });
+                    
+                    const result = await response.json();
+                    currentInstallTask = result.task_id;
+                    
+                    // 轮询查看进度
+                    await waitForTaskCompletion('/api/task/' + result.task_id, modelName);
+                }
+                
+                logDiv.innerHTML += '\n✅ 所有模型打包完成！\n';
+                document.getElementById('btnFinishInstall').classList.remove('hidden');
+                
+            } catch (error) {
+                logDiv.innerHTML += '\n❌ 打包失败：' + error.message + '\n';
+            }
         }
         
         // 安装模型

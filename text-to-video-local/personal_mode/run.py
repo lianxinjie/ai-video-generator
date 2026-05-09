@@ -514,14 +514,45 @@ def run_collaborative_mode(
         )
         
         voice_analyzer = AIVoiceAnalyzer(verbose=True)
-        cloud_manager = CloudPlatformManager(api_keys={}, verbose=True)
+        
+        # 配置云平台 API 密钥
+        cloud_api_keys = {}
+        
+        # 优先使用命令行传入的 AI API 密钥
+        if ai_api_key:
+            # 通义千问 API 可用于通义万相图片生成
+            if ai_model_type == 'qwen' or 'dashscope' in (ai_api_base or '').lower():
+                cloud_api_keys['aliyun'] = ai_api_key
+                print(f"[云平台] 使用通义千问 API 配置通义万相图片生成")
+        
+        # 如果没有命令行密钥，尝试从 api_manager 读取
+        if not cloud_api_keys:
+            try:
+                import sys
+                sys.path.insert(0, str(Path(__file__).parent.parent / 'web'))
+                from api_manager import MultiAPIManager
+                api_mgr = MultiAPIManager(verbose=False)
+                apis = api_mgr.list_apis()
+                for api_name, config in apis.items():
+                    if config.get('enabled') and config.get('api_key'):
+                        if 'qwen' in api_name.lower() or 'dashscope' in api_name.lower():
+                            cloud_api_keys['aliyun'] = config['api_key']
+                            print(f"[云平台] 从 AI API 管理器加载通义万相配置：{api_name}")
+                            break
+            except Exception as e:
+                print(f"[警告] 读取 AI API 配置失败：{e}")
+        
+        cloud_manager = CloudPlatformManager(api_keys=cloud_api_keys, verbose=True)
+        
+        # 显示可用云平台
+        available_platforms = cloud_manager.get_available_platforms()
         
         print("="*70)
         print(" 协同模式初始化完成")
         print("="*70)
         print(f"  总分段数：{scheduler.total_segments}")
         print(f"  初始本地比例：{scheduler.local_ratio:.0%}")
-        print(f"  可用云平台：{', '.join(cloud_platforms)}")
+        print(f"  可用云平台：{', '.join(available_platforms) if available_platforms else '无（需要配置云平台 API）'}")
         print(f"  自动调整：{'启用' if auto_adjust else '禁用'}")
         print(f"  场景分析：{'启用' if enable_scene_analysis else '禁用'}")
         print(f"  场景优化：{'启用' if enable_scene_refine else '禁用'}")
@@ -532,6 +563,25 @@ def run_collaborative_mode(
         print(f"  健康检查：{'启用' if ai_health_check else '禁用'}")
         print(f"  自动确认：{'是' if auto_approve_changes else '否（用户确认）'}")
         print("="*70 + "\n")
+        
+        # 检查是否有可用的生成方式
+        has_cuda = False
+        try:
+            import torch
+            has_cuda = torch.cuda.is_available()
+        except:
+            pass
+        
+        if not has_cuda and not available_platforms:
+            print("="*70)
+            print("❌ 协同模式无法运行：")
+            print("  1. CUDA 不可用（本地生成需要 NVIDIA GPU）")
+            print("  2. 无可用云平台（需要在 /ai-apis 页面配置 AI API）")
+            print("\n💡 建议：")
+            print("  - 使用优化模式：python run.py -m optimized -p '你的提示词'")
+            print("  - 或配置 AI API：访问 http://localhost:5000/ai-apis")
+            print("="*70 + "\n")
+            return
         
         # AI 分析配音脚本
         if character_voice or True:  # 始终分析，即使用户没指定语音

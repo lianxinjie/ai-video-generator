@@ -214,14 +214,24 @@ class AliyunPlatform(CloudPlatformBase):
     def platform_name(self) -> str:
         return "Aliyun"
     
+    def is_available(self) -> bool:
+        """检查平台是否可用"""
+        self._check_daily_reset()
+        return self.remaining_quota > 0 and bool(self.api_key)
+    
     def generate_image(self, prompt: str, **kwargs) -> Optional[str]:
         self._log(f"生成图片：{prompt[:50]}...", "INFO")
+        
+        if not self.api_key:
+            self._log("API Key 未配置", "ERROR")
+            return None
         
         # 通义万相 API
         try:
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "X-DashScope-Async": "enable"  # 启用异步模式
             }
             
             payload = {
@@ -236,15 +246,66 @@ class AliyunPlatform(CloudPlatformBase):
                 }
             }
             
-            # TODO: 实现真实调用
-            # response = requests.post(f"{self.base_url}/api/v1/services/aigc/text-generation/generation",
-            #                        json=payload, headers=headers)
+            # 提交任务
+            response = requests.post(
+                f"{self.base_url}/api/v1/services/aigc/text2image/generation",
+                json=payload,
+                headers=headers,
+                timeout=30
+            )
             
-            time.sleep(random.uniform(5, 15))
-            self.used_today += 1
-            self._log(f"额度剩余：{self.remaining_quota}/{self.daily_limit}", "INFO")
+            if response.status_code != 200:
+                self._log(f"提交任务失败：HTTP {response.status_code} - {response.text}", "ERROR")
+                return None
             
-            return f"https://example.com/aliyun_{int(time.time())}.jpg"
+            result = response.json()
+            task_id = result.get('output', {}).get('task_id')
+            
+            if not task_id:
+                self._log(f"提交任务失败：{result}", "ERROR")
+                return None
+            
+            self._log(f"任务已提交：{task_id}，等待完成...", "INFO")
+            
+            # 轮询任务状态
+            for _ in range(60):  # 最多等待 60 秒
+                time.sleep(2)
+                
+                status_response = requests.get(
+                    f"{self.base_url}/api/v1/tasks/{task_id}",
+                    headers=headers,
+                    timeout=10
+                )
+                
+                if status_response.status_code != 200:
+                    continue
+                
+                task_result = status_response.json()
+                task_status = task_result.get('output', {}).get('task_status')
+                
+                if task_status == 'SUCCEEDED':
+                    # 获取图片 URL
+                    results = task_result.get('output', {}).get('results', [])
+                    if results:
+                        image_url = results[0].get('url')
+                        self.used_today += 1
+                        self._log(f"图片生成成功", "INFO")
+                        self._log(f"额度剩余：{self.remaining_quota}/{self.daily_limit}", "INFO")
+                        return image_url
+                    else:
+                        self._log("结果为空", "ERROR")
+                        return None
+                elif task_status in ('FAILED', 'CANCELED'):
+                    self._log(f"任务失败：{task_result.get('output', {}).get('message')}", "ERROR")
+                    return None
+                # else: PENDING or RUNNING，继续等待
+            
+            self._log("任务超时", "ERROR")
+            return None
+            
+        except requests.exceptions.RequestException as e:
+            self._log(f"网络请求失败：{e}", "ERROR")
+            return None
         except Exception as e:
             self._log(f"生成失败：{e}", "ERROR")
             return None

@@ -84,6 +84,75 @@ class SceneRefiner:
             timestamp = datetime.now().strftime("%H:%M:%S")
             print(f"[{timestamp}] [{level}] {message}")
     
+    def detect_and_add_scenes(self, full_prompt: str, raw_segments: List[Dict]) -> List[Dict]:
+        """
+        检测提示词中的场景关键词并新增场景分割
+        
+        Args:
+            full_prompt: 完整提示词
+            raw_segments: 原始场景列表
+            
+        Returns:
+            更新后的场景列表（已添加新检测到的场景）
+        """
+        if not self.scene_detector:
+            self._log("场景检测器未初始化，跳过场景检测", "WARNING")
+            return raw_segments
+        
+        try:
+            # 使用 SceneDetector 分析提示词
+            new_segments = self.scene_detector.analyze(full_prompt)
+            
+            if len(new_segments) > 0:
+                self._log(f"检测到 {len(new_segments)} 个关键字场景边界", "INFO")
+                
+                # 合并检测结果到原始片段中
+                if len(raw_segments) == 0:
+                    # 如果原始片段为空，直接使用检测结果
+                    return new_segments
+                else:
+                    # 否则合并两个列表（去重）
+                    merged_segments = self._merge_segments(raw_segments, new_segments)
+                    self._log(f"场景合并完成：{len(raw_segments)} + {len(new_segments)} → {len(merged_segments)}", "INFO")
+                    return merged_segments
+            else:
+                self._log("未检测到新的场景边界", "INFO")
+                return raw_segments
+                
+        except Exception as e:
+            self._log(f"场景检测失败：{e}", "ERROR")
+            return raw_segments
+    
+    def _merge_segments(self, segments1: List[Dict], segments2: List[Dict]) -> List[Dict]:
+        """
+        合并两个场景列表，基于文本位置去重
+        
+        Args:
+            segments1: 第一个场景列表
+            segments2: 第二个场景列表
+            
+        Returns:
+            合并后的场景列表
+        """
+        # 将所有片段添加到集合中（基于 text 内容去重）
+        seen_texts = set()
+        merged = []
+        
+        for segment in segments1 + segments2:
+            text = segment.get('text', '')
+            if text and text not in seen_texts:
+                seen_texts.add(text)
+                merged.append(segment)
+        
+        # 按索引排序
+        merged.sort(key=lambda x: x.get('index', 0))
+        
+        # 重新分配索引
+        for i, segment in enumerate(merged):
+            segment['index'] = i + 1
+        
+        return merged
+    
     def analyze_scene_boundaries(self, full_prompt: str) -> List[Dict]:
         """
         分析提示词中的场景边界

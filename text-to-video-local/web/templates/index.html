@@ -1008,6 +1008,16 @@
                     })
                 });
                 
+                // 检查保存场景的响应
+                const saveContentType = saveResponse.headers.get('content-type');
+                if (!saveContentType || !saveContentType.includes('application/json')) {
+                    console.error('保存场景返回非 JSON 响应');
+                    const saveText = await saveResponse.text();
+                    console.error('响应内容:', saveText.substring(0, 500));
+                    alert('保存场景失败：服务器返回了非 JSON 响应，请检查后端日志');
+                    return;
+                }
+                
                 const saveData = await saveResponse.json();
                 
                 if (saveData.success) {
@@ -1015,10 +1025,22 @@
                     const formData = new FormData(document.getElementById('generateForm'));
                     formData.append('scenes', JSON.stringify(currentScenes));
                     
+                    console.log('开始提交生成任务...');
+                    
                     const generateResponse = await fetch('/api/generate', {
                         method: 'POST',
                         body: formData
                     });
+                    
+                    // 检查生成任务的响应
+                    const generateContentType = generateResponse.headers.get('content-type');
+                    if (!generateContentType || !generateContentType.includes('application/json')) {
+                        console.error('生成任务返回非 JSON 响应，状态码:', generateResponse.status);
+                        const generateText = await generateResponse.text();
+                        console.error('响应内容:', generateText.substring(0, 1000));
+                        alert('生成失败：服务器返回了非 JSON 响应（状态码 ' + generateResponse.status + '），请查看控制台详情或后端日志');
+                        return;
+                    }
                     
                     const generateData = await generateResponse.json();
                     
@@ -1031,9 +1053,14 @@
                         
                         // 开始轮询状态
                         pollTaskStatus(generateData.task_id);
+                    } else {
+                        alert('生成任务启动失败：' + (generateData.error || '未知错误'));
                     }
+                } else {
+                    alert('保存场景失败：' + (saveData.error || '未知错误'));
                 }
             } catch (error) {
+                console.error('生成过程错误:', error);
                 alert('生成失败：' + error.message);
             }
         }
