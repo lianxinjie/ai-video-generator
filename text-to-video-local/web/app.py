@@ -130,6 +130,79 @@ class _TaskStore:
 
 tasks = _TaskStore()
 offline_packages = {}  # package_id -> package_dir
+
+
+# ---------- 关键帧监控器（生成过程中渐进式提取缩略图） ----------
+class _KeyframeWatcher:
+    """后台扫描任务输出目录，发现新生成的图片作为关键帧缩略图。"""
+
+    IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
+
+    def __init__(self, task_id: str, output_dir: Path):
+        self.task_id = task_id
+        self.output_dir = Path(output_dir)
+        self._seen: set = set()
+        self._running = True
+
+    def start(self):
+        t = threading.Thread(target=self._run, daemon=True, name=f'kf-{self.task_id[:8]}')
+        t.start()
+
+    def stop(self):
+        self._running = False
+
+    def _run(self):
+        while self._running:
+            try:
+                self._scan()
+            except Exception as e:
+                print(f"[KeyframeWatcher] scan error: {e}")
+            time.sleep(2)
+
+    def _scan(self):
+        if not self.output_dir.exists():
+            return
+
+        new_files: list = []
+        for root, _dirs, files in os.walk(self.output_dir):
+            for fname in files:
+                if os.path.splitext(fname)[1].lower() not in self.IMAGE_EXTS:
+                    continue
+                full = os.path.join(root, fname)
+                if full in self._seen:
+                    continue
+                self._seen.add(full)
+                new_files.append(full)
+
+        if not new_files:
+            return
+
+        task = tasks.get(self.task_id)
+        if task is None:
+            return
+
+        keyframes = list(task.get('keyframes', []))
+
+        for fpath in sorted(new_files):
+            rel = os.path.relpath(fpath, self.output_dir).replace(os.sep, '/')
+            seg = os.path.basename(os.path.dirname(fpath))
+            if seg == self.output_dir.name:
+                seg = 'root'
+
+            url = f'/api/output/{self.task_id}/{rel}'
+            keyframes.append({
+                'index': len(keyframes),
+                'filename': os.path.basename(fpath),
+                'rel_path': rel,
+                'segment': seg,
+                'url': url,
+                'ts': time.time(),
+            })
+
+        task['keyframes'] = keyframes
+
+        if task.get('status') in ('completed', 'failed', 'cancelled'):
+            self.stop()
 _dep_check_cache = None  # {'ts': float, 'result': dict} 用于缓存依赖检测结果
 
 
@@ -247,8 +320,14 @@ def api_generate():
             'prompt': prompt,
             'mode': mode,
             'start_time': datetime.now().isoformat(),
-            'log': ''
+            'log': '',
+            'keyframes': []
         }
+
+        # 启动关键帧监控器
+        kf_watcher = _KeyframeWatcher(task_id, output_dir)
+        kf_watcher.start()
+        kf_watcher._task_ref = kf_watcher  # prevent GC in debug mode
 
         def run_task():
             log_lines = []
@@ -334,14 +413,22 @@ def api_generate():
 _TASK_ID_RE = re.compile(r'^[0-9a-fA-F-]{36}$|^[0-9a-fA-F]{16,}$')
 
 
-@app.route('/api/output/<task_id>/<filename>')
+@app.route('/api/output/<task_id>/<path:filename>')
 def api_output_file(task_id, filename):
-    """API: 获取输出文件"""
-    if not _TASK_ID_RE.match(task_id) or '..' in filename or '/' in filename or '\\' in filename:
-        return jsonify({'error': 'invalid task_id or filename'}), 400
-    output_dir = app.config['OUTPUT_FOLDER'] / task_id
+    """API: 获取输出文件（支持子目录路径）"""
+    if not _TASK_ID_RE.match(task_id):
+        return jsonify({'error': 'invalid task_id'}), 400
+    parts = filename.split('/')
+    if any('..' in p or not p or '\\' in p for p in parts):
+        return jsonify({'error': 'invalid filename'}), 400
+    output_dir = (app.config['OUTPUT_FOLDER'] / task_id).resolve()
     if not output_dir.exists():
         return jsonify({'error': 'task output not found'}), 404
+    target = (output_dir / filename).resolve()
+    if not str(target).startswith(str(output_dir)):
+        return jsonify({'error': 'invalid path'}), 400
+    if not target.exists() or not target.is_file():
+        return jsonify({'error': 'file not found'}), 404
     return send_from_directory(output_dir, filename)
 
 
@@ -632,6 +719,20 @@ def api_task_status_enhanced(task_id):
     return jsonify(status)
 
 
+@app.route('/api/task/<task_id>/keyframes')
+def api_task_keyframes(task_id):
+    """API: 获取任务的关键帧缩略图列表（生成过程中渐进式返回）"""
+    task = tasks.get(task_id)
+    if task is None:
+        return jsonify({'error': '任务不存在'}), 404
+
+    return jsonify({
+        'task_id': task_id,
+        'keyframes': task.get('keyframes', []),
+        'count': len(task.get('keyframes', [])),
+    })
+
+
 @app.route('/api/quick-start', methods=['POST'])
 def api_quick_start():
     """API: 一键启动（自动检测硬件 + 推荐模式 + 启动任务）"""
@@ -662,11 +763,15 @@ def api_quick_start():
             'log': f'一键启动任务\n提示词：{prompt}\n模式：{mode}\n时长：{duration}s\n',
             'hardware': {},
             'recommendation': {},
+            'keyframes': [],
         }
         
         task = tasks[task_id]
         output_dir = app.config['OUTPUT_FOLDER'] / task_id
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        kf_watcher = _KeyframeWatcher(task_id, output_dir)
+        kf_watcher.start()
 
         cmd = [
             sys.executable,
@@ -3377,6 +3482,12 @@ def projects_page():
     return render_template('projects.html')
 
 
+@app.route('/timeline')
+def timeline_page():
+    """场景分镜时间线编辑器"""
+    return render_template('timeline.html')
+
+
 # ========== Scene Analysis API ==========
 
 @app.route('/api/analyze-scenes', methods=['POST'])
@@ -3509,8 +3620,12 @@ def api_confirm_scenes():
             'mode': mode,
             'start_time': datetime.now().isoformat(),
             'log': f'场景确认生成\n场景数：{len(scenes)}\n提示词：{prompt}\n',
-            'scene_config': scene_config_path
+            'scene_config': scene_config_path,
+            'keyframes': [],
         }
+
+        kf_watcher = _KeyframeWatcher(task_id, output_dir)
+        kf_watcher.start()
 
         def run_task():
             task = tasks[task_id]

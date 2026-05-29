@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>场景时间线编辑器 - AI 视频生成器</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.tl-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.tl-header h1 { font-size: 1.3em; font-weight: 600; }
+
+.tl-header-actions { display: flex; gap: 10px; align-items: center; }
+
+.tl-header-btn {
+    background: rgba(255,255,255,0.2);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.2s;
+}
+
+.tl-header-btn:hover { background: rgba(255,255,255,0.35); }
+
+.tl-header-btn.primary {
+    background: rgba(255,255,255,0.9);
+    color: #667eea;
+    font-weight: 600;
+    border: none;
+}
+
+.tl-header-btn.primary:hover { background: white; }
+
+.tl-stats {
+    font-size: 13px;
+    opacity: 0.9;
+    display: flex;
+    gap: 20px;
+}
+
+.tl-main {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.tl-canvas {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.tl-ruler {
+    height: 32px;
+    background: #16213e;
+    border-bottom: 1px solid #0f3460;
+    position: relative;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.tl-ruler-marks {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    white-space: nowrap;
+}
+
+.ruler-mark {
+    display: inline-block;
+    width: 80px;
+    height: 100%;
+    position: relative;
+    border-left: 1px solid #0f3460;
+    font-size: 10px;
+    color: #7a7a9e;
+    padding: 4px 6px;
+}
+
+.ruler-mark .sub {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    height: 8px;
+    background: #0f3460;
+}
+
+.tl-playhead {
+    position: absolute;
+    top: 0;
+    width: 2px;
+    height: 100%;
+    background: #f5576c;
+    z-index: 10;
+    pointer-events: none;
+    left: 0;
+    transition: left 0.1s linear;
+}
+
+.tl-playhead::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -5px;
+    width: 12px;
+    height: 12px;
+    background: #f5576c;
+    clip-path: polygon(50% 100%, 0 0, 100% 0);
+}
+
+.tl-tracks {
+    flex: 1;
+    background: #16213e;
+    position: relative;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.tl-tracks-inner {
+    position: relative;
+    height: 100%;
+    min-width: 100%;
+}
+
+.tl-track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: flex-start;
+    padding-top: 8px;
+    height: 50%;
+}
+
+.tl-track.label { bottom: 0; top: auto; padding-top: 4px; }
+
+.tl-scene-block {
+    position: relative;
+    height: calc(100% - 16px);
+    border-radius: 8px;
+    cursor: grab;
+    user-select: none;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: box-shadow 0.2s, transform 0.15s;
+    flex-shrink: 0;
+}
+
+.tl-scene-block:active { cursor: grabbing; }
+
+.tl-scene-block:hover {
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+    transform: translateY(-1px);
+}
+
+.tl-scene-block.selected {
+    box-shadow: 0 0 0 2px #f5576c, 0 4px 20px rgba(245, 87, 108, 0.3);
+}
+
+.tl-scene-block.dragging {
+    opacity: 0.5;
+    transform: scale(0.98);
+}
+
+.tl-scene-block.drag-over {
+    box-shadow: 0 0 0 3px #48bb78;
+}
+
+.scene-color-0 { background: linear-gradient(135deg, #667eea, #764ba2); }
+.scene-color-1 { background: linear-gradient(135deg, #f093fb, #f5576c); }
+.scene-color-2 { background: linear-gradient(135deg, #4facfe, #00f2fe); }
+.scene-color-3 { background: linear-gradient(135deg, #43e97b, #38f9d7); }
+.scene-color-4 { background: linear-gradient(135deg, #fa709a, #fee140); }
+.scene-color-5 { background: linear-gradient(135deg, #a18cd1, #fbc2eb); }
+.scene-color-6 { background: linear-gradient(135deg, #fccb90, #d57eeb); }
+.scene-color-7 { background: linear-gradient(135deg, #e0c3fc, #8ec5fc); }
+
+.scene-header-bar {
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: white;
+    background: rgba(0,0,0,0.2);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.scene-duration-tag {
+    background: rgba(0,0,0,0.3);
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+}
+
+.scene-body {
+    padding: 6px 10px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.85);
+    overflow: hidden;
+    flex: 1;
+    line-height: 1.4;
+}
+
+.scene-keyframe-strip {
+    display: flex;
+    gap: 2px;
+    padding: 4px 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+    height: 36px;
+}
+
+.scene-keyframe-strip img {
+    height: 100%;
+    width: auto;
+    border-radius: 3px;
+    object-fit: cover;
+}
+
+.scene-resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    background: transparent;
+    z-index: 5;
+}
+
+.scene-resize-handle:hover { background: rgba(255,255,255,0.3); }
+
+.tl-connector {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 100%;
+    flex-shrink: 0;
+    color: #7a7a9e;
+    font-size: 16px;
+}
+
+.tl-detail {
+    width: 320px;
+    background: #0f3460;
+    border-left: 1px solid #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+}
+
+.detail-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #7a7a9e;
+    text-align: center;
+    padding: 20px;
+}
+
+.detail-header {
+    padding: 16px;
+    background: rgba(0,0,0,0.2);
+    border-bottom: 1px solid #1a1a2e;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.detail-body { padding: 16px; flex: 1; }
+
+.detail-field { margin-bottom: 14px; }
+
+.detail-field label {
+    display: block;
+    font-size: 11px;
+    color: #7a7a9e;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.detail-field input,
+.detail-field textarea,
+.detail-field select {
+    width: 100%;
+    padding: 8px 10px;
+    background: #16213e;
+    border: 1px solid #0f3460;
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-size: 13px;
+    font-family: inherit;
+}
+
+.detail-field textarea { min-height: 80px; resize: vertical; }
+
+.detail-field input:focus,
+.detail-field textarea:focus,
+.detail-field select:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.detail-actions {
+    padding: 16px;
+    border-top: 1px solid #1a1a2e;
+    display: flex;
+    gap: 8px;
+}
+
+.dtl-btn {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: opacity 0.2s;
+}
+
+.dtl-btn:hover { opacity: 0.85; }
+
+.dtl-btn.danger { background: #f5576c; color: white; }
+.dtl-btn.dup { background: #4facfe; color: white; }
+.dtl-btn.move { background: rgba(255,255,255,0.1); color: #e0e0e0; border: 1px solid rgba(255,255,255,0.2); }
+
+.tl-footer {
+    background: #0d1b3e;
+    border-top: 1px solid #0f3460;
+    padding: 8px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    font-size: 12px;
+    color: #7a7a9e;
+}
+
+.tl-footer-controls { display: flex; gap: 12px; align-items: center; }
+
+.tl-footer-controls button {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #e0e0e0;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.tl-footer-controls button:hover { background: rgba(255,255,255,0.15); }
+
+.zoom-slider {
+    width: 100px;
+    accent-color: #667eea;
+}
+
+.drop-placeholder {
+    height: calc(100% - 16px);
+    width: 4px;
+    background: #48bb78;
+    border-radius: 2px;
+    flex-shrink: 0;
+    margin: 8px 0;
+    animation: pulse-green 1s infinite;
+}
+
+@keyframes pulse-green {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.add-scene-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: calc(100% - 16px);
+    min-width: 100px;
+    margin-top: 8px;
+    border: 2px dashed #3d3d5c;
+    border-radius: 8px;
+    color: #7a7a9e;
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 0.2s, color 0.2s;
+}
+
+.add-scene-btn:hover {
+    border-color: #667eea;
+    color: #667eea;
+}
+
+.toast {
+    position: fixed;
+    bottom: 60px;
+    right: 24px;
+    background: #48bb78;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.3s ease;
+    z-index: 1000;
+}
+
+.toast.show {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.toast.error { background: #f5576c; }
+</style>
+</head>
+<body>
+
+<div class="tl-header">
+    <h1>场景时间线编辑器</h1>
+    <div class="tl-stats">
+        <span id="statScenes">0 个场景</span>
+        <span id="statDuration">总时长 0.0s</span>
+    </div>
+    <div class="tl-header-actions">
+        <button class="tl-header-btn" onclick="addSceneAtEnd()">+ 添加场景</button>
+        <button class="tl-header-btn" onclick="exportToParent()">导出并返回</button>
+        <button class="tl-header-btn primary" onclick="saveAndConfirm()">保存并生成</button>
+    </div>
+</div>
+
+<div class="tl-main">
+    <div class="tl-canvas">
+        <div class="tl-ruler" id="ruler">
+            <div class="tl-playhead" id="playhead"></div>
+            <div class="tl-ruler-marks" id="rulerMarks"></div>
+        </div>
+        <div class="tl-tracks" id="tracksContainer" onscroll="syncRulerScroll()">
+            <div class="tl-tracks-inner" id="tracksInner">
+                <div class="tl-track" id="trackScenes"></div>
+            </div>
+        </div>
+    </div>
+    <div class="tl-detail" id="detailPanel">
+        <div class="detail-empty">
+            <div>
+                <div style="font-size: 48px; margin-bottom: 12px;">&#x23F1;</div>
+                <div style="font-size: 14px;">点击时间线上的场景<br>查看详情和编辑</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="tl-footer">
+    <div class="tl-footer-controls">
+        <span>缩放</span>
+        <input type="range" class="zoom-slider" id="zoomSlider" min="40" max="200" value="80" oninput="setZoom(this.value)">
+        <span id="zoomLabel">80px/s</span>
+        <button onclick="autoFit()">自适应</button>
+        <button onclick="scrollToPlayhead()">跳转到播放头</button>
+    </div>
+    <div id="footerInfo">就绪 | 拖拽场景可重新排序，拖拽右边框可调整时长</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let scenes = [];
+let selectedIdx = -1;
+let pxPerSec = 80;
+let playheadTimer = null;
+let playheadTime = 0;
+let dragSrcIdx = null;
+
+const COLORS = 8;
+
+function init() {
+    const stored = sessionStorage.getItem('timeline_scenes');
+    if (stored) {
+        try { scenes = JSON.parse(stored); } catch(e) { scenes = []; }
+    }
+
+    if (scenes.length === 0) {
+        scenes = [
+            { prompt: '开场：全景镜头展示城市天际线，晨曦微光', duration: 5, scene_type: 'establishing' },
+            { prompt: '特写：主角走在街道上的脚步', duration: 3, scene_type: 'detail' },
+            { prompt: '中景：主角与朋友在咖啡馆相遇', duration: 6, scene_type: 'dialogue' },
+            { prompt: '航拍：夕阳下城市全景渐入夜色', duration: 4, scene_type: 'montage' },
+        ];
+    }
+
+    scenes.forEach(s => {
+        s.duration = parseFloat(s.duration) || 5;
+        if (!s.scene_type) s.scene_type = 'default';
+    });
+
+    render();
+    autoFit();
+}
+
+function render() {
+    renderRuler();
+    renderTrack();
+    renderStats();
+    renderDetail();
+}
+
+function renderRuler() {
+    const total = totalDuration();
+    const marks = Math.ceil(total / 1) + 2;
+    const container = document.getElementById('rulerMarks');
+    let html = '';
+    for (let i = 0; i < marks; i++) {
+        const w = pxPerSec;
+        html += `<span class="ruler-mark" style="width:${w}px">${i}s<span class="sub"></span></span>`;
+    }
+    container.innerHTML = html;
+}
+
+function renderTrack() {
+    const track = document.getElementById('trackScenes');
+    let html = '';
+
+    scenes.forEach((s, i) => {
+        const w = s.duration * pxPerSec;
+        const colorClass = `scene-color-${i % COLORS}`;
+        const sel = i === selectedIdx ? ' selected' : '';
+        const prompt = (s.prompt || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+        const promptShort = prompt.length > 40 ? prompt.substring(0, 40) + '...' : prompt;
+
+        html += `<div class="tl-scene-block ${colorClass}${sel}"
+            style="width:${w}px"
+            draggable="true"
+            data-idx="${i}"
+            onclick="selectScene(${i}, event)"
+            ondragstart="onDragStart(event, ${i})"
+            ondragover="onDragOver(event, ${i})"
+            ondragleave="onDragLeave(event)"
+            ondrop="onDrop(event, ${i})"
+            ondragend="onDragEnd(event)">
+            <div class="scene-header-bar">
+                <span>#${i + 1} ${s.scene_type || ''}</span>
+                <span class="scene-duration-tag">${s.duration.toFixed(1)}s</span>
+            </div>
+            <div class="scene-body">${promptShort || '(empty)'}</div>
+            <div class="scene-resize-handle" onmousedown="startResize(event, ${i})"></div>
+        </div>`;
+
+        if (i < scenes.length - 1) {
+            html += `<div class="tl-connector">&#x25B6;</div>`;
+        }
+    });
+
+    html += `<div class="add-scene-btn" onclick="addSceneAtEnd()">+ 添加</div>`;
+
+    track.innerHTML = html;
+
+    const inner = document.getElementById('tracksInner');
+    const totalW = totalDuration() * pxPerSec + 200;
+    inner.style.width = Math.max(totalW, tracksContainer.clientWidth) + 'px';
+}
+
+function renderStats() {
+    document.getElementById('statScenes').textContent = `${scenes.length} 个场景`;
+    document.getElementById('statDuration').textContent = `总时长 ${totalDuration().toFixed(1)}s`;
+}
+
+function renderDetail() {
+    const panel = document.getElementById('detailPanel');
+    if (selectedIdx < 0 || selectedIdx >= scenes.length) {
+        panel.innerHTML = `<div class="detail-empty">
+            <div>
+                <div style="font-size:48px;margin-bottom:12px;">&#x23F1;</div>
+                <div style="font-size:14px;">点击时间线上的场景<br>查看详情和编辑</div>
+            </div>
+        </div>`;
+        return;
+    }
+
+    const s = scenes[selectedIdx];
+    const types = ['default','establishing','detail','dialogue','montage','action','ending','transition'];
+    const typeOpts = types.map(t =>
+        `<option value="${t}" ${t === (s.scene_type||'default') ? 'selected' : ''}>${t}</option>`
+    ).join('');
+
+    panel.innerHTML = `
+        <div class="detail-header">
+            <span style="font-weight:600;font-size:14px;">场景 #${selectedIdx + 1}</span>
+            <span style="font-size:11px;color:#7a7a9e;">${s.duration.toFixed(1)}s</span>
+        </div>
+        <div class="detail-body">
+            <div class="detail-field">
+                <label>提示词 / Prompt</label>
+                <textarea id="detPrompt" oninput="updateSceneField('prompt', this.value)">${(s.prompt||'').replace(/</g,'&lt;')}</textarea>
+            </div>
+            <div class="detail-field">
+                <label>时长 (秒)</label>
+                <input type="number" id="detDuration" value="${s.duration}" min="0.5" max="60" step="0.5"
+                    oninput="updateSceneField('duration', parseFloat(this.value))">
+            </div>
+            <div class="detail-field">
+                <label>场景类型</label>
+                <select id="detType" onchange="updateSceneField('scene_type', this.value)">${typeOpts}</select>
+            </div>
+            <div class="detail-field">
+                <label>配音文本 (可选)</label>
+                <textarea id="detVoiceover" oninput="updateSceneField('voiceover_text', this.value)">${((s.voiceover && s.voiceover.text) || s.voiceover_text || '').replace(/</g,'&lt;')}</textarea>
+            </div>
+            <div class="detail-field">
+                <label>生成位置</label>
+                <select id="detLocation" onchange="updateSceneField('generation_location', this.value)">
+                    <option value="local" ${s.generation_location==='local'?'selected':''}>本地</option>
+                    <option value="cloud" ${s.generation_location==='cloud'?'selected':''}>云端</option>
+                </select>
+            </div>
+        </div>
+        <div class="detail-actions">
+            <button class="dtl-btn move" onclick="moveScene(-1)" ${selectedIdx===0?'disabled':''}>&#x25C0; 左移</button>
+            <button class="dtl-btn move" onclick="moveScene(1)" ${selectedIdx===scenes.length-1?'disabled':''}> 右移 &#x25B6;</button>
+        </div>
+        <div class="detail-actions">
+            <button class="dtl-btn dup" onclick="duplicateScene()">复制</button>
+            <button class="dtl-btn danger" onclick="deleteScene(${selectedIdx})">删除</button>
+        </div>`;
+}
+
+function selectScene(idx, event) {
+    if (event) event.stopPropagation();
+    selectedIdx = idx;
+    render();
+}
+
+function updateSceneField(field, value) {
+    if (selectedIdx < 0 || selectedIdx >= scenes.length) return;
+    if (field === 'duration') {
+        value = Math.max(0.5, Math.min(60, parseFloat(value) || 5));
+        scenes[selectedIdx].duration = value;
+    } else if (field === 'voiceover_text') {
+        if (!scenes[selectedIdx].voiceover) scenes[selectedIdx].voiceover = {};
+        scenes[selectedIdx].voiceover.text = value;
+        scenes[selectedIdx].voiceover_text = value;
+    } else {
+        scenes[selectedIdx][field] = value;
+    }
+    renderTrack();
+    renderStats();
+}
+
+function addSceneAtEnd() {
+    scenes.push({
+        prompt: '',
+        duration: 5,
+        scene_type: 'default',
+        generation_location: 'local'
+    });
+    selectedIdx = scenes.length - 1;
+    render();
+    showToast('已添加场景');
+}
+
+function deleteScene(idx) {
+    if (idx < 0 || idx >= scenes.length) return;
+    if (scenes.length <= 1) { showToast('至少保留一个场景', true); return; }
+    scenes.splice(idx, 1);
+    if (selectedIdx >= scenes.length) selectedIdx = scenes.length - 1;
+    render();
+    showToast('已删除场景');
+}
+
+function duplicateScene() {
+    if (selectedIdx < 0 || selectedIdx >= scenes.length) return;
+    const copy = JSON.parse(JSON.stringify(scenes[selectedIdx]));
+    scenes.splice(selectedIdx + 1, 0, copy);
+    selectedIdx++;
+    render();
+    showToast('已复制场景');
+}
+
+function moveScene(dir) {
+    if (selectedIdx < 0 || selectedIdx >= scenes.length) return;
+    const newIdx = selectedIdx + dir;
+    if (newIdx < 0 || newIdx >= scenes.length) return;
+    const tmp = scenes[selectedIdx];
+    scenes[selectedIdx] = scenes[newIdx];
+    scenes[newIdx] = tmp;
+    selectedIdx = newIdx;
+    render();
+}
+
+function onDragStart(e, idx) {
+    dragSrcIdx = idx;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(idx));
+    setTimeout(() => {
+        const el = document.querySelector(`[data-idx="${idx}"]`);
+        if (el) el.classList.add('dragging');
+    }, 0);
+}
+
+function onDragOver(e, idx) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const midX = rect.left + rect.width / 2;
+    el.classList.add('drag-over');
+    document.getElementById('footerInfo').textContent =
+        `拖放到场景 #${idx + 1} ${e.clientX < midX ? '之前' : '之后'}`;
+}
+
+function onDragLeave(e) {
+    e.currentTarget.classList.remove('drag-over');
+}
+
+function onDrop(e, targetIdx) {
+    e.preventDefault();
+    const el = e.currentTarget;
+    el.classList.remove('drag-over');
+    if (dragSrcIdx === null || dragSrcIdx === targetIdx) return;
+
+    const rect = el.getBoundingClientRect();
+    const before = e.clientX < rect.left + rect.width / 2;
+    const insertAt = before ? targetIdx : targetIdx + 1;
+
+    const item = scenes.splice(dragSrcIdx, 1)[0];
+    const adjustedIdx = insertAt > dragSrcIdx ? insertAt - 1 : insertAt;
+    scenes.splice(adjustedIdx, 0, item);
+
+    selectedIdx = adjustedIdx;
+    dragSrcIdx = null;
+    render();
+    showToast(`场景已移动到位置 #${adjustedIdx + 1}`);
+}
+
+function onDragEnd(e) {
+    document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+    document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    document.getElementById('footerInfo').textContent = '就绪 | 拖拽场景可重新排序，拖拽右边框可调整时长';
+    dragSrcIdx = null;
+}
+
+function startResize(e, idx) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startDur = scenes[idx].duration;
+
+    function onMove(ev) {
+        const dx = ev.clientX - startX;
+        const newDur = Math.max(0.5, startDur + dx / pxPerSec);
+        scenes[idx].duration = Math.round(newDur * 10) / 10;
+        renderTrack();
+        renderStats();
+        if (idx === selectedIdx) renderDetail();
+    }
+
+    function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+}
+
+function totalDuration() {
+    return scenes.reduce((sum, s) => sum + (s.duration || 5), 0);
+}
+
+function setZoom(val) {
+    pxPerSec = parseInt(val);
+    document.getElementById('zoomLabel').textContent = `${pxPerSec}px/s`;
+    renderRuler();
+    renderTrack();
+}
+
+function autoFit() {
+    const container = document.getElementById('tracksContainer');
+    const total = totalDuration();
+    if (total <= 0) return;
+    const available = container.clientWidth - 160;
+    const fit = Math.max(40, Math.min(200, Math.floor(available / total)));
+    pxPerSec = fit;
+    document.getElementById('zoomSlider').value = fit;
+    document.getElementById('zoomLabel').textContent = `${fit}px/s`;
+    renderRuler();
+    renderTrack();
+}
+
+function syncRulerScroll() {
+    const tracks = document.getElementById('tracksContainer');
+    const marks = document.getElementById('rulerMarks');
+    marks.style.transform = `translateX(-${tracks.scrollLeft}px)`;
+    const playhead = document.getElementById('playhead');
+    playhead.style.left = (playheadTime * pxPerSec - tracks.scrollLeft) + 'px';
+}
+
+function scrollToPlayhead() {
+    const tracks = document.getElementById('tracksContainer');
+    tracks.scrollLeft = Math.max(0, playheadTime * pxPerSec - tracks.clientWidth / 3);
+}
+
+function startPlayhead() {
+    stopPlayhead();
+    playheadTime = 0;
+    const total = totalDuration();
+    if (total <= 0) return;
+
+    playheadTimer = setInterval(() => {
+        playheadTime += 0.1;
+        if (playheadTime >= total) playheadTime = 0;
+        const tracks = document.getElementById('tracksContainer');
+        const playhead = document.getElementById('playhead');
+        playhead.style.left = (playheadTime * pxPerSec - tracks.scrollLeft) + 'px';
+    }, 100);
+}
+
+function stopPlayhead() {
+    if (playheadTimer) { clearInterval(playheadTimer); playheadTimer = null; }
+}
+
+function exportToParent() {
+    sessionStorage.setItem('timeline_scenes', JSON.stringify(scenes));
+    if (window.opener) {
+        try {
+            window.opener.postMessage({ type: 'timeline_export', scenes: scenes }, '*');
+        } catch(e) {}
+    }
+    showToast('已导出到父窗口');
+    setTimeout(() => window.close(), 800);
+}
+
+function saveAndConfirm() {
+    sessionStorage.setItem('timeline_scenes', JSON.stringify(scenes));
+    if (window.opener) {
+        try {
+            window.opener.postMessage({
+                type: 'timeline_confirm',
+                scenes: scenes
+            }, '*');
+        } catch(e) {}
+    }
+    showToast('已保存！返回主页面继续生成...');
+    setTimeout(() => {
+        if (window.opener) window.close();
+        else window.location.href = '/';
+    }, 1000);
+}
+
+function showToast(msg, isError) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (isError ? ' error' : '');
+    setTimeout(() => { t.className = 'toast'; }, 2500);
+}
+
+document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedIdx >= 0) { e.preventDefault(); deleteScene(selectedIdx); }
+    } else if (e.key === ' ') {
+        e.preventDefault();
+        if (playheadTimer) stopPlayhead(); else startPlayhead();
+    } else if (e.key === 'ArrowLeft') {
+        if (selectedIdx > 0) { selectedIdx--; render(); }
+    } else if (e.key === 'ArrowRight') {
+        if (selectedIdx < scenes.length - 1) { selectedIdx++; render(); }
+    } else if (e.key === 'd' && e.ctrlKey) {
+        e.preventDefault();
+        duplicateScene();
+    }
+});
+
+document.getElementById('tracksContainer').addEventListener('click', e => {
+    if (e.target.id === 'tracksContainer' || e.target.id === 'tracksInner') {
+        selectedIdx = -1;
+        renderDetail();
+        render();
+    }
+});
+
+window.addEventListener('message', e => {
+    if (e.data && e.data.type === 'timeline_import') {
+        scenes = e.data.scenes || [];
+        selectedIdx = -1;
+        render();
+    }
+});
+
+init();
+</script>
+</body>
+</html>
