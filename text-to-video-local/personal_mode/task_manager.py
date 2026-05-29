@@ -139,12 +139,20 @@ class TaskScheduler:
                 'seed': seed
             })
         
-        # 保存到检查点
-        for task_data in tasks:
-            self.checkpoint_mgr.create_tasks(
-                total_chunks=1,
-                base_prompt=task_data['prompt']
-            )
+        # 保存到检查点（一次性创建所有任务，避免 ID 重复）
+        self.checkpoint_mgr.create_tasks(
+            total_chunks=total_chunks,
+            base_prompt=base_prompt
+        )
+        
+        # 如果使用了 AI 优化，逐个更新提示词
+        if use_ai_enhance:
+            for task_data in tasks:
+                checkpoint = self.checkpoint_mgr.load_checkpoint(task_data['task_id'])
+                if checkpoint:
+                    checkpoint.prompt = task_data['prompt']
+                    checkpoint.seed = task_data['seed']
+                    self.checkpoint_mgr.save_checkpoint(checkpoint)
         
         self.metadata['total_chunks'] = total_chunks
         self.metadata['base_prompt'] = base_prompt

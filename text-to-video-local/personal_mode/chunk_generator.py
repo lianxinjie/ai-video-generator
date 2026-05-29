@@ -65,7 +65,7 @@ class ChunkGenerator:
         logger.info(f"  - 设备：{device}")
         logger.info(f"  - 精度：{dtype}")
         logger.info(f"  - 分辨率：{resolution}")
-        logger.info(f"  - 每段帧数：{num_frames}")
+        logger.info(f"  - 每段帧数：{self.num_frames}")
     
     def generate_chunk(
         self,

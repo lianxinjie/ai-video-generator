@@ -223,7 +223,7 @@ class CollaborativeScheduler:
             if use_ai:
                 # 调用 AI 分析
                 try:
-                    ai_result = self.ai_analyzer.analyze(full_prompt, mode='detailed')
+                    ai_result = self.ai_analyzer.ai_analyze(full_prompt, mode='detailed')
                     
                     self._log(
                         f"AI 分析完成：{ai_result.get('total_scenes', 0)} 个场景", 
@@ -329,10 +329,17 @@ class CollaborativeScheduler:
             if len(boundaries) > 5:
                 self._log(f"  ... 还有 {len(boundaries) - 5} 个边界", "INFO")
         
-        # 2. 智能场景检测（基于关键词分析，新增功能）
+        # 2. 智能场景检测（基于关键词分析）
         if self.scene_refiner.enable_scene_detection and self.scene_refiner.scene_detector:
             self._log("\n【智能场景检测】开始分析关键词并判定新增场景...", "INFO")
-            raw_segments = self.scene_refiner.detect_and_add_scenes(full_prompt, raw_segments)
+            detected = self.scene_refiner.scene_detector.analyze_and_split(full_prompt)
+            if detected and len(detected) > len(raw_segments):
+                existing_texts = {s.get('text', '') for s in raw_segments}
+                for seg in detected:
+                    if seg.get('text', '') not in existing_texts:
+                        raw_segments.append(seg)
+                raw_segments.sort(key=lambda s: s.get('start_time', 0))
+                self._log(f"  场景检测后共 {len(raw_segments)} 个场景", "INFO")
         
         # 3. 交互式优化（AI 分析 + 用户确认）
         optimized_segments, scene_report = self.scene_refiner.interactive_refine(
@@ -587,6 +594,7 @@ class CollaborativeScheduler:
             'scene_type': analysis.get('scene_type', {}).get('type', 'unknown'),
             'style': analysis.get('style', {}).get('style', 'unknown'),
             'suggestion': analysis.get('suggestion', ''),
+            'reason': analysis.get('reason', ''),
             'assigned_time': datetime.now().isoformat(),
             'start_time': None,
             'end_time': None,
@@ -832,7 +840,7 @@ if __name__ == '__main__':
     for i, prompt in enumerate(test_prompts):
         task = scheduler.assign_task(i, prompt)
         print(f"\n段 {i + 1}: {task['method']} - {task['complexity_score']:.2f}")
-        print(f"原因:{scheduler.segments[i]['reason']}")
+        print(f"原因:{scheduler.segments[i].get('reason', 'N/A')}")
     
     # 查看进度
     scheduler.print_progress()

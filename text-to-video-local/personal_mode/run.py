@@ -533,8 +533,8 @@ def run_collaborative_mode(
         print(f"  自动确认：{'是' if auto_approve_changes else '否（用户确认）'}")
         print("="*70 + "\n")
         
-        # AI 分析配音脚本
-        if character_voice or True:  # 始终分析，即使用户没指定语音
+        # AI 分析配音脚本（仅在启用配音时）
+        if character_voice:
             print("【AI 配音分析】正在分析视频脚本...\n")
             script_segments = voice_analyzer.split_script_by_duration(
                 full_prompt=prompt,
@@ -543,11 +543,13 @@ def run_collaborative_mode(
             )
             
             print(f"  分析完成：共 {len(script_segments)} 段配音脚本")
-            for seg in script_segments[:3]:  # 只显示前 3 段
+            for seg in script_segments[:3]:
                 print(f"    段{seg['segment_index'] + 1}: {seg['voiceover']['text'][:30]}...")
             if len(script_segments) > 3:
                 print(f"    ... 还有 {len(script_segments) - 3} 段")
             print()
+        else:
+            script_segments = []
         
         # AI 辅助场景分析（核心功能）
         if enable_ai_assist and scheduler.ai_analyzer:

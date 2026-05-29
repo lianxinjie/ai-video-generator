@@ -86,7 +86,10 @@ try:
         import urllib.error
         
         try:
-            urllib.request.urlretrieve(url, path, reporthook=lambda b, bs, t: print(f"  进度：{b*bs/t*100:.0f}%", end='\r'))
+            def _report_progress(b, bs, t):
+                if t > 0:
+                    print(f"  进度：{b*bs/t*100:.0f}%", end='\r')
+            urllib.request.urlretrieve(url, path, reporthook=_report_progress)
             print()  # 换行
             return True
         except Exception as e:

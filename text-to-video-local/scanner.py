@@ -12,7 +12,7 @@ import subprocess
 import platform
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 import hashlib
 
 
@@ -27,8 +27,8 @@ class HardwareInfo:
     # GPU
     gpu_available: bool = False
     gpu_count: int = 0
-    gpu_models: List[str] = None
-    gpu_memory_total: List[float] = None  # GB
+    gpu_models: List[str] = field(default_factory=list)
+    gpu_memory_total: List[float] = field(default_factory=list)
     
     # 内存
     ram_total: float = 0.0  # GB
@@ -171,7 +171,11 @@ class SystemScanner:
         
         # CPU 核心数
         self.hardware.cpu_cores = os.cpu_count() or 0
-        self.hardware.cpu_threads = self.hardware.cpu_cores
+        try:
+            import psutil
+            self.hardware.cpu_threads = psutil.cpu_count(logical=True) or self.hardware.cpu_cores
+        except ImportError:
+            self.hardware.cpu_threads = self.hardware.cpu_cores * 2
         
         print(f"  ✓ CPU: {self.hardware.cpu_model}")
         print(f"  ✓ 核心数：{self.hardware.cpu_cores} 核")

@@ -13,7 +13,7 @@
             padding: 20px;
         }
         .container {
-            max-width: 1000px;
+            max-width: 1100px;
             margin: 0 auto;
             background: white;
             border-radius: 20px;
@@ -42,34 +42,53 @@
             color: #667eea;
             font-size: 20px;
             margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        @media (max-width: 640px) {
+            .form-row { grid-template-columns: 1fr; }
         }
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
         .form-group label {
             display: block;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             color: #2d3748;
             font-weight: 600;
+            font-size: 13px;
         }
         .form-group input,
         .form-group select,
         .form-group textarea {
             width: 100%;
-            padding: 12px 15px;
+            padding: 10px 12px;
             border: 2px solid #e2e8f0;
             border-radius: 8px;
             font-size: 14px;
+            background: white;
         }
         .form-group input:focus,
-        .form-group select:focus {
+        .form-group select:focus,
+        .form-group textarea:focus {
             outline: none;
             border-color: #667eea;
         }
+        .form-group textarea {
+            min-height: 60px;
+            resize: vertical;
+            font-family: inherit;
+        }
         .help-text {
-            font-size: 13px;
+            font-size: 12px;
             color: #718096;
-            margin-top: 5px;
+            margin-top: 4px;
         }
         .btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -84,14 +103,33 @@
             transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(102,126,234,0.4);
         }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
         .btn-secondary {
             background: #e2e8f0;
             color: #4a5568;
+        }
+        .btn-sm {
+            padding: 6px 14px;
+            font-size: 13px;
+            border-radius: 6px;
+        }
+        .btn-danger {
+            background: #fed7d7;
+            color: #c53030;
+        }
+        .btn-success {
+            background: #c6f6d5;
+            color: #276749;
         }
         .btn-group {
             display: flex;
             gap: 15px;
             margin-top: 30px;
+            flex-wrap: wrap;
         }
         .status-message {
             padding: 15px;
@@ -107,29 +145,282 @@
             background: #fed7d7;
             color: #c53030;
         }
+        .status-info {
+            background: #bee3f8;
+            color: #2c5282;
+        }
+
+        /* AI cards styling */
+        .ai-card-list {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .ai-card {
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            background: white;
+            padding: 18px 20px;
+            position: relative;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .ai-card.expanded {
+            border-color: #667eea;
+            box-shadow: 0 4px 16px rgba(102,126,234,0.12);
+        }
+        .ai-card.disabled {
+            opacity: 0.55;
+        }
+        /* --- collapsed summary --- */
+        .ai-card-summary {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+        .card-summary-main {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .card-nickname-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-nickname {
+            font-size: 15px;
+            font-weight: 700;
+            color: #2d3748;
+            border: none;
+            background: transparent;
+            padding: 2px 6px;
+            border-radius: 4px;
+            max-width: 220px;
+        }
+        .card-nickname:hover { background: #f7fafc; }
+        .card-nickname:focus { background: #edf2f7; outline: 1px solid #a0aec0; }
+        .card-nickname:empty:before {
+            content: attr(data-placeholder);
+            color: #a0aec0;
+            font-style: italic;
+        }
+        .card-meta {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: #4a5568;
+        }
+        .card-meta .model-label {
+            font-family: 'SF Mono', Consolas, monospace;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 11.5px;
+        }
+        .card-tag {
+            display: inline-block;
+            padding: 1px 7px;
+            border-radius: 999px;
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+        }
+        .tag-usage-scene_analysis { background: #ebf5ff; color: #2b6cb0; }
+        .tag-usage-voiceover      { background: #fef5e7; color: #c05621; }
+        .tag-usage-image_generation { background: #f0fff4; color: #276749; }
+        .tag-api {
+            background: #f7fafc;
+            color: #4a5568;
+            border: 1px solid #e2e8f0;
+        }
+        .card-actions-row {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            flex-shrink: 0;
+        }
+        .conn-status {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11.5px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 999px;
+            cursor: default;
+            min-width: 72px;
+            justify-content: center;
+        }
+        .conn-status.idle  { background: #edf2f7; color: #718096; }
+        .conn-status.testing { background: #fefcbf; color: #b7791f; }
+        .conn-status.ok    { background: #c6f6d5; color: #22543d; }
+        .conn-status.fail  { background: #fed7d7; color: #742a2a; }
+        .conn-status .dot {
+            width: 7px; height: 7px; border-radius: 50%;
+        }
+        .conn-status.idle .dot  { background: #a0aec0; }
+        .conn-status.testing .dot { background: #ecc94b; animation: pulse 1s infinite; }
+        .conn-status.ok .dot    { background: #38a169; }
+        .conn-status.fail .dot  { background: #e53e3e; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        .btn-sm-card {
+            border: 1.5px solid #e2e8f0;
+            background: white;
+            color: #4a5568;
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: 500;
+            white-space: nowrap;
+            transition: all 0.15s;
+        }
+        .btn-sm-card:hover { border-color: #667eea; color: #667eea; background: #f7fbff; }
+        .btn-sm-card.primary { background: #667eea; color: white; border-color: #667eea; }
+        .btn-sm-card.primary:hover { background: #5a67d8; }
+        .btn-test {
+            background: white;
+            color: #4a5568;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.15s;
+        }
+        .btn-test:hover { border-color: #667eea; color: #667eea; }
+        .btn-test.testing { opacity: 0.65; cursor: not-allowed; }
+        .ai-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 12px;
+            border-bottom: 1px dashed #e2e8f0;
+        }
+        .ai-card-title {
+            font-weight: 700;
+            color: #2d3748;
+            font-size: 15px;
+        }
+        .ai-card-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .ai-card-actions button {
+            border: none;
+            padding: 5px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 38px;
+            height: 20px;
+            display: inline-block;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            background-color: #cbd5e0;
+            border-radius: 999px;
+            transition: 0.2s;
+            cursor: pointer;
+        }
+        .toggle-slider:before {
+            content: "";
+            position: absolute;
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            top: 3px;
+            background-color: white;
+            border-radius: 50%;
+            transition: 0.2s;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: #667eea;
+        }
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(18px);
+        }
+
+        .model-loader-row {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+        .model-loader-row .form-group {
+            flex: 1;
+            margin-bottom: 0;
+        }
+        .model-loader-row button {
+            white-space: nowrap;
+            height: 40px;
+        }
+
+        .img-params {
+            margin-top: 15px;
+            padding: 15px;
+            background: #edf2f7;
+            border-radius: 8px;
+            display: none;
+        }
+        .img-params h4 {
+            color: #4a5568;
+            font-size: 13px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .empty-state {
+            padding: 30px;
+            text-align: center;
+            color: #a0aec0;
+            border: 2px dashed #e2e8f0;
+            border-radius: 12px;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <a href="/" class="back-link">← 返回首页</a>
-        <h1>⚙️ AI 配置</h1>
-        <div class="subtitle">配置 AI 视频生成的各项参数</div>
-        
+        <a href="/" class="back-link">&larr; 返回首页</a>
+        <h1>AI 配置</h1>
+        <div class="subtitle">配置 AI 视频生成的各项参数与云端 AI 服务</div>
+
         <form id="configForm">
             <div class="config-section">
-                <h2>🎯 模型配置</h2>
-                <div class="form-group">
-                    <label for="model">AI 模型</label>
-                    <select id="model" name="model">
-                        <option value="modelscope">ModelScope (通义实验室)</option>
-                        <option value="animatediff">AnimateDiff (卡通风格)</option>
-                        <option value="cogvideox">CogVideoX (高质量)</option>
-                        <option value="svd">Stable Video Diffusion (图转视频)</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="model_path">模型路径</label>
-                    <input type="text" id="model_path" name="model_path" value="./models">
+                <h2>模型配置</h2>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="model">AI 模型</label>
+                        <select id="model" name="model">
+                            <option value="modelscope">ModelScope (通义实验室)</option>
+                            <option value="animatediff">AnimateDiff (卡通风格)</option>
+                            <option value="cogvideox">CogVideoX (高质量)</option>
+                            <option value="svd">Stable Video Diffusion (图转视频)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="model_path">模型路径</label>
+                        <input type="text" id="model_path" name="model_path" value="./models">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="precision">计算精度</label>
@@ -139,78 +430,64 @@
                     </select>
                 </div>
             </div>
-            
+
             <div class="config-section">
-                <h2>🎬 生成参数</h2>
-                <div class="form-group">
-                    <label for="duration">视频时长 (秒)</label>
-                    <input type="number" id="duration" name="duration" min="1" max="60" value="10">
-                </div>
-                <div class="form-group">
-                    <label for="resolution">分辨率</label>
-                    <select id="resolution" name="resolution">
-                        <option value="512x512">512×512</option>
-                        <option value="768x768">768×768</option>
-                        <option value="1024x1024">1024×1024</option>
-                    </select>
+                <h2>生成参数</h2>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="duration">视频时长 (秒)</label>
+                        <input type="number" id="duration" name="duration" min="1" max="60" value="10">
+                    </div>
+                    <div class="form-group">
+                        <label for="resolution">分辨率</label>
+                        <select id="resolution" name="resolution">
+                            <option value="512x512">512x512</option>
+                            <option value="768x768">768x768</option>
+                            <option value="1024x1024">1024x1024</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="fps">帧率 (FPS)</label>
                     <input type="number" id="fps" name="fps" min="8" max="60" value="24">
                 </div>
             </div>
-            
+
             <div class="config-section">
-                <h2>🔧 高级设置</h2>
-                <div class="form-group">
-                    <label for="guidance_scale">引导系数 (Guidance Scale)</label>
-                    <input type="number" id="guidance_scale" name="guidance_scale" min="1" max="20" step="0.5" value="7.5">
-                    <div class="help-text">控制 AI 遵循提示词的程度，越高越接近描述</div>
-                </div>
-                <div class="form-group">
-                    <label for="seed">随机种子 (Seed)</label>
-                    <input type="number" id="seed" name="seed" value="-1" placeholder="-1 表示随机">
-                    <div class="help-text">相同种子会产生相同的视频，-1 表示随机</div>
+                <h2>高级设置</h2>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="guidance_scale">引导系数 (Guidance Scale)</label>
+                        <input type="number" id="guidance_scale" name="guidance_scale" min="1" max="20" step="0.5" value="7.5">
+                        <div class="help-text">控制 AI 遵循提示词的程度，越高越接近描述</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="seed">随机种子 (Seed)</label>
+                        <input type="number" id="seed" name="seed" value="-1" placeholder="-1 表示随机">
+                        <div class="help-text">相同种子会产生相同的视频，-1 表示随机</div>
+                    </div>
                 </div>
             </div>
-            
+
             <div class="config-section">
-                <h2>☁️ 云端 AI 配置（用于场景分析）</h2>
-                <div class="form-group">
-                    <label for="ai_api_type">AI 服务商</label>
-                    <select id="ai_api_type" name="ai_api_type">
-                        <option value="qwen">通义千问 (推荐)</option>
-                        <option value="openai">OpenAI (GPT)</option>
-                        <option value="clove">Clove AI</option>
-                    </select>
+                <h2>
+                    <span>云端 AI 配置</span>
+                    <button type="button" class="btn btn-sm btn-success" onclick="addAiCard()">+ 新增配置</button>
+                </h2>
+                <div class="help-text" style="margin-bottom: 15px;">
+                    可以为不同用途（场景分析、配音、生成图片）分别配置不同的 AI 服务。
+                    支持 API Key、Cookie 登录、Access Key + Secret Key 三种认证方式。
                 </div>
-                <div class="form-group">
-                    <label for="ai_api_key">API Key</label>
-                    <input type="password" id="ai_api_key" name="ai_api_key" placeholder="请输入 API Key">
-                    <div class="help-text">通义千问：https://dashscope.console.aliyun.com/apiKey</div>
-                </div>
-                <div class="form-group">
-                    <label for="ai_api_base">API Base URL</label>
-                    <input type="text" id="ai_api_base" name="ai_api_base" value="https://dashscope.aliyuncs.com/compatible-mode/v1">
-                    <div class="help-text">通义千问默认：https://dashscope.aliyuncs.com/compatible-mode/v1</div>
-                </div>
-                <div class="form-group">
-                    <label for="ai_model_name">模型名称</label>
-                    <input type="text" id="ai_model_name" name="ai_model_name" value="qwen-turbo">
-                    <div class="help-text">通义千问：qwen-turbo, qwen-plus, qwen-max</div>
-                </div>
-                <div class="form-group">
-                    <label for="ai_timeout">AI 超时时间 (秒)</label>
-                    <input type="number" id="ai_timeout" name="ai_timeout" min="10" max="300" value="60">
-                </div>
-                <div class="form-group">
-                    <label for="ai_max_retries">最大重试次数</label>
-                    <input type="number" id="ai_max_retries" name="ai_max_retries" min="0" max="10" value="3">
+
+                <div id="aiCardList" class="ai-card-list">
+                    <div class="empty-state" id="aiEmptyState">
+                        暂无云端 AI 配置，点击 "+ 新增配置" 添加。
+                    </div>
                 </div>
             </div>
-            
+
             <div id="statusMessage" class="status-message"></div>
-            
+
             <div class="btn-group">
                 <button type="button" class="btn btn-secondary" onclick="loadConfig()">加载配置</button>
                 <button type="button" class="btn btn-secondary" onclick="resetConfig()">重置默认</button>
@@ -218,23 +495,630 @@
             </div>
         </form>
     </div>
-    
+
     <script>
         const CONFIG_API = '/api/config';
-        
+        const FETCH_MODELS_API = '/api/config/fetch-models';
+        const TEST_CONNECTION_API = '/api/config/test-connection';
+
+        const expandedCardIds = new Set();
+        const cardStatus = {};
+
+        const USAGE_LABELS = {
+            scene_analysis: '场景分析',
+            voiceover: '配音',
+            image_generation: '生成图片'
+        };
+
+        const AUTH_LABELS = {
+            api_key: 'API Key',
+            cookie: 'Cookie 登录',
+            access_key_secret: 'Access Key + Secret Key'
+        };
+
+        const API_TYPE_OPTIONS = [
+            { value: 'qwen', label: '通义千问 (DashScope)' },
+            { value: 'openai', label: 'OpenAI (GPT)' },
+            { value: 'clove', label: 'Clove AI' },
+            { value: 'ollama', label: 'Ollama (本地)' },
+            { value: 'mgtv', label: '芒果TV AIGC' },
+            { value: 'custom', label: '自定义 (OpenAI 兼容)' }
+        ];
+
+        let aiCards = [];
+
         window.onload = function() {
             loadConfig();
-            setupRangeListeners();
         };
-        
-        function setupRangeListeners() {
+
+        function makeId() {
+            return 'c_' + Math.random().toString(36).slice(2, 10);
         }
-        
+
+        function newCardData() {
+            return {
+                id: makeId(),
+                nickname: '',
+                usage: 'scene_analysis',
+                enabled: true,
+                auth_type: 'api_key',
+                api_type: 'qwen',
+                api_base: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+                api_key: '',
+                cookie: '',
+                access_key: '',
+                secret_key: '',
+                model_name: 'qwen-turbo',
+                timeout: 60,
+                max_retries: 3,
+                img_width: 1024,
+                img_height: 1024,
+                img_steps: 20,
+                img_guidance_scale: 7.5,
+                img_num_images: 1,
+                img_negative_prompt: 'bad quality, worst quality, blurry, distorted, deformed',
+                img_ratio: '3:4',
+                img_resolution: '2K',
+                img_style_id: 35,
+                video_model_id: 28,
+                video_ratio: '16:9',
+                video_resolution: '720p',
+                video_duration: 5,
+                video_num_videos: 1
+            };
+        }
+
+        function addAiCard(data) {
+            aiCards.push(data || newCardData());
+            renderCards();
+        }
+
+        function removeAiCard(id) {
+            if (!confirm('确定删除这条配置吗？')) return;
+            aiCards = aiCards.filter(c => c.id !== id);
+            renderCards();
+        }
+
+        function toggleCardEnabled(id) {
+            const card = aiCards.find(c => c.id === id);
+            if (card) {
+                card.enabled = !card.enabled;
+                const cardEl = document.querySelector(`.ai-card[data-id="${id}"]`);
+                if (cardEl) cardEl.classList.toggle('disabled', !card.enabled);
+            }
+        }
+
+        function onCardFieldChange(id, field, value) {
+            const card = aiCards.find(c => c.id === id);
+            if (!card) return;
+
+            // Type coercion
+            const intFields = ['timeout', 'max_retries', 'img_width', 'img_height', 'img_steps', 'img_num_images', 'img_style_id', 'video_model_id', 'video_duration', 'video_num_videos'];
+            const floatFields = ['img_guidance_scale'];
+            const boolFields = ['enabled'];
+
+            if (intFields.includes(field)) value = parseInt(value) || 0;
+            else if (floatFields.includes(field)) value = parseFloat(value) || 0;
+            else if (boolFields.includes(field)) value = !!value;
+
+            card[field] = value;
+
+            // If usage -> image_generation, show image params
+            if (field === 'usage') {
+                const imgParams = document.getElementById(`imgParams-${id}`);
+                if (imgParams) imgParams.style.display = (value === 'image_generation') ? 'block' : 'none';
+            }
+
+            // If auth_type changes, re-render to show correct fields
+            if (field === 'auth_type' || field === 'api_type') {
+                renderCards();
+            }
+
+            // API type presets
+            if (field === 'api_type') {
+                const presets = {
+                    'qwen': { api_base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model_name: 'qwen-turbo' },
+                    'openai': { api_base: 'https://api.openai.com/v1', model_name: 'gpt-4o-mini' },
+                    'clove': { api_base: '', model_name: '' },
+                    'ollama': { api_base: 'http://localhost:11434/v1', model_name: 'llama3' },
+                    'mgtv': { api_base: 'https://aigc.mgtv.com', model_name: '' },
+                    'custom': { api_base: '', model_name: '' }
+                };
+                if (presets[value]) {
+                    card.api_base = presets[value].api_base || card.api_base;
+                    if (!card.model_name) card.model_name = presets[value].model_name;
+                    if (value === 'mgtv' && card.auth_type !== 'access_key_secret') {
+                        card.auth_type = 'access_key_secret';
+                    }
+                    renderCards();
+                }
+            }
+        }
+
+        function renderCards() {
+            // Flush unsaved editable nicknames to aiCards before re-rendering
+            document.querySelectorAll('.card-nickname[data-card-id]').forEach(el => {
+                const cid = el.dataset.cardId;
+                const card = aiCards.find(c => c.id === cid);
+                if (card) card.nickname = el.textContent.trim();
+            });
+
+            const listEl = document.getElementById('aiCardList');
+
+            if (aiCards.length === 0) {
+                listEl.innerHTML = '<div class="empty-state" id="aiEmptyState">暂无云端 AI 配置，点击 "+ 新增配置" 添加。</div>';
+                return;
+            }
+
+            listEl.innerHTML = '';
+            aiCards.forEach((c, idx) => {
+                listEl.appendChild(buildCardHtml(c, idx));
+            });
+        }
+
+        function buildCardHtml(c, idx) {
+            const div = document.createElement('div');
+            div.dataset.id = c.id;
+            const isExpanded = expandedCardIds.has(c.id);
+            div.className = 'ai-card' + (c.enabled ? '' : ' disabled') + (isExpanded ? ' expanded' : '');
+
+            const usageLabel  = USAGE_LABELS[c.usage] || c.usage;
+            const apiLabel    = (API_TYPE_OPTIONS.find(o => o.value === c.api_type) || {}).label || c.api_type;
+            const modelDisp   = c.model_name || (c.api_type === 'mgtv' ? 'styleId:' + (c.img_style_id||35) : '(未设置模型)');
+            const nick        = c.nickname || '';
+            const status      = cardStatus[c.id] || 'idle';
+            const statusLabels = { idle: '未测试', testing: '测试中', ok: '可用', fail: '不可用' };
+
+            // ---------- 折叠态 ----------
+            if (!isExpanded) {
+                div.innerHTML = `
+                    <div class="ai-card-summary">
+                        <div class="card-summary-main">
+                            <div class="card-nickname-row">
+                                <span class="card-nickname" contenteditable="true"
+                                    data-card-id="${c.id}"
+                                    data-placeholder="点击填写备注名"
+                                    onblur="onCardFieldChange('${c.id}', 'nickname', this.textContent.trim())"
+                                >${escapeHtml(nick) || ''}</span>
+                                <span class="card-meta">
+                                    <span class="model-label">${escapeHtml(modelDisp)}</span>
+                                    <span class="card-tag tag-usage-${escapeHtml(c.usage)}">${escapeHtml(usageLabel)}</span>
+                                    <span class="card-tag tag-api">${escapeHtml(apiLabel)}</span>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="card-actions-row">
+                            <span class="conn-status ${status}" title="${status === 'fail' ? '点击重试' : '连通性状态'}"
+                                  onclick="${status === 'fail' ? `apiTestConnection('${c.id}')` : ''}" style="${status === 'fail' ? 'cursor:pointer;' : ''}">
+                                <span class="dot"></span>${statusLabels[status]}
+                            </span>
+                            <label class="toggle-switch" title="启用/禁用">
+                                <input type="checkbox" ${c.enabled ? 'checked' : ''} onchange="toggleCardEnabled('${c.id}')">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <button type="button" class="btn-sm-card primary" onclick="toggleCardEdit('${c.id}')">编辑</button>
+                            <button type="button" class="btn-test" onclick="apiTestConnection('${c.id}')">测试</button>
+                            <button type="button" class="btn-sm-card" onclick="removeAiCard('${c.id}')">删除</button>
+                        </div>
+                    </div>
+                `;
+                return div;
+            }
+
+            // ---------- 展开态: 完整表单 ----------
+            const usageOptions = Object.entries(USAGE_LABELS).map(([k, v]) =>
+                `<option value="${k}" ${c.usage === k ? 'selected' : ''}>${v}</option>`).join('');
+            const apiTypeOptions = API_TYPE_OPTIONS.map(opt =>
+                `<option value="${opt.value}" ${c.api_type === opt.value ? 'selected' : ''}>${opt.label}</option>`).join('');
+            const authOptions = Object.entries(AUTH_LABELS).map(([k, v]) =>
+                `<option value="${k}" ${c.auth_type === k ? 'selected' : ''}>${v}</option>`).join('');
+
+            let authFields = '';
+            if (c.auth_type === 'api_key') {
+                authFields = `<div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" value="${escapeHtml(c.api_key)}"
+                        onchange="onCardFieldChange('${c.id}', 'api_key', this.value)" placeholder="sk-...">
+                    <div class="help-text">通义千问：https://dashscope.console.aliyun.com/apiKey</div></div>`;
+            } else if (c.auth_type === 'cookie') {
+                authFields = `<div class="form-group">
+                    <label>Cookie 值</label>
+                    <textarea onchange="onCardFieldChange('${c.id}', 'cookie', this.value)"
+                        placeholder="从浏览器开发者工具 &rarr; Application &rarr; Cookies 复制">${escapeHtml(c.cookie)}</textarea>
+                    <div class="help-text">使用浏览器登录态作为认证；注意 Cookie 过期后需重新复制。</div></div>`;
+            } else if (c.auth_type === 'access_key_secret') {
+                authFields = `<div class="form-row">
+                    <div class="form-group">
+                        <label>Access Key</label>
+                        <input type="text" value="${escapeHtml(c.access_key)}"
+                            onchange="onCardFieldChange('${c.id}', 'access_key', this.value)" placeholder="Access Key"></div>
+                    <div class="form-group">
+                        <label>Secret Key</label>
+                        <input type="password" value="${escapeHtml(c.secret_key)}"
+                            onchange="onCardFieldChange('${c.id}', 'secret_key', this.value)" placeholder="Secret Key">
+                        <div class="help-text">用于生成图片类服务（如阿里云视觉智能）的密钥对认证。</div></div></div>`;
+            }
+
+            let imgParamsBlock = '';
+            imgParamsBlock = `
+                <div id="imgParams-${c.id}" style="display:${c.usage === 'image_generation' ? 'block' : 'none'};">
+                    <h4 style="margin-top:18px;">图片生成参数</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>图片宽度</label>
+                            <input type="number" value="${c.img_width}" min="64" max="4096" step="64"
+                                onchange="onCardFieldChange('${c.id}', 'img_width', this.value)"></div>
+                        <div class="form-group">
+                            <label>图片高度</label>
+                            <input type="number" value="${c.img_height}" min="64" max="4096" step="64"
+                                onchange="onCardFieldChange('${c.id}', 'img_height', this.value)"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>图片比例 (ratio)</label>
+                            <input type="text" value="${escapeHtml(c.img_ratio || '3:4')}"
+                                onchange="onCardFieldChange('${c.id}', 'img_ratio', this.value)" placeholder="3:4 / 16:9 / 1:1"></div>
+                        <div class="form-group">
+                            <label>分辨率</label>
+                            <select onchange="onCardFieldChange('${c.id}', 'img_resolution', this.value)">
+                                <option value="720p"  ${c.img_resolution === '720p'  ? 'selected' : ''}>720p</option>
+                                <option value="1080p" ${c.img_resolution === '1080p' ? 'selected' : ''}>1080p</option>
+                                <option value="2K"    ${c.img_resolution === '2K' || !c.img_resolution ? 'selected' : ''}>2K</option>
+                                <option value="4K"    ${c.img_resolution === '4K'    ? 'selected' : ''}>4K</option>
+                            </select></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>风格 ID (styleId)</label>
+                            <input type="number" value="${c.img_style_id || 35}" min="1"
+                                onchange="onCardFieldChange('${c.id}', 'img_style_id', this.value)" placeholder="如 35">
+                            <div class="help-text">芒果TV AIGC 平台的风格编号</div></div>
+                        <div class="form-group">
+                            <label>每次生成数量</label>
+                            <input type="number" value="${c.img_num_images}" min="1" max="8"
+                                onchange="onCardFieldChange('${c.id}', 'img_num_images', this.value)"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>负向 Prompt</label>
+                        <textarea onchange="onCardFieldChange('${c.id}', 'img_negative_prompt', this.value)">${escapeHtml(c.img_negative_prompt)}</textarea>
+                    </div>
+                    <h4>视频生成参数</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>模型 ID</label>
+                            <input type="number" value="${c.video_model_id || 28}"
+                                onchange="onCardFieldChange('${c.id}', 'video_model_id', this.value)"></div>
+                        <div class="form-group">
+                            <label>视频比例</label>
+                            <input type="text" value="${escapeHtml(c.video_ratio || '16:9')}"
+                                onchange="onCardFieldChange('${c.id}', 'video_ratio', this.value)" placeholder="16:9"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>视频分辨率</label>
+                            <input type="text" value="${escapeHtml(c.video_resolution || '720p')}"
+                                onchange="onCardFieldChange('${c.id}', 'video_resolution', this.value)" placeholder="720p"></div>
+                        <div class="form-group">
+                            <label>视频时长 (秒)</label>
+                            <input type="number" value="${c.video_duration || 5}" min="1" max="30"
+                                onchange="onCardFieldChange('${c.id}', 'video_duration', this.value)"></div>
+                    </div>
+                    <h4>在线生成测试</h4>
+                    <div class="test-generation-box" style="background:#f8f9fa;padding:14px;border-radius:8px;">
+                        <div class="form-group">
+                            <label>测试 Prompt</label>
+                            <textarea id="testPrompt-${c.id}" placeholder="例如：生成一张清汤肥牛菠菜的美食图片，真实摄影风格" style="min-height:55px;"></textarea>
+                        </div>
+                        <div style="display:flex;gap:10px;">
+                            <button type="button" class="btn btn-sm" onclick="testGenerateImage('${c.id}')">测试生成图片</button>
+                            <button type="button" class="btn btn-sm" onclick="testGenerateVideo('${c.id}')">测试生成视频</button>
+                        </div>
+                        <div id="testResult-${c.id}" style="margin-top:10px;"></div>
+                    </div>
+                </div>`;
+
+            div.innerHTML = `
+                <div class="ai-card-header">
+                    <div class="ai-card-title">编辑配置</div>
+                    <div class="ai-card-actions">
+                        <label class="toggle-switch" title="启用/禁用">
+                            <input type="checkbox" ${c.enabled ? 'checked' : ''} onchange="toggleCardEnabled('${c.id}')">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <button type="button" class="btn-sm-card primary" onclick="toggleCardEdit('${c.id}')">完成</button>
+                        <button type="button" class="btn-sm-card" onclick="removeAiCard('${c.id}')">删除</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>备注名称</label>
+                    <input type="text" value="${escapeHtml(nick)}"
+                        onchange="onCardFieldChange('${c.id}', 'nickname', this.value)"
+                        placeholder="便于识别的名称，如：我的通义千问、芒果视频生成">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>用途</label>
+                        <select onchange="onCardFieldChange('${c.id}', 'usage', this.value)">${usageOptions}</select>
+                        <div class="help-text">这条 AI 配置服务的场景</div>
+                    </div>
+                    <div class="form-group">
+                        <label>认证方式</label>
+                        <select onchange="onCardFieldChange('${c.id}', 'auth_type', this.value)">${authOptions}</select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>AI 服务商</label>
+                        <select onchange="onCardFieldChange('${c.id}', 'api_type', this.value)">${apiTypeOptions}</select>
+                    </div>
+                    <div class="form-group">
+                        <label>API Base URL</label>
+                        <input type="text" value="${escapeHtml(c.api_base)}"
+                            onchange="onCardFieldChange('${c.id}', 'api_base', this.value)"
+                            placeholder="https://api.example.com/v1">
+                    </div>
+                </div>
+
+                ${authFields}
+
+                <div class="form-group">
+                    <label>模型名称</label>
+                    <div class="model-loader-row">
+                        <div class="form-group">
+                            <select id="modelSelect-${c.id}"></select>
+                        </div>
+                        <button type="button" class="btn btn-sm" onclick="loadModels('${c.id}')">加载可用模型</button>
+                    </div>
+                    ${c.api_type === 'mgtv'
+                        ? `<div class="help-text" style="margin-top:4px;">
+                                芒果TV AIGC 平台使用 <b>风格 ID (styleId)</b> 和 <b>视频模型 ID</b>（见下方参数区）。
+                                点击"加载可用模型"可获取平台支持的模型列表。
+                            </div>`
+                        : `<div class="help-text">
+                                可点击按钮自动拉取，也可直接填写模型 ID（如 <code>28</code>、<code>qwen-turbo</code>）：<br>
+                                <input type="text" id="manualModel-${c.id}" value="${escapeHtml(c.model_name)}"
+                                    onchange="onCardFieldChange('${c.id}', 'model_name', this.value)"
+                                    placeholder="填写模型 ID 或名称">
+                            </div>`
+                    }
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>超时时间 (秒)</label>
+                        <input type="number" value="${c.timeout}" min="10" max="600"
+                            onchange="onCardFieldChange('${c.id}', 'timeout', this.value)"></div>
+                    <div class="form-group">
+                        <label>最大重试次数</label>
+                        <input type="number" value="${c.max_retries}" min="0" max="10"
+                            onchange="onCardFieldChange('${c.id}', 'max_retries', this.value)"></div>
+                </div>
+
+                ${imgParamsBlock}
+            `;
+            return div;
+        }
+
+        function toggleCardEdit(id) {
+            if (expandedCardIds.has(id)) expandedCardIds.delete(id);
+            else expandedCardIds.add(id);
+            renderCards();
+        }
+
+        async function apiTestConnection(id) {
+            const card = aiCards.find(c => c.id === id);
+            if (!card) return;
+            const prevStatus = cardStatus[id] || 'idle';
+            cardStatus[id] = 'testing';
+            renderCards();
+            try {
+                const resp = await fetch(TEST_CONNECTION_API, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        usage: card.usage,
+                        auth_type: card.auth_type,
+                        api_base: card.api_base,
+                        api_key: card.api_key,
+                        cookie: card.cookie,
+                        access_key: card.access_key,
+                        secret_key: card.secret_key,
+                        model_name: card.model_name,
+                        api_type: card.api_type,
+                        img_style_id: card.img_style_id,
+                        img_resolution: card.img_resolution,
+                        img_ratio: card.img_ratio,
+                        timeout: card.timeout,
+                    })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    cardStatus[id] = 'ok';
+                    const ms = data.detail?.elapsed_ms ?? '';
+                    showStatus(`${card.nickname || card.model_name}：连接测试成功 (${ms}ms)`, 'success');
+                } else {
+                    cardStatus[id] = 'fail';
+                    showStatus(`${card.nickname || card.model_name}：${data.error || '连接测试失败'}`, 'error');
+                }
+            } catch (e) {
+                cardStatus[id] = 'fail';
+                showStatus(`连接测试异常：${e.message}`, 'error');
+            }
+            renderCards();
+        }
+
+        function escapeHtml(str) {
+            if (typeof str !== 'string') return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        async function testGenerateImage(cardId) {
+            const card = aiCards.find(c => c.id === cardId);
+            if (!card) return;
+            const promptEl = document.getElementById(`testPrompt-${cardId}`);
+            const resultEl = document.getElementById(`testResult-${cardId}`);
+            const prompt = (promptEl?.value || '').trim();
+            if (!prompt) {
+                showStatus('请填写测试 Prompt', 'error');
+                return;
+            }
+            resultEl.innerHTML = '<p style="color:#666;">正在调用云端图片生成...（可能需要 30-120 秒）</p>';
+            showStatus('图片生成任务已提交，请稍候...', 'info');
+            try {
+                const resp = await fetch('/api/generate-image', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        config_id: cardId,
+                        prompt: prompt,
+                        style_id: card.img_style_id,
+                        resolution: card.img_resolution,
+                        ratio: card.img_ratio,
+                        nums: card.img_num_images,
+                    })
+                });
+                const data = await resp.json();
+                if (data.success && data.image_urls && data.image_urls.length) {
+                    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">';
+                    data.image_urls.forEach((url, i) => {
+                        html += `<a href="${escapeHtml(url)}" target="_blank"><img src="${escapeHtml(url)}" style="max-width:100%;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15);" loading="lazy"></a>`;
+                    });
+                    html += '</div><p style="margin-top:8px;font-size:12px;color:#666;">点击可放大查看</p>';
+                    resultEl.innerHTML = html;
+                    showStatus(`图片生成成功，共 ${data.image_urls.length} 张`, 'success');
+                } else {
+                    resultEl.innerHTML = `<p style="color:#c00;">生成失败：${escapeHtml(data.error || '未知错误')}</p>`;
+                    showStatus('图片生成失败：' + (data.error || '未知错误'), 'error');
+                }
+            } catch (e) {
+                resultEl.innerHTML = `<p style="color:#c00;">请求异常：${escapeHtml(e.message)}</p>`;
+                showStatus('图片生成请求异常', 'error');
+            }
+        }
+
+        async function testGenerateVideo(cardId) {
+            const card = aiCards.find(c => c.id === cardId);
+            if (!card) return;
+            const promptEl = document.getElementById(`testPrompt-${cardId}`);
+            const resultEl = document.getElementById(`testResult-${cardId}`);
+            const prompt = (promptEl?.value || '').trim();
+            if (!prompt) {
+                showStatus('请填写测试 Prompt', 'error');
+                return;
+            }
+            resultEl.innerHTML = '<p style="color:#666;">正在调用云端视频生成...（通常需要 60-300 秒）</p>';
+            showStatus('视频生成任务已提交，请稍候...', 'info');
+            try {
+                const resp = await fetch('/api/generate-video', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        config_id: cardId,
+                        prompt: prompt,
+                        model_id: card.video_model_id,
+                        ratio: card.video_ratio,
+                        resolution: card.video_resolution,
+                        duration: card.video_duration,
+                        nums: card.video_num_videos,
+                    })
+                });
+                const data = await resp.json();
+                if (data.success && data.video_url) {
+                    resultEl.innerHTML = `<video controls autoplay src="${escapeHtml(data.video_url)}" style="max-width:100%;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15);"></video>
+                        <p style="margin-top:8px;font-size:12px;color:#666;"><a href="${escapeHtml(data.video_url)}" target="_blank">下载视频</a></p>`;
+                    showStatus('视频生成成功', 'success');
+                } else {
+                    resultEl.innerHTML = `<p style="color:#c00;">生成失败：${escapeHtml(data.error || '未知错误')}</p>`;
+                    showStatus('视频生成失败：' + (data.error || '未知错误'), 'error');
+                }
+            } catch (e) {
+                resultEl.innerHTML = `<p style="color:#c00;">请求异常：${escapeHtml(e.message)}</p>`;
+                showStatus('视频生成请求异常', 'error');
+            }
+        }
+
+        async function loadModels(cardId) {
+            const card = aiCards.find(c => c.id === cardId);
+            if (!card) return;
+
+            const statusMsg = document.getElementById('statusMessage');
+
+            // Validate required fields per auth_type
+            if (card.auth_type === 'api_key' && !card.api_key) {
+                showStatus('请先填写 API Key', 'error');
+                return;
+            }
+            if (card.auth_type === 'cookie' && !card.cookie) {
+                showStatus('请先填写 Cookie', 'error');
+                return;
+            }
+            if (card.auth_type === 'access_key_secret' && (!card.access_key || !card.secret_key)) {
+                showStatus('请先填写 Access Key 和 Secret Key', 'error');
+                return;
+            }
+            if (!card.api_base) {
+                showStatus('请先填写 API Base URL', 'error');
+                return;
+            }
+
+            showStatus('正在加载可用模型...', 'info');
+
+            try {
+                const resp = await fetch(FETCH_MODELS_API, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        auth_type: card.auth_type,
+                        api_base: card.api_base,
+                        api_type: card.api_type,
+                        usage: card.usage,
+                        api_key: card.api_key,
+                        cookie: card.cookie,
+                        access_key: card.access_key,
+                        secret_key: card.secret_key
+                    })
+                });
+                const data = await resp.json();
+
+                if (data.success && data.models && data.models.length) {
+                    // Populate <select>
+                    const selectEl = document.getElementById(`modelSelect-${cardId}`);
+                    selectEl.innerHTML = '<option value="">-- 请选择 --</option>' +
+                        data.models.map(m => {
+                            const desc = m.description ? ` - ${escapeHtml(m.description)}` : '';
+                            return `<option value="${escapeHtml(m.id)}" ${String(m.id) === String(card.model_name || '') ? 'selected' : ''} title="${escapeHtml(m.description || m.name)}">${escapeHtml(m.id)} (${escapeHtml(m.name)})${desc}</option>`;
+                        }).join('');
+                    selectEl.onchange = function() {
+                        if (this.value) onCardFieldChange(cardId, 'model_name', this.value);
+                    };
+                    showStatus(`成功加载 ${data.count} 个可用模型`, 'success');
+                } else if (data.success) {
+                    const msg = data.hint || '未检测到可用模型，请检查 API Base URL 是否支持模型列表接口';
+                    showStatus(msg, 'info');
+                    // Auto-focus the manual model name input
+                    const manualInput = document.getElementById(`manualModel-${cardId}`);
+                    if (manualInput) manualInput.focus();
+                } else {
+                    showStatus('加载模型失败：' + (data.error || '未知错误'), 'error');
+                }
+            } catch (err) {
+                showStatus('加载模型失败：' + err.message, 'error');
+            }
+        }
+
         async function loadConfig() {
             try {
                 const response = await fetch(CONFIG_API);
                 const data = await response.json();
-                
+
                 if (data.success) {
                     const config = data.config;
                     document.getElementById('model').value = config.model || 'modelscope';
@@ -245,15 +1129,14 @@
                     document.getElementById('fps').value = config.fps || 24;
                     document.getElementById('guidance_scale').value = config.guidance_scale || 7.5;
                     document.getElementById('seed').value = config.seed || -1;
-                    
-                    // 加载云端 AI 配置
-                    document.getElementById('ai_api_type').value = config.ai_api_type || 'qwen';
-                    document.getElementById('ai_api_key').value = config.ai_api_key || '';
-                    document.getElementById('ai_api_base').value = config.ai_api_base || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
-                    document.getElementById('ai_model_name').value = config.ai_model_name || 'qwen-turbo';
-                    document.getElementById('ai_timeout').value = config.ai_timeout || 60;
-                    document.getElementById('ai_max_retries').value = config.ai_max_retries || 3;
-                    
+
+                    // Load AI configs list
+                    aiCards = (config.ai_configs || []).map(c => ({
+                        ...newCardData(),
+                        ...c
+                    }));
+                    renderCards();
+
                     showStatus('配置加载成功', 'success');
                 } else {
                     showStatus('加载配置失败：' + data.error, 'error');
@@ -263,7 +1146,7 @@
                 showStatus('加载配置失败：' + error.message, 'error');
             }
         }
-        
+
         async function saveConfig(config) {
             try {
                 const response = await fetch(CONFIG_API, {
@@ -272,18 +1155,19 @@
                     body: JSON.stringify({config: config})
                 });
                 const data = await response.json();
-                
+
                 if (data.success) {
-                    showStatus('配置保存成功！', 'success');
+                    showStatus('配置保存成功', 'success');
                 } else {
-                    showStatus('保存配置失败：' + data.error, 'error');
+                    showStatus('保存配置失败：' + (data.error || ''), 'error');
                 }
             } catch (error) {
                 showStatus('保存配置失败：' + error.message, 'error');
             }
         }
-        
+
         function resetConfig() {
+            if (!confirm('将重置为默认配置，确定吗？')) return;
             document.getElementById('model').value = 'modelscope';
             document.getElementById('model_path').value = './models';
             document.getElementById('precision').value = 'fp16';
@@ -292,24 +1176,22 @@
             document.getElementById('fps').value = 24;
             document.getElementById('guidance_scale').value = 7.5;
             document.getElementById('seed').value = -1;
-            // 重置云端 AI 配置
-            document.getElementById('ai_api_type').value = 'qwen';
-            document.getElementById('ai_api_key').value = '';
-            document.getElementById('ai_api_base').value = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
-            document.getElementById('ai_model_name').value = 'qwen-turbo';
-            document.getElementById('ai_timeout').value = 60;
-            document.getElementById('ai_max_retries').value = 3;
+
+            aiCards = [newCardData()];
+            renderCards();
             showStatus('已重置为默认配置', 'success');
         }
-        
+
         function showStatus(message, type) {
             const el = document.getElementById('statusMessage');
             el.textContent = message;
-            el.className = 'status-message status-' + type;
+            el.className = 'status-message status-' + (type || 'info');
             el.style.display = 'block';
-            setTimeout(() => { el.style.display = 'none'; }, 3000);
+            if (type !== 'info') {
+                setTimeout(() => { el.style.display = 'none'; }, 3500);
+            }
         }
-        
+
         document.getElementById('configForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const config = {
@@ -321,13 +1203,7 @@
                 fps: parseInt(document.getElementById('fps').value),
                 guidance_scale: parseFloat(document.getElementById('guidance_scale').value),
                 seed: parseInt(document.getElementById('seed').value),
-                // 云端 AI 配置
-                ai_api_type: document.getElementById('ai_api_type').value,
-                ai_api_key: document.getElementById('ai_api_key').value,
-                ai_api_base: document.getElementById('ai_api_base').value,
-                ai_model_name: document.getElementById('ai_model_name').value,
-                ai_timeout: parseInt(document.getElementById('ai_timeout').value),
-                ai_max_retries: parseInt(document.getElementById('ai_max_retries').value)
+                ai_configs: aiCards
             };
             saveConfig(config);
         });

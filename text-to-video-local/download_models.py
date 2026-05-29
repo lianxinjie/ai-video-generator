@@ -123,12 +123,13 @@ class ModelDownloader:
         
         # 检查依赖
         if "depends_on" in model_info:
-            dep_path = self.output_dir / model_info["depends_on"]
-            if not dep_path.exists():
+            dep_name = model_info["depends_on"]
+            existing = self.check_existing_models([dep_name])
+            if not existing.get(dep_name, False):
                 return {
                     "name": model_name,
                     "success": False,
-                    "error": f"依赖模型不存在：{model_info['depends_on']}",
+                    "error": f"依赖模型不存在：{dep_name}，请先安装",
                     "path": None
                 }
         

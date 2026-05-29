@@ -89,10 +89,14 @@ class AISceneAnalyzer:
                  max_retries: int = 2,
                  enable_health_check: bool = True,
                  fallback_channels: List[str] = None,
-                 verbose: bool = True):
+                 verbose: bool = True,
+                 auth_type: str = 'api_key',
+                 access_key: str = None,
+                 secret_key: str = None,
+                 cookie: str = None):
         """
         初始化 AI 场景分析器（支持超时和故障转移）
-        
+
         Args:
             model_type: 模型类型 ('local', 'openai', 'claude', 'qwen')
             model_name: 模型名称（本地模型如 'qwen2.5:7b'，云端模型如 'gpt-4'）
@@ -103,6 +107,10 @@ class AISceneAnalyzer:
             enable_health_check: 启用健康检查（默认 True）
             fallback_channels: 备用通道列表（故障时自动切换）
             verbose: 是否输出详细信息
+            auth_type: 认证方式 ('api_key', 'cookie', 'access_key_secret')
+            access_key: Access Key（用于 AK/SK HMAC 签名认证）
+            secret_key: Secret Key（用于 AK/SK HMAC 签名认证）
+            cookie: Cookie 值（用于 Cookie 认证）
         """
         self.verbose = verbose
         self.model_type = model_type
@@ -113,6 +121,10 @@ class AISceneAnalyzer:
         self.max_retries = max_retries
         self.enable_health_check = enable_health_check
         self.fallback_channels = fallback_channels or self._get_default_fallback_channels()
+        self.auth_type = auth_type
+        self.access_key = access_key
+        self.secret_key = secret_key
+        self.cookie = cookie
         
         # 分析历史
         self.analysis_history: List[Dict] = []
@@ -162,6 +174,57 @@ class AISceneAnalyzer:
         if self.verbose:
             timestamp = datetime.now().strftime("%H:%M:%S")
             print(f"[{timestamp}] [{level}] {message}")
+
+    def _build_auth_headers(self, url: str = None, method: str = "POST",
+                            query_params: dict = None,
+                            auth_type: str = None,
+                            api_key: str = None,
+                            access_key: str = None,
+                            secret_key: str = None,
+                            cookie: str = None) -> dict:
+        """
+        根据认证方式构建请求头。
+        auth_type:
+          - 'api_key': 使用 Authorization: Bearer <api_key>
+          - 'cookie': 使用 Cookie 头
+          - 'access_key_secret': 使用 X-Access-Key / X-Timestamp / X-Nonce / X-Signature (HMAC-SHA256)
+        """
+        auth_type = auth_type or self.auth_type
+        api_key = api_key if api_key is not None else self.api_key
+        access_key = access_key if access_key is not None else self.access_key
+        secret_key = secret_key if secret_key is not None else self.secret_key
+        cookie = cookie if cookie is not None else self.cookie
+
+        headers = {"Content-Type": "application/json"}
+
+        if auth_type == 'cookie' and cookie:
+            headers["Cookie"] = cookie
+            headers["User-Agent"] = "Mozilla/5.0"
+        elif auth_type == 'access_key_secret' and access_key and secret_key:
+            import hmac as _hmac
+            import hashlib
+            import uuid as _uuid
+            from urllib.parse import urlparse
+            parsed = urlparse(url or "")
+            path = parsed.path or "/"
+            timestamp = str(int(time.time()))
+            nonce = str(_uuid.uuid4()).replace('-', '')[:16]
+            keys = sorted((query_params or {}).keys())
+            sorted_query_string = "&".join(f"{k}={query_params[k]}" for k in keys)
+            string_to_sign = f"{method.upper()}\n{path}\n{timestamp}\n{nonce}\n{sorted_query_string}"
+            signature = _hmac.new(
+                key=secret_key.encode("utf-8"),
+                msg=string_to_sign.encode("utf-8"),
+                digestmod=hashlib.sha256
+            ).hexdigest()
+            headers["X-Access-Key"] = access_key
+            headers["X-Timestamp"] = timestamp
+            headers["X-Nonce"] = nonce
+            headers["X-Signature"] = signature
+        elif api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        return headers
     
     def _get_default_fallback_channels(self) -> List[Dict]:
         """获取默认备用通道列表"""
@@ -195,57 +258,70 @@ class AISceneAnalyzer:
     def check_channel_health(self, channel: Optional[Dict] = None) -> bool:
         """检查通道健康状态"""
         import requests
-        
+
         if channel is None:
             channel = {
                 'model_type': self.model_type,
                 'model_name': self.model_name,
                 'api_base': self.api_base,
-                'api_key': self.api_key
+                'api_key': self.api_key,
+                'auth_type': self.auth_type,
+                'access_key': self.access_key,
+                'secret_key': self.secret_key,
+                'cookie': self.cookie,
             }
-        
+
         channel_key = f"{channel['model_type']}/{channel.get('model_name', 'default')}"
-        
+
         if channel_key in self.channel_status:
             status = self.channel_status[channel_key]
             if status['fail_count'] > 3:
                 status['healthy'] = False
                 return False
-        
+
         try:
-            import requests
             test_payload = {
                 "model": channel.get('model_name', 'qwen2.5:7b'),
                 "messages": [{"role": "user", "content": "ping"}],
                 "max_tokens": 5
             }
-            
-            headers = {"Content-Type": "application/json"}
-            if channel.get('api_key'):
-                headers["Authorization"] = f"Bearer {channel['api_key']}"
-            
+
+            auth_type = channel.get('auth_type', self.auth_type)
+            api_base = channel.get('api_base', self.api_base)
+            url = f"{api_base}/chat/completions"
+            headers = self._build_auth_headers(
+                url=url,
+                method="POST",
+                auth_type=auth_type,
+                api_key=channel.get('api_key', self.api_key),
+                access_key=channel.get('access_key', self.access_key),
+                secret_key=channel.get('secret_key', self.secret_key),
+                cookie=channel.get('cookie', self.cookie),
+            )
+
             response = requests.post(
-                f"{channel.get('api_base', self.api_base)}/chat/completions",
+                url,
                 headers=headers,
                 json=test_payload,
-                timeout=5
+                timeout=self.timeout
             )
-            
+
             if response.status_code == 200:
                 if channel_key in self.channel_status:
                     self.channel_status[channel_key]['healthy'] = True
                 return True
             else:
+                self._log(f"通道 {channel_key} 健康检查失败：HTTP {response.status_code} - {response.text[:120]}", "WARNING")
                 if channel_key in self.channel_status:
                     self.channel_status[channel_key]['healthy'] = False
                 return False
-                
+
         except Exception as e:
             self._log(f"通道 {channel_key} 健康检查异常：{e}", "ERROR")
             if channel_key in self.channel_status:
                 self.channel_status[channel_key]['healthy'] = False
             return False
-    
+
     def get_available_channel(self) -> Optional[Dict]:
         """获取可用通道（自动故障转移）"""
         if self.check_channel_health():
@@ -254,6 +330,10 @@ class AISceneAnalyzer:
                 'model_name': self.model_name,
                 'api_base': self.api_base,
                 'api_key': self.api_key,
+                'auth_type': self.auth_type,
+                'access_key': self.access_key,
+                'secret_key': self.secret_key,
+                'cookie': self.cookie,
                 'is_fallback': False
             }
             return self.active_channel
@@ -264,15 +344,25 @@ class AISceneAnalyzer:
             temp = AISceneAnalyzer(
                 model_type=fallback['model_type'],
                 model_name=fallback.get('model_name'),
+                api_base=fallback.get('api_base'),
+                api_key=fallback.get('api_key'),
+                auth_type=fallback.get('auth_type', 'api_key'),
+                access_key=fallback.get('access_key'),
+                secret_key=fallback.get('secret_key'),
+                cookie=fallback.get('cookie'),
                 verbose=False
             )
-            
+
             if temp.check_channel_health():
                 self.active_channel = {
                     'model_type': fallback['model_type'],
                     'model_name': fallback.get('model_name') or self._get_default_model(fallback['model_type']),
                     'api_base': fallback.get('api_base') or self._get_default_api_base(fallback['model_type']),
                     'api_key': fallback.get('api_key'),
+                    'auth_type': fallback.get('auth_type', 'api_key'),
+                    'access_key': fallback.get('access_key'),
+                    'secret_key': fallback.get('secret_key'),
+                    'cookie': fallback.get('cookie'),
                     'is_fallback': True
                 }
                 return self.active_channel
@@ -411,19 +501,26 @@ class AISceneAnalyzer:
                     "max_tokens": 2000,
                     "stream": False
                 }
-                
-                # 请求头
-                headers = {
-                    "Content-Type": "application/json"
-                }
-                
-                if available_channel.get('api_key'):
-                    headers["Authorization"] = f"Bearer {available_channel['api_key']}"
+
+                url = f"{available_channel['api_base']}/chat/completions"
+
+                # 根据认证方式构建请求头
+                auth_type = available_channel.get('auth_type', 'api_key')
+                headers = self._build_auth_headers(
+                    url=url,
+                    method="POST",
+                    auth_type=auth_type,
+                    api_key=available_channel.get('api_key', self.api_key),
+                    access_key=available_channel.get('access_key', self.access_key),
+                    secret_key=available_channel.get('secret_key', self.secret_key),
+                    cookie=available_channel.get('cookie', self.cookie),
+                )
                 
                 # 根据不同模型调整格式
                 if available_channel['model_type'] == 'claude':
                     payload = self._adapt_for_claude_with_channel(messages, temperature, available_channel)
-                    headers["x-api-key"] = available_channel['api_key']
+                    if auth_type == 'api_key' and available_channel.get('api_key'):
+                        headers["x-api-key"] = available_channel['api_key']
                     headers["anthropic-version"] = "2023-06-01"
                 
                 self._log(
@@ -638,7 +735,7 @@ class AISceneAnalyzer:
         
         # 第一轮：分析
         if not initial_result:
-            result = self.analyze(prompt, mode='detailed')
+            result = self.ai_analyze(prompt, mode='detailed')
         else:
             result = initial_result
         
@@ -698,7 +795,7 @@ class AISceneAnalyzer:
         
         for i, prompt in enumerate(prompts, 1):
             self._log(f"分析进度：{i}/{len(prompts)}", "INFO")
-            result = self.analyze(prompt, mode)
+            result = self.ai_analyze(prompt, mode)
             results.append(result)
         
         self._log(f"批量分析完成", "INFO")
@@ -741,10 +838,10 @@ class AISceneAnalyzer:
 def quick_analyze(prompt: str, model_type: str = 'local') -> Dict:
     """快速分析场景（便捷函数）"""
     analyzer = AISceneAnalyzer(model_type=model_type, verbose=False)
-    return analyzer.analyze(prompt, mode='simple')
+    return analyzer.ai_analyze(prompt, mode='simple')
 
 
 def detailed_analyze(prompt: str, model_type: str = 'local') -> Dict:
     """详细分析场景（便捷函数）"""
     analyzer = AISceneAnalyzer(model_type=model_type, verbose=True)
-    return analyzer.analyze(prompt, mode='detailed')
+    return analyzer.ai_analyze(prompt, mode='detailed')

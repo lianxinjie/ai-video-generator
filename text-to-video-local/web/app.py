@@ -18,6 +18,8 @@ import os
 import sys
 import json
 import shutil
+import hmac
+import hashlib
 from pathlib import Path
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_from_directory
@@ -25,6 +27,7 @@ from werkzeug.utils import secure_filename
 import subprocess
 import threading
 import uuid
+import re
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -161,9 +164,10 @@ def api_generate():
             'progress': 0,
             'prompt': prompt,
             'mode': mode,
-            'start_time': str(uuid.uuid4())
+            'start_time': datetime.now().isoformat(),
+            'log': ''
         }
-        
+
         def run_task():
             log_lines = []
             log_lines.append(f"开始执行命令：{' '.join(cmd)}")
@@ -256,20 +260,6 @@ def api_output_file(task_id, filename):
 def serve_static(filename):
     """提供静态文件"""
     return send_from_directory('static', filename)
-
-
-if __name__ == '__main__':
-    print("\n" + "="*70)
-    print("  AI 视频生成器 - Web 服务")
-    print("="*70)
-    print("\n访问地址：http://localhost:5000")
-    print("\nAPI 接口:")
-    print("  POST /api/generate - 生成视频")
-    print("  GET  /api/task/<id> - 查询任务状态")
-    print("  GET  /api/output/<id>/<file> - 获取输出文件")
-    print("\n按 Ctrl+C 停止服务\n")
-    
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
 
 
 # ========== 硬件扫描与一键安装 API (新增) ==========
@@ -447,12 +437,6 @@ def api_install_status(task_id):
                 result['log'] = f.read()[-10000:]
             result['returncode'] = task.get('returncode')
         
-        print(f"[依赖检测] ========== 返回结果 ==========")
-        for name, info in packages.items():
-            print(f"[依赖检测]   {name}: installed={info['installed']}, version={info['version']}")
-        print(f"[依赖检测]  汇总：{installed}/{total} 已安装")
-        print(f"[依赖检测] ========== 返回结果结束 ==========")
-        
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -491,12 +475,10 @@ def api_cancel_task(task_id):
         return jsonify({'error': '任务不在运行中', 'current_status': task.get('status')}), 400
     
     try:
-        # 简化版：没有实际进程时，允许取消并设置状态
         task['status'] = 'cancelled'
-        task['log'] += '\n⚠️ 任务已被用户取消\n'
+        task['log'] = task.get('log', '') + '\n⚠️ 任务已被用户取消\n'
         return jsonify({'success': True, 'message': '任务已取消'})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
         return jsonify({'error': str(e)}), 500
 
 
@@ -591,23 +573,62 @@ def api_quick_start():
             'recommendation': {},
         }
         
-        # 启动异步任务（简化版，实际应该启动真实任务）
+        task = tasks[task_id]
+        output_dir = app.config['OUTPUT_FOLDER'] / task_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            sys.executable,
+            'personal_mode/run.py',
+            '-p', prompt,
+            '-m', mode,
+            '-d', str(duration),
+            '-o', str(output_dir / 'output.mp4')
+        ]
+        if voiceover:
+            cmd.append('--voiceover')
+            cmd.extend(['--character-voice', character_voice])
+
         def run_task():
-            import subprocess
-            import time
-            task = tasks[task_id]
+            log_lines = [f"开始执行：{' '.join(cmd)}", ""]
             try:
-                # 这里应该调用实际的生成逻辑
-                # 简化演示：等待并更新进度
-                for i in range(10):
-                    time.sleep(1)
-                    task['progress'] = (i + 1) * 10
-                    task['log'] += f'进度：{task["progress"]}%\n'
-                task['status'] = 'completed'
-                task['log'] += '任务完成\n'
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    cwd=str(Path(__file__).parent.parent),
+                    timeout=600
+                )
+                if result.stdout:
+                    log_lines.append(result.stdout)
+                if result.stderr:
+                    log_lines.append(result.stderr)
+                if result.returncode == 0:
+                    task['status'] = 'completed'
+                    video_files = list(output_dir.glob('*.mp4'))
+                    if video_files:
+                        task['video_url'] = f'/api/output/{task_id}/{video_files[0].name}'
+                    else:
+                        task['status'] = 'failed'
+                        task['error'] = '生成成功但未找到视频文件'
+                else:
+                    task['status'] = 'failed'
+                    task['error'] = result.stderr
+                task['progress'] = 100
+                log_lines.append('任务完成' if task['status'] == 'completed' else '任务失败')
+                task['log'] = '\n'.join(log_lines)
+            except subprocess.TimeoutExpired:
+                task['status'] = 'failed'
+                task['error'] = '任务执行超时（10 分钟）'
+                task['progress'] = 100
+                task['log'] = '\n'.join(log_lines) + '\n超时错误'
             except Exception as e:
                 task['status'] = 'failed'
-                task['log'] += f'错误：{e}\n'
+                task['error'] = str(e)
+                task['progress'] = 100
+                task['log'] = '\n'.join(log_lines) + f'\n异常：{e}'
         
         from threading import Thread
         thread = Thread(target=run_task)
@@ -890,23 +911,11 @@ def api_cleanup_models():
     
     except Exception as e:
         import traceback
-        error_detail = traceback.format_exc()
-        print(f"[FFmpeg 下载] ❌ 错误：{str(e)}")
-        print(f"[FFmpeg 下载] ❌ 堆栈：{error_detail}")
-        
-        # 判断是否是 URL 验证失败
-        if '无法验证下载链接' in str(e) or 'head' in str(e).lower():
-            status_code = 503
-        else:
-            status_code = 500
-        
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': error_detail,
-            'system': system,
-            'url': url if 'url' in locals() else 'N/A'
-        }), status_code
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 @app.route('/api/models/delete', methods=['POST'])
@@ -956,23 +965,11 @@ def api_delete_model():
     
     except Exception as e:
         import traceback
-        error_detail = traceback.format_exc()
-        print(f"[FFmpeg 下载] ❌ 错误：{str(e)}")
-        print(f"[FFmpeg 下载] ❌ 堆栈：{error_detail}")
-        
-        # 判断是否是 URL 验证失败
-        if '无法验证下载链接' in str(e) or 'head' in str(e).lower():
-            status_code = 503
-        else:
-            status_code = 500
-        
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': error_detail,
-            'system': system,
-            'url': url if 'url' in locals() else 'N/A'
-        }), status_code
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 @app.route('/api/models/analyze', methods=['GET'])
@@ -1066,23 +1063,11 @@ def api_analyze_models():
     
     except Exception as e:
         import traceback
-        error_detail = traceback.format_exc()
-        print(f"[FFmpeg 下载] ❌ 错误：{str(e)}")
-        print(f"[FFmpeg 下载] ❌ 堆栈：{error_detail}")
-        
-        # 判断是否是 URL 验证失败
-        if '无法验证下载链接' in str(e) or 'head' in str(e).lower():
-            status_code = 503
-        else:
-            status_code = 500
-        
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': error_detail,
-            'system': system,
-            'url': url if 'url' in locals() else 'N/A'
-        }), status_code
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 @app.route('/api/check-dependencies', methods=['GET'])
@@ -1885,13 +1870,22 @@ def api_check_mode_environment(mode):
             try:
                 with open(config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
-                
-                has_api_key = bool(config.get('ai_api_key'))
-                
-                if has_api_key:
+
+                ai_configs = config.get('ai_configs', []) or []
+                configured = [c for c in ai_configs if c.get('enabled', True)]
+                has_legacy = bool(config.get('ai_api_key'))
+
+                if configured or has_legacy:
                     checks['cloud_api']['status'] = 'ok'
-                    checks['cloud_api']['message'] = '云端 API 已配置'
-                    checks['cloud_api']['details'] = [f"API Key：{config.get('ai_api_key', '')[:8]}..."]
+                    checks['cloud_api']['message'] = f'云端 API 已配置（{len(configured)} 条）'
+                    details = []
+                    for c in configured[:5]:
+                        usage_label = {'scene_analysis': '场景分析', 'voiceover': '配音', 'image_generation': '生成图片'}.get(c.get('usage', ''), c.get('usage', ''))
+                        key_preview = (c.get('api_key') or c.get('cookie') or c.get('access_key') or '')[:8]
+                        details.append(f"{usage_label} - {c.get('api_type', '')} - {key_preview}...")
+                    if has_legacy and not configured:
+                        details.append(f"Legacy API Key：{config.get('ai_api_key', '')[:8]}...")
+                    checks['cloud_api']['details'] = details
                 else:
                     checks['cloud_api']['status'] = 'error' if checks['cloud_api']['required'] else 'warning'
                     checks['cloud_api']['message'] = '云端 API 未配置'
@@ -2014,7 +2008,6 @@ def api_install_mode_components(mode):
         components = mode_components[mode]
         task_id = str(uuid.uuid4())
         
-        # 安装脚本（复用协同模式的安装逻辑）
         def install_task():
             log_file = Path(f'web/logs/install_{task_id}.log')
             log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -2023,25 +2016,67 @@ def api_install_mode_components(mode):
                 log.write(f"开始安装 {mode} 模式组件：{', '.join(components)}\n")
                 
                 try:
-                    # 1. 安装 Python 依赖
                     if 'dependencies' in components:
                         log.write("\n=== 安装 Python 依赖 ===\n")
-                        # ... (与协同模式相同的安装逻辑)
+                        packages_list = [
+                            'torch', 'torchvision', 'torchaudio',
+                            'diffusers', 'transformers', 'modelscope',
+                            'pillow', 'requests', 'edge-tts', 'pydub'
+                        ]
+                        cuda_version = 'cpu'
+                        try:
+                            import torch
+                            if torch.cuda.is_available():
+                                cuda_version = 'cu118'
+                        except:
+                            pass
+                        cmd = [
+                            sys.executable, '-m', 'pip', 'install',
+                            '--index-url', f'https://download.pytorch.org/whl/{cuda_version}',
+                            '--break-system-packages'
+                        ] + packages_list
+                        log.write(f"执行命令：{' '.join(cmd)}\n")
+                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                        if result.returncode == 0:
+                            log.write("Python 依赖安装成功\n")
+                        else:
+                            log.write(f"Python 依赖安装失败：{result.stderr}\n")
                     
-                    # 2. 下载 FFmpeg
                     if 'ffmpeg' in components:
                         log.write("\n=== 下载 FFmpeg ===\n")
-                        # ... (与协同模式相同的安装逻辑)
+                        ffmpeg_script = Path('./download_ffmpeg.py')
+                        if ffmpeg_script.exists():
+                            cmd = [sys.executable, str(ffmpeg_script)]
+                            log.write(f"执行命令：{' '.join(cmd)}\n")
+                            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                            if result.returncode == 0:
+                                log.write("FFmpeg 下载成功\n")
+                            else:
+                                log.write(f"FFmpeg 下载失败：{result.stderr}\n")
+                        else:
+                            log.write("FFmpeg 下载脚本不存在\n")
                     
-                    # 3. 下载模型
                     if 'models' in components:
                         log.write("\n=== 下载模型文件 ===\n")
-                        # ... (与协同模式相同的安装逻辑)
+                        models_script = Path('./download_models.py')
+                        if models_script.exists():
+                            cmd = [sys.executable, str(models_script)]
+                            log.write(f"执行命令：{' '.join(cmd)}\n")
+                            result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+                            if result.returncode == 0:
+                                log.write("模型下载成功\n")
+                            else:
+                                log.write(f"模型下载失败：{result.stderr}\n")
+                        else:
+                            log.write("模型下载脚本不存在\n")
                     
                     log.write("\n=== 安装完成 ===\n")
+                    log.write("请刷新页面重新检测环境状态\n")
                     
+                except subprocess.TimeoutExpired:
+                    log.write("\n安装超时\n")
                 except Exception as e:
-                    log.write(f"\n❌ 安装异常：{str(e)}\n")
+                    log.write(f"\n安装异常：{str(e)}\n")
         
         thread = threading.Thread(target=install_task)
         thread.daemon = True
@@ -2054,200 +2089,6 @@ def api_install_mode_components(mode):
             'components': components,
             'message': f'开始安装 {len(components)} 个组件'
         })
-    
-    except Exception as e:
-        import traceback
-        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
-        
-        # 1. 检测 CUDA
-        try:
-            if torch.cuda.is_available():
-                gpus = []
-                for i in range(torch.cuda.device_count()):
-                    gpus.append(torch.cuda.get_device_name(i))
-                
-                free_mem, total_mem = torch.cuda.mem_get_info()
-                checks['cuda']['status'] = 'ok'
-                checks['cuda']['message'] = f'可用：{len(gpus)} 个 GPU'
-                checks['cuda']['details'] = [
-                    f'GPU 型号：{", ".join(gpus)}',
-                    f'显存：{free_mem / 1024 / 1024 / 1024:.1f}GB / {total_mem / 1024 / 1024 / 1024:.1f}GB',
-                    f'CUDA 版本：{torch.version.cuda}'
-                ]
-            else:
-                checks['cuda']['status'] = 'warning'
-                checks['cuda']['message'] = 'CUDA 不可用，可使用云端模式'
-                checks['cuda']['details'] = ['本地 GPU 不可用，建议使用云端生成模式']
-        except Exception as e:
-            checks['cuda']['status'] = 'error'
-            checks['cuda']['message'] = f'CUDA 检测失败：{str(e)}'
-        
-        # 2. 检测 PyTorch
-        try:
-            import torch
-            checks['torch']['status'] = 'ok'
-            checks['torch']['message'] = f'PyTorch {torch.__version__}'
-            checks['torch']['details'] = [
-                f'版本：{torch.__version__}',
-                f'CUDA 支持：{"是" if torch.cuda.is_available() else "否"}',
-                f'CUDNN 版本：{torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else "N/A"}'
-            ]
-        except ImportError:
-            checks['torch']['status'] = 'error'
-            checks['torch']['message'] = 'PyTorch 未安装'
-            checks['torch']['details'] = ['需要安装 PyTorch 才能使用本地生成功能']
-        except Exception as e:
-            checks['torch']['status'] = 'error'
-            checks['torch']['message'] = f'PyTorch 检测失败：{str(e)}'
-        
-        # 3. 检测模型文件
-        models_dir = Path('./models')
-        if models_dir.exists():
-            model_files = list(models_dir.glob('**/*'))
-            if model_files:
-                checks['models']['status'] = 'ok'
-                checks['models']['message'] = f'已找到 {len(model_files)} 个模型文件'
-                checks['models']['details'] = [str(f.relative_to(models_dir)) for f in model_files[:10]]
-                if len(model_files) > 10:
-                    checks['models']['details'].append(f'... 还有 {len(model_files) - 10} 个文件')
-            else:
-                checks['models']['status'] = 'warning'
-                checks['models']['message'] = '模型目录为空'
-                checks['models']['details'] = ['需要下载模型文件才能使用本地生成功能']
-        else:
-            checks['models']['status'] = 'warning'
-            checks['models']['message'] = '模型目录不存在'
-            checks['models']['details'] = [
-                '需要创建 models 目录并下载模型',
-                '或者使用云端生成模式（不需要本地模型）'
-            ]
-        
-        # 4. 检测 FFmpeg
-        ffmpeg_path = shutil.which('ffmpeg')
-        local_ffmpeg = Path('./ffmpeg/bin/ffmpeg.exe')
-        if ffmpeg_path or local_ffmpeg.exists():
-            checks['ffmpeg']['status'] = 'ok'
-            path = ffmpeg_path or str(local_ffmpeg)
-            checks['ffmpeg']['message'] = f'FFmpeg 已安装：{path}'
-            checks['ffmpeg']['details'] = [f'路径：{path}']
-        else:
-            checks['ffmpeg']['status'] = 'warning'
-            checks['ffmpeg']['message'] = 'FFmpeg 未安装'
-            checks['ffmpeg']['details'] = [
-                'FFmpeg 是视频合并所必需的',
-                '可通过 Web 界面 → FFmpeg → 自动下载',
-                '或使用 apt/yum 安装：sudo apt install ffmpeg'
-            ]
-        
-        # 5. 检测云端 API 配置
-        config_file = Path('./config.json')
-        if config_file.exists():
-            try:
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                
-                api_keys = []
-                if config.get('ai_api_key'):
-                    api_keys.append(f"API Key：{config.get('ai_api_key', '')[:8]}...")
-                if config.get('ai_api_base'):
-                    api_keys.append(f"API Base: {config.get('ai_api_base', '')}")
-                if config.get('ai_model_name'):
-                    api_keys.append(f"模型：{config.get('ai_model_name', '')}")
-                
-                if api_keys:
-                    checks['cloud_api']['status'] = 'ok'
-                    checks['cloud_api']['message'] = '云端 API 已配置'
-                    checks['cloud_api']['details'] = api_keys
-                else:
-                    checks['cloud_api']['status'] = 'warning'
-                    checks['cloud_api']['message'] = '云端 API 未配置'
-                    checks['cloud_api']['details'] = [
-                        '配置云端 API 后可使用云端生成模式',
-                        '支持：通义千问、OpenAI、Clove AI'
-                    ]
-            except Exception as e:
-                checks['cloud_api']['status'] = 'warning'
-                checks['cloud_api']['message'] = '配置文件读取失败'
-                checks['cloud_api']['details'] = [str(e)]
-        else:
-            checks['cloud_api']['status'] = 'warning'
-            checks['cloud_api']['message'] = '配置文件不存在'
-            checks['cloud_api']['details'] = [
-                '需要配置 config.json 文件',
-                '或通过 Web 界面 → AI 配置 进行设置'
-            ]
-        
-        # 6. 检测核心依赖
-        required_packages = [
-            ('flask', 'Flask'),
-            ('PIL', 'Pillow'),
-            ('diffusers', 'Diffusers'),
-            ('transformers', 'Transformers'),
-            ('modelscope', 'ModelScope'),
-            ('requests', 'Requests')
-        ]
-        
-        missing_deps = []
-        installed_deps = []
-        
-        import importlib.util
-        for module_name, display_name in required_packages:
-            spec = importlib.util.find_spec(module_name)
-            if spec is not None:
-                try:
-                    module = importlib.import_module(module_name)
-                    version = getattr(module, '__version__', 'unknown')
-                    installed_deps.append(f'{display_name}: {version}')
-                except:
-                    missing_deps.append(display_name)
-            else:
-                missing_deps.append(display_name)
-        
-        if not missing_deps:
-            checks['dependencies']['status'] = 'ok'
-            checks['dependencies']['message'] = f'所有核心依赖已安装 ({len(installed_deps)} 个)'
-            checks['dependencies']['details'] = installed_deps
-        else:
-            checks['dependencies']['status'] = 'error'
-            checks['dependencies']['message'] = f'缺少 {len(missing_deps)} 个核心依赖'
-            checks['dependencies']['details'] = [f'缺少：{", ".join(missing_deps)}']
-        
-        # 总体评估
-        has_errors = any(c['status'] == 'error' for c in checks.values())
-        has_warnings = any(c['status'] == 'warning' for c in checks.values())
-        
-        if not has_errors and not has_warnings:
-            overall_status = 'ready'
-            overall_message = '协同模式已就绪，可以使用本地或云端生成'
-        elif not has_errors:
-            overall_status = 'partial'
-            overall_message = '部分配置未完成，建议使用云端生成模式'
-        else:
-            overall_status = 'not_ready'
-            overall_message = '环境未准备好，需要修复错误后才能使用'
-        
-        # 统计
-        ok_count = sum(1 for c in checks.values() if c['status'] == 'ok')
-        total_count = len(checks)
-        
-        result = {
-            'success': True,
-            'overall_status': overall_status,
-            'overall_message': overall_message,
-            'summary': {
-                'ok': ok_count,
-                'total': total_count,
-                'percentage': int(ok_count / total_count * 100)
-            },
-            'checks': checks,
-            'recommendations': {
-                'use_cloud': not has_errors and (has_warnings or checks['cuda']['status'] != 'ok'),
-                'use_local': checks['cuda']['status'] == 'ok' and checks['models']['status'] == 'ok',
-                'need_install': has_errors
-            }
-        }
-        
-        return jsonify(result)
     
     except Exception as e:
         import traceback
@@ -2436,6 +2277,96 @@ import json
 
 CONFIG_FILE = Path('config.json')
 
+USAGE_SCENE_ANALYSIS = 'scene_analysis'
+USAGE_VOICEOVER = 'voiceover'
+USAGE_IMAGE_GENERATION = 'image_generation'
+VALID_USAGES = (USAGE_SCENE_ANALYSIS, USAGE_VOICEOVER, USAGE_IMAGE_GENERATION)
+
+VALID_AUTH_TYPES = ('api_key', 'cookie', 'access_key_secret')
+
+
+def new_ai_config(**overrides):
+    """Create a new AI config entry with defaults"""
+    cfg = {
+        'id': str(uuid.uuid4()),
+        'nickname': '',
+        'usage': USAGE_SCENE_ANALYSIS,
+        'enabled': True,
+        'auth_type': 'api_key',
+        'api_type': 'qwen',
+        'api_base': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        'api_key': '',
+        'cookie': '',
+        'access_key': '',
+        'secret_key': '',
+        'model_name': 'qwen-turbo',
+        'timeout': 60,
+        'max_retries': 3,
+        # image generation specific params
+        'img_width': 1024,
+        'img_height': 1024,
+        'img_steps': 20,
+        'img_guidance_scale': 7.5,
+        'img_num_images': 1,
+        'img_negative_prompt': 'bad quality, worst quality, blurry, distorted, deformed',
+        # mgtv-specific image params
+        'img_ratio': '3:4',
+        'img_resolution': '2K',
+        'img_style_id': 35,
+        # mgtv video params
+        'video_model_id': 28,
+        'video_ratio': '16:9',
+        'video_resolution': '720p',
+        'video_duration': 5,
+        'video_num_videos': 1,
+    }
+    cfg.update(overrides)
+    return cfg
+
+
+def hmac_signature(method: str, path: str, timestamp: str, nonce: str,
+                   params: dict, secret: str) -> str:
+    """Generate HMAC-SHA256 signature for AK/SK-style APIs (e.g. mgtv, alibaba cloud).
+
+    The signing string is:
+        METHOD\\n<path>\\n<timestamp>\\n<nonce>\\n<sorted_query_string>
+    where sorted_query_string is key=value pairs sorted by key, joined with '&'.
+    """
+    keys = sorted(params.keys())
+    query_parts = [f"{k}={params[k]}" for k in keys]
+    sorted_query_string = "&".join(query_parts)
+    string_to_sign = f"{method.upper()}\n{path}\n{timestamp}\n{nonce}\n{sorted_query_string}"
+    return hmac.new(
+        key=secret.encode("utf-8"),
+        msg=string_to_sign.encode("utf-8"),
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+
+
+def build_ak_sk_headers(method: str, url: str, access_key: str, secret_key: str,
+                         query_params: dict = None, extra_query: dict = None):
+    """Build auth headers for AK/SK HMAC-style APIs.
+
+    Returns dict with X-Access-Key, X-Timestamp, X-Nonce, X-Signature.
+    """
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    path = parsed.path
+    query_params = dict(query_params or {})
+    if extra_query:
+        query_params.update(extra_query)
+    timestamp = str(int(__import__('time').time()))
+    nonce = str(uuid.uuid4()).replace('-', '')[:16]
+    signature = hmac_signature(method, path, timestamp, nonce, query_params, secret_key)
+    return {
+        'X-Access-Key': access_key,
+        'X-Timestamp': timestamp,
+        'X-Nonce': nonce,
+        'X-Signature': signature,
+        'Content-Type': 'application/json',
+    }, timestamp, nonce, signature
+
+
 DEFAULT_CONFIG = {
     'model': 'modelscope',
     'model_path': './models',
@@ -2445,8 +2376,12 @@ DEFAULT_CONFIG = {
     'fps': 24,
     'guidance_scale': 7.5,
     'seed': -1,
-    # 云端 AI 配置
-    'ai_api_type': 'qwen',  # qwen, openai, clove
+    # cloud AI configs (list form)
+    'ai_configs': [
+        new_ai_config(id='default-scene', usage=USAGE_SCENE_ANALYSIS),
+    ],
+    # legacy single AI config fields kept for backward compat
+    'ai_api_type': 'qwen',
     'ai_api_key': '',
     'ai_api_base': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     'ai_model_name': 'qwen-turbo',
@@ -2456,21 +2391,114 @@ DEFAULT_CONFIG = {
 
 
 def load_config():
-    """Load configuration from file"""
+    """Load configuration from file, migrating old format if needed"""
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            pass
-    return DEFAULT_CONFIG.copy()
+                config = json.load(f)
+        except Exception:
+            config = {}
+    else:
+        config = {}
+
+    # Ensure all default keys exist (don't overwrite user values)
+    merged = DEFAULT_CONFIG.copy()
+    merged.update(config)
+
+    # Migrate: if ai_configs is missing/empty in FILE but legacy ai_api_key exists, build one entry
+    # Note: check config (file) not merged, because DEFAULT_CONFIG always seeds ai_configs
+    if not config.get('ai_configs') and (config.get('ai_api_key') or merged.get('ai_api_key')):
+        migrated = new_ai_config(
+            id='migrated-scene',
+            usage=USAGE_SCENE_ANALYSIS,
+            api_type=merged.get('ai_api_type', 'qwen'),
+            api_base=merged.get('ai_api_base', 'https://dashscope.aliyuncs.com/compatible-mode/v1'),
+            api_key=merged.get('ai_api_key', ''),
+            model_name=merged.get('ai_model_name', 'qwen-turbo'),
+            timeout=merged.get('ai_timeout', 60),
+            max_retries=merged.get('ai_max_retries', 3),
+        )
+        merged['ai_configs'] = [migrated]
+
+    return merged
 
 
 def save_config(config):
     """Save configuration to file"""
+    configs = config.get('ai_configs', [])
+    for c in configs:
+        c.setdefault('id', str(uuid.uuid4()))
+        c.setdefault('usage', USAGE_SCENE_ANALYSIS)
+        c.setdefault('enabled', True)
+        c.setdefault('auth_type', 'api_key')
+        c.setdefault('img_width', 1024)
+        c.setdefault('img_height', 1024)
+        c.setdefault('img_steps', 20)
+        c.setdefault('img_guidance_scale', 7.5)
+        c.setdefault('img_num_images', 1)
+        c.setdefault('img_negative_prompt', 'bad quality, worst quality, blurry, distorted, deformed')
+        c.setdefault('img_ratio', '3:4')
+        c.setdefault('img_resolution', '2K')
+        c.setdefault('img_style_id', 35)
+        c.setdefault('video_model_id', 28)
+        c.setdefault('video_ratio', '16:9')
+        c.setdefault('video_resolution', '720p')
+        c.setdefault('video_duration', 5)
+        c.setdefault('video_num_videos', 1)
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
+    # Keep legacy fields in sync with first scene-analysis config (best effort)
+    first = next(
+        (c for c in configs if c.get('usage') == USAGE_SCENE_ANALYSIS and c.get('enabled')),
+        next((c for c in configs if c.get('usage') == USAGE_SCENE_ANALYSIS), None)
+    )
+    if first:
+        legacy_sync = {
+            'ai_api_type': first.get('api_type', 'qwen'),
+            'ai_api_key': first.get('api_key', '') if first.get('auth_type') == 'api_key' else '',
+            'ai_api_base': first.get('api_base', ''),
+            'ai_model_name': first.get('model_name', ''),
+            'ai_timeout': int(first.get('timeout', 60)),
+            'ai_max_retries': int(first.get('max_retries', 3)),
+        }
+        with open(CONFIG_FILE, 'r+', encoding='utf-8') as f:
+            saved = json.load(f)
+            saved.update(legacy_sync)
+            f.seek(0)
+            f.truncate()
+            json.dump(saved, f, indent=2, ensure_ascii=False)
     return True
+
+
+def get_ai_config(usage=USAGE_SCENE_ANALYSIS, config_id=None):
+    """
+    Get AI config for a specific usage.
+    If config_id is provided, find the entry by ID (used by /api/generate-image/video
+    to target the specific card that was clicked, instead of the first match).
+    Falls back to legacy single-config fields if no matching ai_config entry exists.
+    """
+    config = load_config()
+    ai_configs = config.get('ai_configs', []) or []
+    if config_id:
+        for c in ai_configs:
+            if c.get('id') == config_id:
+                return c
+    # Prefer an enabled entry matching usage
+    for c in ai_configs:
+        if c.get('usage') == usage and c.get('enabled', True):
+            return c
+    # Fallback to legacy fields for scene analysis
+    if usage == USAGE_SCENE_ANALYSIS and config.get('ai_api_key'):
+        return {
+            'auth_type': 'api_key',
+            'api_type': config.get('ai_api_type', 'qwen'),
+            'api_base': config.get('ai_api_base', 'https://dashscope.aliyuncs.com/compatible-mode/v1'),
+            'api_key': config.get('ai_api_key', ''),
+            'model_name': config.get('ai_model_name', 'qwen-turbo'),
+            'timeout': config.get('ai_timeout', 60),
+            'max_retries': config.get('ai_max_retries', 3),
+        }
+    return None
 
 
 @app.route('/api/config', methods=['GET'])
@@ -2494,35 +2522,531 @@ def api_set_config():
     """API: Set AI configuration"""
     try:
         data = request.get_json() or {}
-        
+
         if 'config' not in data:
             return jsonify({
                 'success': False,
                 'error': '缺少配置数据'
             }), 400
-        
-        # Validate and merge with defaults
-        config = DEFAULT_CONFIG.copy()
-        config.update(data['config'])
-        
+
+        incoming = data['config']
+
+        # Start from defaults (without ai_configs)
+        config = {k: v for k, v in DEFAULT_CONFIG.items() if k != 'ai_configs'}
+        config.update(incoming)
+
         # Type validation
         config['duration'] = int(config.get('duration', 10))
         config['fps'] = int(config.get('fps', 24))
         config['guidance_scale'] = float(config.get('guidance_scale', 7.5))
         config['seed'] = int(config.get('seed', -1))
-        
-        # Save
+
+        # Validate ai_configs list
+        raw_ai_configs = incoming.get('ai_configs', config.get('ai_configs', []))
+        validated_ai_configs = []
+        for entry in (raw_ai_configs or []):
+            if not isinstance(entry, dict):
+                continue
+            validated = new_ai_config(**{k: entry[k] for k in entry})
+            if validated.get('usage') not in VALID_USAGES:
+                validated['usage'] = USAGE_SCENE_ANALYSIS
+            if validated.get('auth_type') not in VALID_AUTH_TYPES:
+                validated['auth_type'] = 'api_key'
+            validated['timeout'] = int(validated.get('timeout', 60) or 60)
+            validated['max_retries'] = int(validated.get('max_retries', 3) or 3)
+            validated['img_width'] = int(validated.get('img_width', 1024) or 1024)
+            validated['img_height'] = int(validated.get('img_height', 1024) or 1024)
+            validated['img_steps'] = int(validated.get('img_steps', 20) or 20)
+            validated['img_guidance_scale'] = float(validated.get('img_guidance_scale', 7.5) or 7.5)
+            validated['img_num_images'] = int(validated.get('img_num_images', 1) or 1)
+            validated['img_style_id'] = int(validated.get('img_style_id', 35) or 35)
+            validated['video_model_id'] = int(validated.get('video_model_id', 28) or 28)
+            validated['video_duration'] = int(validated.get('video_duration', 5) or 5)
+            validated['video_num_videos'] = int(validated.get('video_num_videos', 1) or 1)
+            validated['img_resolution'] = str(validated.get('img_resolution', '2K') or '2K').strip()
+            validated['img_ratio'] = str(validated.get('img_ratio', '3:4') or '3:4').strip()
+            validated['video_resolution'] = str(validated.get('video_resolution', '720p') or '720p').strip()
+            validated['video_ratio'] = str(validated.get('video_ratio', '16:9') or '16:9').strip()
+            validated['enabled'] = bool(validated.get('enabled', True))
+            validated_ai_configs.append(validated)
+        config['ai_configs'] = validated_ai_configs
+
         save_config(config)
-        
+
         return jsonify({
             'success': True,
             'config': config
         })
     except Exception as e:
+        import traceback
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': str(e),
+            'traceback': traceback.format_exc()
         }), 500
+
+
+@app.route('/api/config/fetch-models', methods=['POST'])
+def api_fetch_models():
+    """
+    API: 根据提供的 API 凭证自动拉取可用模型列表。
+    支持 OpenAI 兼容协议 (包含通义千问、OpenAI、Clove 等) 以及 DashScope 的 HTTP API。
+    auth_type:
+      - api_key: 使用 api_base + api_key
+      - cookie: 使用 cookie 作为请求头
+      - access_key_secret: 使用 access_key + secret_key (部分国内平台)
+    """
+    try:
+        data = request.get_json() or {}
+        auth_type = data.get('auth_type', 'api_key')
+        api_base = (data.get('api_base') or '').strip().rstrip('/')
+        api_key = (data.get('api_key') or '').strip()
+        cookie = (data.get('cookie') or '').strip()
+        access_key = (data.get('access_key') or '').strip()
+        secret_key = (data.get('secret_key') or '').strip()
+
+        if not api_base:
+            return jsonify({
+                'success': False,
+                'error': '缺少 API Base URL'
+            }), 400
+
+        import requests as req_lib
+
+        models = []
+
+        if auth_type == 'api_key':
+            if not api_key:
+                return jsonify({'success': False, 'error': '缺少 API Key'}), 400
+
+            # Try OpenAI-compatible /models endpoint
+            url = f"{api_base}/models"
+            headers = {
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json'
+            }
+            try:
+                resp = req_lib.get(url, headers=headers, timeout=15)
+                if resp.status_code == 200:
+                    data_resp = resp.json()
+                    items = data_resp.get('data', data_resp.get('models', []))
+                    if isinstance(items, list):
+                        for item in items:
+                            if isinstance(item, dict):
+                                mid = item.get('id') or item.get('name') or item.get('model_id')
+                                if mid:
+                                    models.append({
+                                        'id': str(mid),
+                                        'name': str(item.get('name', mid))
+                                    })
+                            else:
+                                models.append({'id': str(item), 'name': str(item)})
+                    elif isinstance(data_resp, list):
+                        for item in data_resp:
+                            if isinstance(item, dict):
+                                mid = item.get('id') or item.get('name')
+                                if mid:
+                                    models.append({'id': str(mid), 'name': str(item)})
+                            else:
+                                models.append({'id': str(item), 'name': str(item)})
+                else:
+                    # Some DashScope endpoints use /compatible-mode/v1/models?provider=xxx
+                    alt_url = f"{api_base}/models"
+                    alt_resp = req_lib.get(
+                        alt_url,
+                        headers=headers,
+                        timeout=10,
+                        params={'provider': 'dashscope'} if 'dashscope' in api_base else None
+                    )
+                    if alt_resp.status_code == 200:
+                        data_resp = alt_resp.json().get('data', [])
+                        for item in data_resp:
+                            if isinstance(item, dict):
+                                mid = item.get('id') or item.get('name')
+                                if mid:
+                                    models.append({'id': str(mid), 'name': str(item.get('name', mid))})
+            except req_lib.exceptions.RequestException as e:
+                return jsonify({
+                    'success': False,
+                    'error': f'请求失败：{str(e)}'
+                }), 503
+
+        elif auth_type == 'cookie':
+            if not cookie:
+                return jsonify({'success': False, 'error': '缺少 Cookie'}), 400
+            url = f"{api_base}/models"
+            headers = {
+                'Cookie': cookie,
+                'User-Agent': 'Mozilla/5.0'
+            }
+            try:
+                resp = req_lib.get(url, headers=headers, timeout=15)
+                if resp.status_code == 200:
+                    data_resp = resp.json()
+                    items = data_resp.get('data', data_resp.get('models', data_resp))
+                    if isinstance(items, list):
+                        for item in items:
+                            if isinstance(item, dict):
+                                mid = item.get('id') or item.get('name') or item.get('modelId')
+                                if mid:
+                                    models.append({'id': str(mid), 'name': str(item.get('name', mid))})
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': f'获取模型失败 (HTTP {resp.status_code})，Cookie 可能已过期'
+                    }), resp.status_code
+            except req_lib.exceptions.RequestException as e:
+                return jsonify({'success': False, 'error': f'请求失败：{str(e)}'}), 503
+
+        elif auth_type == 'access_key_secret':
+            if not access_key or not secret_key:
+                return jsonify({'success': False, 'error': '缺少 Access Key / Secret Key'}), 400
+
+            # 先判断使用场景，决定候选探测路径
+            api_type = (request.get_json() or {}).get('api_type', '')
+            usage = (request.get_json() or {}).get('usage', '')
+
+            # 针对芒果TV 专有端点，分图片/视频两种场景探测
+            if api_type == 'mgtv' or 'aigc.mgtv.com' in api_base:
+                # 真实端点结构（2026-05-29 实测）：
+                # 视频模型列表：GET /api/v1/aitools/videoModelList   （公开）
+                # 图片风格列表：GET /api/v1/aitools/image/styles     （需认证）
+                if usage == 'image_generation':
+                    candidate_paths = ['/api/v1/aitools/image/styles']
+                else:
+                    candidate_paths = ['/api/v1/aitools/videoModelList']
+                tried_mgtv = []
+                for p in candidate_paths:
+                    url = f"{api_base.rstrip('/')}{p}"
+                    try:
+                        headers, ts, nonce, sig = build_ak_sk_headers(
+                            'GET', url, access_key, secret_key
+                        )
+                        headers['Accept'] = 'application/json'
+                        resp = req_lib.get(url, headers=headers, timeout=15)
+                    except req_lib.exceptions.RequestException as e:
+                        tried_mgtv.append((url, str(e)))
+                        continue
+                    if resp.status_code == 200:
+                        try:
+                            data_resp = resp.json()
+                        except Exception:
+                            tried_mgtv.append((url, 'invalid json'))
+                            continue
+                        code = data_resp.get('code') if isinstance(data_resp, dict) else None
+                        msg = data_resp.get('msg') if isinstance(data_resp, dict) else ''
+                        if code == -401:
+                            tried_mgtv.append((url, f'未认证 (code=-401) {msg}'))
+                            continue
+                        items = None
+                        if isinstance(data_resp, dict):
+                            d = data_resp.get('data')
+                            if isinstance(d, dict):
+                                items = d.get('items')
+                                if items is None:
+                                    items = (data_resp.get('models')
+                                             or data_resp.get('list'))
+                            elif isinstance(d, list):
+                                items = d
+                        elif isinstance(data_resp, list):
+                            items = data_resp
+                        if isinstance(items, list):
+                            for item in items:
+                                if isinstance(item, dict):
+                                    mid = (item.get('code') or item.get('id') or item.get('styleId')
+                                           or item.get('modelId') or item.get('name') or item.get('label'))
+                                    if mid:
+                                        name = (item.get('displayName') or item.get('name')
+                                                or item.get('label') or item.get('styleName') or mid)
+                                        desc = item.get('description', '')
+                                        models.append({
+                                            'id': str(mid),
+                                            'name': str(name),
+                                            'description': str(desc)[:60] if desc else '',
+                                        })
+                                else:
+                                    models.append({'id': str(item), 'name': str(item)})
+                        if models:
+                            break
+                        tried_mgtv.append((url, 'empty list'))
+                    else:
+                        tried_mgtv.append((url, f'HTTP {resp.status_code}'))
+
+                if not models:
+                    summary = '; '.join(f'{u}: {e}' for u, e in tried_mgtv)
+                    return jsonify({
+                        'success': True,
+                        'models': [],
+                        'count': 0,
+                        'hint': (
+                            '芒果TV 平台未返回可用模型列表（尝试过 ' + summary
+                            + '）。请参照文档 https://aigc.mgtv.com/develop/docs#quick-start 手动填写。'
+                        ),
+                    })
+                # 芒果路径命中，models 已有数据，跳过通用分支走 dedup
+            else:
+                # 通用 access_key_secret 候选路径
+                candidate_paths = ['/models', '/model/list', '/model']
+                tried = []
+                for p in candidate_paths:
+                    url = f"{api_base.rstrip('/')}{p}"
+                    try:
+                        headers, ts, nonce, sig = build_ak_sk_headers(
+                            'GET', url, access_key, secret_key
+                        )
+                        resp = req_lib.get(url, headers=headers, timeout=15)
+                    except req_lib.exceptions.RequestException as e:
+                        tried.append((url, str(e)))
+                        continue
+
+                    if resp.status_code == 200:
+                        try:
+                            data_resp = resp.json()
+                        except Exception:
+                            tried.append((url, f'invalid json (HTTP 200)'))
+                            continue
+                        items = None
+                        if isinstance(data_resp, dict):
+                            d = data_resp.get('data')
+                            if isinstance(d, dict):
+                                items = (d.get('items') or d.get('models')
+                                         or d.get('list') or d.get('result'))
+                            elif isinstance(d, list):
+                                items = d
+                            else:
+                                items = (data_resp.get('data')
+                                         or data_resp.get('models')
+                                         or data_resp.get('list')
+                                         or data_resp.get('result'))
+                        elif isinstance(data_resp, list):
+                            items = data_resp
+                        if isinstance(items, list):
+                            for item in items:
+                                if isinstance(item, dict):
+                                    mid = (item.get('id') or item.get('modelId')
+                                           or item.get('name') or item.get('label')
+                                           or item.get('code'))
+                                    if mid:
+                                        name = (item.get('name') or item.get('displayName')
+                                                or item.get('label') or mid)
+                                        models.append({
+                                            'id': str(mid),
+                                            'name': str(name),
+                                        })
+                                else:
+                                    models.append({'id': str(item), 'name': str(item)})
+                        if models:
+                            break  # success
+                        tried.append((url, 'empty list'))
+                    else:
+                        tried.append((url, f'HTTP {resp.status_code}'))
+
+                if not models:
+                    summary = '; '.join(f'{u}: {e}' for u, e in tried)
+                    return jsonify({
+                        'success': True,
+                        'models': [],
+                        'count': 0,
+                        'hint': (
+                            '该平台未返回可用模型列表（尝试过 ' + summary
+                            + '）。请在下方"模型名称"输入框手动填写。'
+                        ),
+                    })
+        else:
+            return jsonify({'success': False, 'error': f'不支持的认证方式：{auth_type}'}), 400
+
+        # Deduplicate by id
+        seen = set()
+        unique = []
+        for m in models:
+            if m['id'] not in seen:
+                seen.add(m['id'])
+                unique.append(m)
+
+        return jsonify({
+            'success': True,
+            'models': unique,
+            'count': len(unique)
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/config/test-connection', methods=['POST'])
+def api_test_connection():
+    """测试单条 AI 配置的连通性。
+
+    根据 auth_type 与 usage 组合选择合适的连通性测试方式：
+    - usage=scene_analysis / voiceover: 向 /chat/completions 发送 ping 请求
+    - usage=image_generation + auth_type=access_key_secret (芒果TV 等):
+        向 storyboard 提交接口发送 ping，只验证签名与接口可达
+    - 其他: 默认尝试 /models 拉取
+    """
+    try:
+        data = request.get_json() or {}
+        usage = data.get('usage', USAGE_SCENE_ANALYSIS)
+        auth_type = data.get('auth_type', 'api_key')
+        api_base = (data.get('api_base') or '').strip().rstrip('/')
+        api_key = (data.get('api_key') or '').strip()
+        cookie = (data.get('cookie') or '').strip()
+        access_key = (data.get('access_key') or '').strip()
+        secret_key = (data.get('secret_key') or '').strip()
+        model_name = (data.get('model_name') or '').strip()
+        api_type = (data.get('api_type') or '').strip()
+        timeout = int(data.get('timeout', 15) or 15)
+
+        if not api_base:
+            return jsonify({'success': False, 'error': '缺少 API Base URL'}), 400
+
+        import requests as req_lib
+        start_ts = datetime.now()
+
+        def _elapsed_ms():
+            return int((datetime.now() - start_ts).total_seconds() * 1000)
+
+        # ---------- 构建通用认证头 ----------
+        if auth_type == 'api_key':
+            if not api_key:
+                return jsonify({'success': False, 'error': '缺少 API Key'}), 400
+            auth_headers = {
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json',
+            }
+        elif auth_type == 'cookie':
+            if not cookie:
+                return jsonify({'success': False, 'error': '缺少 Cookie'}), 400
+            auth_headers = {
+                'Cookie': cookie,
+                'User-Agent': 'Mozilla/5.0',
+                'Content-Type': 'application/json',
+            }
+        elif auth_type == 'access_key_secret':
+            if not access_key or not secret_key:
+                return jsonify({'success': False, 'error': '缺少 Access Key / Secret Key'}), 400
+            # AK/SK 签名延迟计算，由具体请求分支内构建
+            auth_headers = None  # marker
+        else:
+            return jsonify({'success': False, 'error': f'不支持的认证方式：{auth_type}'}), 400
+
+        # ---------- 按 usage 选择测试方式 ----------
+        if usage in (USAGE_SCENE_ANALYSIS, USAGE_VOICEOVER):
+            # chat completion ping
+            url = f"{api_base}/chat/completions"
+            payload = {
+                "model": model_name or "gpt-3.5-turbo",
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 5,
+            }
+            if auth_type == 'access_key_secret':
+                headers = build_ak_sk_headers(
+                    method='POST', url=url, access_key=access_key,
+                    secret_key=secret_key,
+                )[0]
+            else:
+                headers = auth_headers
+            resp = req_lib.post(url, headers=headers, json=payload, timeout=timeout)
+            detail = resp.text[:300]
+            ok = resp.status_code == 200
+
+        elif usage == USAGE_IMAGE_GENERATION:
+            if auth_type == 'access_key_secret':
+                # mgtv-style ping: send storyboard request with num=0 to avoid billing,
+                # or just check /models availability. 此处发一个轻量 storyboard 调用验证签名链路
+                url = f"{api_base}/api/v1/storyboard/generateByPromptv2"
+                headers = build_ak_sk_headers(
+                    method='POST', url=url, access_key=access_key,
+                    secret_key=secret_key,
+                )[0]
+                headers['Content-Type'] = 'application/json'
+                payload = {
+                    "imgUrls": [],
+                    "styleId": int(data.get('img_style_id', 35) or 35),
+                    "resolution": data.get('img_resolution', '2K'),
+                    "ratio": data.get('img_ratio', '3:4'),
+                    "nums": 0,
+                    "prompt": {"args": [], "prompt": "__ping__"},
+                }
+                resp = req_lib.post(url, headers=headers, json=payload, timeout=timeout)
+                detail = resp.text[:500]
+                try:
+                    j = resp.json()
+                    ok = resp.status_code == 200 and (j.get('code') == 200 or 'taskId' in str(j))
+                except Exception:
+                    ok = resp.status_code == 200
+            else:
+                # OpenAI-compatible image endpoint (rare), fallback to /models
+                url = f"{api_base}/models"
+                resp = req_lib.get(url, headers=auth_headers, timeout=timeout)
+                detail = resp.text[:300]
+                ok = resp.status_code == 200
+
+        else:
+            # 默认测试：GET /models
+            url = f"{api_base}/models"
+            if auth_type == 'access_key_secret':
+                headers = build_ak_sk_headers(
+                    method='GET', url=url, access_key=access_key,
+                    secret_key=secret_key,
+                )[0]
+            else:
+                headers = auth_headers
+            resp = req_lib.get(url, headers=headers, timeout=timeout)
+            detail = resp.text[:300]
+            ok = resp.status_code == 200
+
+        elapsed = _elapsed_ms()
+        # 针对业务错误码（如 MGTV 的 -401 "未认证"）给出更明确的错误提示
+        biz_err = None
+        try:
+            j = resp.json()
+            code = j.get('code') if isinstance(j, dict) else None
+            msg = j.get('msg') if isinstance(j, dict) else ''
+            if code is not None and code not in (200, 0, None):
+                biz_err = code == -401 or '未认证' in msg or 'auth' in msg.lower()
+                if biz_err:
+                    detail = f'{msg} (业务错误码 code={code})，请检查 Access Key / Secret Key 是否正确。'
+                    ok = False
+        except Exception:
+            pass
+
+        if ok:
+            return jsonify({
+                'success': True,
+                'message': '连接测试成功',
+                'detail': {
+                    'http_status': resp.status_code,
+                    'elapsed_ms': elapsed,
+                    'response_preview': detail[:200],
+                },
+            })
+        else:
+            err_msg = detail[:300] if len(detail) < 100 else f'连接测试失败 (HTTP {resp.status_code}, {elapsed}ms)'
+            return jsonify({
+                'success': False,
+                'error': err_msg,
+                'detail': {
+                    'http_status': resp.status_code,
+                    'elapsed_ms': elapsed,
+                    'response_preview': detail[:400],
+                },
+            }), 200
+
+    except req_lib.exceptions.Timeout:
+        return jsonify({'success': False, 'error': '请求超时',
+                        'detail': {'elapsed_ms': _elapsed_ms()}}), 200
+    except req_lib.exceptions.RequestException as e:
+        return jsonify({'success': False, 'error': f'网络错误：{str(e)}',
+                        'detail': {'elapsed_ms': _elapsed_ms()}}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({'success': False, 'error': str(e),
+                        'detail': {'traceback': traceback.format_exc()}}), 500
 
 
 @app.route('/config')
@@ -2777,15 +3301,31 @@ def api_analyze_scenes():
                 'hint': '请运行：pip install requests'
             }), 500
         
-        # 获取 AI 配置
-        config = load_config()
-        
-        # 创建分析器实例（传入云端 AI 配置）
+        ai_cfg = get_ai_config(USAGE_SCENE_ANALYSIS)
+        if not ai_cfg:
+            return jsonify({
+                'success': False,
+                'error': '未配置场景分析 AI，请先到 /config 页面添加场景分析配置'
+            }), 400
+
+        auth_type = ai_cfg.get('auth_type', 'api_key')
+        effective_api_key = ai_cfg.get('api_key', '')
+        if auth_type == 'cookie':
+            effective_api_key = ai_cfg.get('cookie', '')
+        elif auth_type == 'access_key_secret':
+            effective_api_key = ''
+
         analyzer = AISceneAnalyzer(
-            model_type=config.get('ai_api_type', 'qwen'),
-            model_name=config.get('ai_model_name', 'qwen-turbo'),
-            api_base=config.get('ai_api_base', 'https://dashscope.aliyuncs.com/compatible-mode/v1'),
-            api_key=config.get('ai_api_key', '')
+            model_type=ai_cfg.get('api_type', 'qwen'),
+            model_name=ai_cfg.get('model_name', 'qwen-turbo'),
+            api_base=ai_cfg.get('api_base', 'https://dashscope.aliyuncs.com/compatible-mode/v1'),
+            api_key=effective_api_key,
+            timeout=int(ai_cfg.get('timeout', 60)),
+            max_retries=int(ai_cfg.get('max_retries', 3)),
+            auth_type=auth_type,
+            access_key=ai_cfg.get('access_key', ''),
+            secret_key=ai_cfg.get('secret_key', ''),
+            cookie=ai_cfg.get('cookie', ''),
         )
         
         # 执行 AI 场景分析
@@ -2811,23 +3351,11 @@ def api_analyze_scenes():
         
     except Exception as e:
         import traceback
-        error_detail = traceback.format_exc()
-        print(f"[FFmpeg 下载] ❌ 错误：{str(e)}")
-        print(f"[FFmpeg 下载] ❌ 堆栈：{error_detail}")
-        
-        # 判断是否是 URL 验证失败
-        if '无法验证下载链接' in str(e) or 'head' in str(e).lower():
-            status_code = 503
-        else:
-            status_code = 500
-        
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': error_detail,
-            'system': system,
-            'url': url if 'url' in locals() else 'N/A'
-        }), status_code
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 @app.route('/api/scenes/confirm', methods=['POST'])
@@ -2846,13 +3374,10 @@ def api_confirm_scenes():
                 'error': '场景不能为空'
             }), 400
         
-        # 将场景信息传递到生成流程
-        # 这里简化处理，实际应该集成到 generate API 中
-        # 将场景信息保存到临时文件或 session 中
-        import uuid
         task_id = str(uuid.uuid4())
-        
-        # 保存场景配置
+        output_dir = app.config['OUTPUT_FOLDER'] / task_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+
         scene_config = {
             'task_id': task_id,
             'prompt': prompt,
@@ -2860,9 +3385,75 @@ def api_confirm_scenes():
             'scenes': scenes,
             'duration': duration
         }
-        
-        # 这里应该调用实际的视频生成流程
-        # 为简化实现，返回成功消息
+        scene_config_path = output_dir / 'scene_config.json'
+        with open(scene_config_path, 'w', encoding='utf-8') as f:
+            json.dump(scene_config, f, indent=2, ensure_ascii=False)
+
+        cmd = [
+            sys.executable,
+            'personal_mode/run.py',
+            '-p', prompt,
+            '-m', mode,
+            '-d', str(duration),
+            '-o', str(output_dir / 'output.mp4'),
+            '--enable-scene-analysis'
+        ]
+
+        tasks[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'prompt': prompt,
+            'mode': mode,
+            'start_time': datetime.now().isoformat(),
+            'log': f'场景确认生成\n场景数：{len(scenes)}\n提示词：{prompt}\n',
+            'scene_config': scene_config_path
+        }
+
+        def run_task():
+            task = tasks[task_id]
+            log_lines = [f"开始执行：{' '.join(cmd)}", ""]
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    cwd=str(Path(__file__).parent.parent),
+                    timeout=600
+                )
+                if result.stdout:
+                    log_lines.append(result.stdout)
+                if result.stderr:
+                    log_lines.append(result.stderr)
+                if result.returncode == 0:
+                    task['status'] = 'completed'
+                    video_files = list(output_dir.glob('*.mp4'))
+                    if video_files:
+                        task['video_url'] = f'/api/output/{task_id}/{video_files[0].name}'
+                    else:
+                        task['status'] = 'failed'
+                        task['error'] = '生成成功但未找到视频文件'
+                else:
+                    task['status'] = 'failed'
+                    task['error'] = result.stderr
+                task['progress'] = 100
+                task['log'] = '\n'.join(log_lines)
+            except subprocess.TimeoutExpired:
+                task['status'] = 'failed'
+                task['error'] = '任务执行超时（10 分钟）'
+                task['progress'] = 100
+                task['log'] = '\n'.join(log_lines) + '\n超时错误'
+            except Exception as e:
+                task['status'] = 'failed'
+                task['error'] = str(e)
+                task['progress'] = 100
+                task['log'] = '\n'.join(log_lines) + f'\n异常：{e}'
+
+        thread = threading.Thread(target=run_task)
+        thread.daemon = True
+        thread.start()
+
         return jsonify({
             'success': True,
             'task_id': task_id,
@@ -2877,10 +3468,120 @@ def api_confirm_scenes():
         }), 500
 
 
-@app.route('/scenes/confirm')
-def scenes_confirm_page():
-    """场景确认页面"""
-    return render_template('scenes_confirm.html')
+# ========== MGTV AIGC 图片/视频生成 API ==========
+
+@app.route('/api/generate-image', methods=['POST'])
+def api_generate_image():
+    """API: 调用芒果TV AIGC 生成图片（异步任务）"""
+    try:
+        data = request.get_json() or {}
+        prompt = data.get('prompt', '').strip()
+        if not prompt:
+            return jsonify({'success': False, 'error': '提示词不能为空'}), 400
+
+        cfg = get_ai_config(USAGE_IMAGE_GENERATION, config_id=data.get('config_id'))
+        if not cfg or cfg.get('auth_type') != 'access_key_secret':
+            return jsonify({
+                'success': False,
+                'error': '未配置图片生成 AI（需在 /config 添加 usage=image_generation 且 auth_type=access_key_secret）'
+            }), 400
+
+        access_key = cfg.get('access_key', '')
+        secret_key = cfg.get('secret_key', '')
+        api_base = (cfg.get('api_base', '') or 'https://aigc.mgtv.com').rstrip('/')
+        if not access_key or not secret_key:
+            return jsonify({'success': False, 'error': '缺少 Access Key / Secret Key'}), 400
+
+        sys.path.insert(0, str(Path(__file__).parent.parent / 'personal_mode'))
+        from cloud_platforms import MGTVImagePlatform
+
+        platform = MGTVImagePlatform(
+            access_key=access_key,
+            secret_key=secret_key,
+            api_base=api_base,
+            verbose=True,
+        )
+
+        result_url = platform.generate_image(
+            prompt=prompt,
+            style_id=data.get('style_id', cfg.get('img_style_id', 35)),
+            resolution=data.get('resolution', cfg.get('img_resolution', '2K')),
+            ratio=data.get('ratio', cfg.get('img_ratio', '3:4')),
+            nums=int(data.get('nums', cfg.get('img_num_images', 1))),
+        )
+        if not result_url:
+            return jsonify({'success': False, 'error': '图片生成失败'}), 500
+
+        return jsonify({
+            'success': True,
+            'image_urls': result_url if isinstance(result_url, list) else [result_url],
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+        }), 500
+
+
+@app.route('/api/generate-video', methods=['POST'])
+def api_generate_mgtv_video():
+    """API: 调用芒果TV AIGC 生成视频（异步任务）"""
+    try:
+        data = request.get_json() or {}
+        prompt = data.get('prompt', '').strip()
+        if not prompt:
+            return jsonify({'success': False, 'error': '提示词不能为空'}), 400
+
+        cfg = get_ai_config(USAGE_IMAGE_GENERATION, config_id=data.get('config_id'))
+        if not cfg or cfg.get('auth_type') != 'access_key_secret':
+            return jsonify({
+                'success': False,
+                'error': '未配置图片/视频生成 AI（需在 /config 添加 usage=image_generation 且 auth_type=access_key_secret）'
+            }), 400
+
+        access_key = cfg.get('access_key', '')
+        secret_key = cfg.get('secret_key', '')
+        api_base = (cfg.get('api_base', '') or 'https://aigc.mgtv.com').rstrip('/')
+        if not access_key or not secret_key:
+            return jsonify({'success': False, 'error': '缺少 Access Key / Secret Key'}), 400
+
+        sys.path.insert(0, str(Path(__file__).parent.parent / 'personal_mode'))
+        from cloud_platforms import MGTVImagePlatform
+
+        platform = MGTVImagePlatform(
+            access_key=access_key,
+            secret_key=secret_key,
+            api_base=api_base,
+            verbose=True,
+        )
+
+        video_url = platform.generate_video(
+            prompt=prompt,
+            model_id=data.get('model_id', cfg.get('video_model_id', 28)),
+            ratio=data.get('ratio', cfg.get('video_ratio', '16:9')),
+            resolution=data.get('resolution', cfg.get('video_resolution', '720p')),
+            duration=int(data.get('duration', cfg.get('video_duration', 5))),
+            nums=int(data.get('nums', cfg.get('video_num_videos', 1))),
+            auto_bgm=bool(data.get('auto_bgm', False)),
+        )
+        if not video_url:
+            return jsonify({'success': False, 'error': '视频生成失败'}), 500
+
+        return jsonify({
+            'success': True,
+            'video_url': video_url,
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+        }), 500
 
 
 # ========== FFmpeg Management API ==========
@@ -3059,23 +3760,11 @@ def api_check_resources():
         
     except Exception as e:
         import traceback
-        error_detail = traceback.format_exc()
-        print(f"[FFmpeg 下载] ❌ 错误：{str(e)}")
-        print(f"[FFmpeg 下载] ❌ 堆栈：{error_detail}")
-        
-        # 判断是否是 URL 验证失败
-        if '无法验证下载链接' in str(e) or 'head' in str(e).lower():
-            status_code = 503
-        else:
-            status_code = 500
-        
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': error_detail,
-            'system': system,
-            'url': url if 'url' in locals() else 'N/A'
-        }), status_code
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 @app.route('/api/download-ffmpeg', methods=['POST'])
@@ -3383,23 +4072,11 @@ def api_download_ffmpeg():
         }), 500
     except Exception as e:
         import traceback
-        error_detail = traceback.format_exc()
-        print(f"[FFmpeg 下载] ❌ 错误：{str(e)}")
-        print(f"[FFmpeg 下载] ❌ 堆栈：{error_detail}")
-        
-        # 判断是否是 URL 验证失败
-        if '无法验证下载链接' in str(e) or 'head' in str(e).lower():
-            status_code = 503
-        else:
-            status_code = 500
-        
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': error_detail,
-            'system': system,
-            'url': url if 'url' in locals() else 'N/A'
-        }), status_code
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 # ========== Resource Monitoring & Task Pause ==========
@@ -3643,3 +4320,18 @@ def check_resource_and_pause():
 import threading
 monitor_thread = threading.Thread(target=check_resource_and_pause, daemon=True)
 monitor_thread.start()
+
+
+# ========== 应用入口 (必须放在文件末尾，否则会阻塞后续路由定义) ==========
+if __name__ == '__main__':
+    print("\n" + "="*70)
+    print("  AI 视频生成器 - Web 服务")
+    print("="*70)
+    print("\n访问地址：http://localhost:5000")
+    print("\nAPI 接口:")
+    print("  POST /api/generate - 生成视频")
+    print("  GET  /api/task/<id> - 查询任务状态")
+    print("  GET  /api/output/<id>/<file> - 获取输出文件")
+    print("\n按 Ctrl+C 停止服务\n")
+
+    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)

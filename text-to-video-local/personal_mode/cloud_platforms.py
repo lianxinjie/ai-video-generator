@@ -8,6 +8,7 @@
 - 通义万相 (Aliyun)
 - LiblibAI
 - Raphael AI
+- MGTV AIGC (芒果TV - 图片生成/视频生成)
 
 功能：
 1. 统一接口封装
@@ -21,10 +22,13 @@ import json
 import time
 import random
 import hashlib
+import hmac as _hmac
+import uuid as _uuid
 import requests
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 class CloudPlatformBase:
@@ -323,6 +327,354 @@ class RaphaelPlatform(CloudPlatformBase):
             return None
 
 
+def _load_ai_config(usage: str = None) -> Optional[Dict]:
+    """从 config.json 加载指定用途的 AI 配置。"""
+    config_path = Path(__file__).parent.parent / 'config.json'
+    if not config_path.exists():
+        return None
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except Exception:
+        return None
+    ai_configs = config.get('ai_configs', [])
+    if not usage:
+        return ai_configs[0] if ai_configs else None
+    for cfg in ai_configs:
+        if cfg.get('usage') == usage and cfg.get('enabled', True):
+            return cfg
+    for cfg in ai_configs:
+        if cfg.get('usage') == usage:
+            return cfg
+    return None
+
+
+def _mgtv_signature(method: str, path: str, timestamp: str, nonce: str,
+                    params: dict, secret: str) -> str:
+    """生成芒果TV AIGC HMAC-SHA256 签名。"""
+    sorted_keys = sorted(params.keys())
+    query_parts = [f"{k}={params[k]}" for k in sorted_keys]
+    sorted_query = "&".join(query_parts)
+    string_to_sign = f"{method.upper()}\n{path}\n{timestamp}\n{nonce}\n{sorted_query}"
+    return _hmac.new(
+        key=secret.encode("utf-8"),
+        msg=string_to_sign.encode("utf-8"),
+        digestmod=hashlib.sha256
+    ).hexdigest()
+
+
+def _mgtv_build_headers(method: str, url: str, access_key: str, secret_key: str,
+                         query_params: dict = None) -> Dict[str, str]:
+    """生成芒果TV AIGC 请求头。"""
+    parsed = urlparse(url)
+    timestamp = str(int(time.time()))
+    nonce = _uuid.uuid4().hex[:16]
+    signature = _mgtv_signature(method, parsed.path, timestamp, nonce,
+                                query_params or {}, secret_key)
+    return {
+        "Content-Type": "application/json",
+        "X-Access-Key": access_key,
+        "X-Timestamp": timestamp,
+        "X-Nonce": nonce,
+        "X-Signature": signature,
+    }
+
+
+def _poll_async_task(task_id: str, query_url: str, access_key: str, secret_key: str,
+                     status_key: str = "status",
+                     success_values: Tuple = ("SUCCESS", "success", "FINISHED", 2, "2"),
+                     result_key: str = "result",
+                     timeout_seconds: int = 300,
+                     poll_interval: float = 5.0,
+                     log_fn=None,
+                     use_path_param: bool = False) -> Optional[Dict]:
+    """轮询异步任务，返回成功后的 result 字段。
+
+    use_path_param=True 时将 taskId 拼接到 URL 路径中（MGTV /detail/{id} 模式），
+    否则作为 query 参数发送。
+    """
+    start = time.time()
+    while time.time() - start < timeout_seconds:
+        try:
+            if use_path_param:
+                final_url = f"{query_url.rstrip('/')}/{task_id}"
+                headers = _mgtv_build_headers("GET", final_url, access_key, secret_key)
+                params = None
+            else:
+                final_url = query_url
+                params = {"taskId": task_id}
+                headers = _mgtv_build_headers("GET", final_url, access_key, secret_key, params)
+            resp = requests.get(final_url, headers=headers, params=params, timeout=30)
+            if resp.status_code != 200:
+                if log_fn:
+                    log_fn(f"轮询失败：HTTP {resp.status_code}", "WARNING")
+                time.sleep(poll_interval)
+                continue
+            body = resp.json()
+            if body.get("code") not in (200, None):
+                if log_fn:
+                    log_fn(f"轮询接口返回业务错误：code={body.get('code')}, msg={body.get('msg')}", "WARNING")
+                # 某些任务刚提交时 detail 接口可能尚未就绪，继续等待
+                time.sleep(poll_interval)
+                continue
+            data = body.get("data", body)
+            status_val = data.get(status_key)
+            if log_fn:
+                log_fn(f"任务状态：{status_val}", "DEBUG")
+            if status_val in success_values:
+                return data.get(result_key, data)
+            if str(status_val).upper() in ("FAILED", "ERROR", "TIMEOUT"):
+                if log_fn:
+                    log_fn(f"任务失败：{json.dumps(data, ensure_ascii=False)[:300]}", "ERROR")
+                return None
+        except Exception as e:
+            if log_fn:
+                log_fn(f"轮询异常：{e}", "WARNING")
+        time.sleep(poll_interval)
+    if log_fn:
+        log_fn("轮询超时", "ERROR")
+    return None
+
+
+class MGTVImagePlatform(CloudPlatformBase):
+    """
+    芒果TV AIGC 图片生成平台
+
+    文档：https://aigc.mgtv.com/develop/docs#quick-start
+    图片生成接口：POST /api/v1/storyboard/generateByPromptv2
+    图片详情接口：GET  /api/v1/storyboard/detail/{imgId}
+    认证：HMAC-SHA256（X-Access-Key / X-Timestamp / X-Nonce / X-Signature）
+    """
+
+    CONFIG_USAGE = 'image_generation'
+
+    def __init__(self, access_key: str = None, secret_key: str = None,
+                 api_base: str = None, model_name: str = None,
+                 verbose: bool = True, **kwargs):
+        super().__init__(api_key=access_key, verbose=verbose)
+        self.daily_limit = 500
+        self.access_key = access_key or ""
+        self.secret_key = secret_key or ""
+        self.api_base = (api_base or "https://aigc.mgtv.com").rstrip("/")
+        self.image_endpoint = f"{self.api_base}/api/v1/storyboard/generateByPromptv2"
+        self.video_endpoint = f"{self.api_base}/api/v1/aivideo/generateByPromptv2"
+        self.poll_endpoint = f"{self.api_base}/api/v1/storyboard/detail"
+        self.video_poll_endpoint = f"{self.api_base}/api/v1/aivideo/detail"
+        self.image_styles_endpoint = f"{self.api_base}/api/v1/aitools/image/styles"
+        self.video_models_endpoint = f"{self.api_base}/api/v1/aitools/videoModelList"
+        self.image_detail_by_ids_endpoint = f"{self.api_base}/api/v1/storyboard/detailByIds"
+        self.model_name = model_name or "mgtv-image"
+        self.poll_interval = kwargs.get("poll_interval", 5.0)
+        self.poll_timeout = kwargs.get("poll_timeout", 300)
+
+        cfg = _load_ai_config(self.CONFIG_USAGE)
+        if cfg:
+            self.access_key = self.access_key or cfg.get("access_key", "")
+            self.secret_key = self.secret_key or cfg.get("secret_key", "")
+            base = cfg.get("api_base", "")
+            if base:
+                self.api_base = base.rstrip("/")
+                self.image_endpoint = f"{self.api_base}/api/v1/storyboard/generateByPromptv2"
+                self.video_endpoint = f"{self.api_base}/api/v1/aivideo/generateByPromptv2"
+                self.poll_endpoint = f"{self.api_base}/api/v1/storyboard/detail"
+                self.video_poll_endpoint = f"{self.api_base}/api/v1/aivideo/detail"
+                self.image_styles_endpoint = f"{self.api_base}/api/v1/aitools/image/styles"
+                self.video_models_endpoint = f"{self.api_base}/api/v1/aitools/videoModelList"
+                self.image_detail_by_ids_endpoint = f"{self.api_base}/api/v1/storyboard/detailByIds"
+
+    @property
+    def platform_name(self) -> str:
+        return "MGTV"
+
+    def is_available(self) -> bool:
+        self._check_daily_reset()
+        return self.remaining_quota > 0 and bool(self.access_key and self.secret_key)
+
+    def _sign_headers(self, method: str, url: str, query_params: dict = None) -> Dict[str, str]:
+        return _mgtv_build_headers(method, url, self.access_key, self.secret_key, query_params)
+
+    def _submit_image_task(self, prompt: str, **kwargs) -> Optional[str]:
+        body = {
+            "imgUrls": kwargs.get("img_urls", []),
+            "styleId": kwargs.get("style_id", 35),
+            "resolution": kwargs.get("resolution", "2K"),
+            "ratio": kwargs.get("ratio", "3:4"),
+            "nums": kwargs.get("nums", 1),
+            "prompt": {
+                "args": kwargs.get("prompt_args", []),
+                "prompt": prompt,
+            },
+        }
+        headers = self._sign_headers("POST", self.image_endpoint)
+        resp = requests.post(self.image_endpoint, json=body, headers=headers, timeout=60)
+        if resp.status_code != 200:
+            self._log(f"提交图片任务失败：HTTP {resp.status_code} - {resp.text[:200]}", "ERROR")
+            return None
+        data = resp.json()
+        if data.get("code") not in (200, None):
+            self._log(f"提交图片任务被拒绝：code={data.get('code')}, msg={data.get('msg')}", "ERROR")
+            return None
+        inner = data.get("data") or {}
+        raw_status = inner.get("status")
+        status = raw_status if isinstance(raw_status, dict) else {}
+        task_id = (
+            inner.get("taskId")
+            or inner.get("imgId")
+            or status.get("taskId")
+            or inner.get("aseetRecordId")
+            or inner.get("aigcSessionId")
+            or data.get("taskId")
+        )
+        if not task_id or task_id == 0:
+            self._log(f"响应中无有效 taskId：{json.dumps(data, ensure_ascii=False)[:400]}", "ERROR")
+            return None
+        fail_reason = status.get("failReason", "") if isinstance(raw_status, dict) else ""
+        status_str = status.get("status") if isinstance(raw_status, dict) else raw_status
+        self._log(
+            f"提交图片任务成功，taskId={task_id}，status={status_str}，fail={fail_reason}",
+            "INFO",
+        )
+        return str(task_id)
+
+    def _poll_image_result(self, task_id: str) -> Optional[List[str]]:
+        result = _poll_async_task(
+            task_id=task_id,
+            query_url=self.poll_endpoint,
+            access_key=self.access_key,
+            secret_key=self.secret_key,
+            success_values=("FINISHED", "SUCCESS", "success", 2, "2"),
+            result_key="imgUrls",
+            timeout_seconds=self.poll_timeout,
+            poll_interval=self.poll_interval,
+            log_fn=self._log,
+            use_path_param=True,
+        )
+        if result is None:
+            return None
+        if isinstance(result, list):
+            return [u for u in result if u] if result else None
+        url = result.get("imgUrl") or result.get("url")
+        return [url] if url else None
+
+    def generate_image(self, prompt: str, **kwargs) -> Optional[str]:
+        """
+        生成图片。
+
+        kwargs: style_id, resolution, ratio, nums, img_urls, prompt_args,
+                poll_interval, poll_timeout, return_list
+        """
+        if not self.is_available():
+            self._log("平台不可用（缺 AK/SK 或额度耗尽）", "ERROR")
+            return None
+
+        self._log(f"生成图片：{prompt[:60]}...", "INFO")
+        task_id = self._submit_image_task(prompt, **kwargs)
+        if not task_id:
+            return None
+
+        urls = self._poll_image_result(task_id)
+        if not urls:
+            self._log("未获取到图片 URL", "ERROR")
+            return None
+
+        self.used_today += int(kwargs.get("nums", 1))
+        self._log(f"图片生成成功，共 {len(urls)} 张", "INFO")
+        if kwargs.get("return_list"):
+            return urls
+        return urls[0] if len(urls) == 1 else urls
+
+    def parse_response(self, response: dict) -> Optional[str]:
+        try:
+            data = response.get("data", response)
+            urls = data.get("imgUrls") or []
+            return urls[0] if urls else None
+        except Exception as e:
+            self._log(f"解析响应失败：{e}", "ERROR")
+            return None
+
+    def generate_video(self, prompt: str, **kwargs) -> Optional[str]:
+        """
+        调用芒果TV 视频生成接口。
+
+        文档：https://aigc.mgtv.com/develop/docs#quick-start
+        接口：POST /api/v1/aivideo/generateByPromptv2
+        详情：GET  /api/v1/aivideo/detail/{taskId}
+        kwargs: model_id(默认28), ratio(默认16:9), resolution(默认720p),
+                duration(默认5), nums(默认1), auto_bgm(默认False),
+                img_urls(可选，图生视频输入), prompt_args
+        """
+        if not self.is_available():
+            self._log("平台不可用", "ERROR")
+            return None
+
+        body = {
+            "modelId": kwargs.get("model_id", 28),
+            "type": kwargs.get("type", ""),
+            "aspectRatio": kwargs.get("ratio", "16:9"),
+            "resolution": kwargs.get("resolution", "720p"),
+            "duration": kwargs.get("duration", 5),
+            "nums": kwargs.get("nums", 1),
+            "autoBgm": kwargs.get("auto_bgm", False),
+            "prompt": {
+                "prompt": prompt,
+                "args": kwargs.get("prompt_args", []),
+            },
+        }
+        if kwargs.get("img_urls"):
+            body["imgUrls"] = kwargs["img_urls"]
+
+        headers = self._sign_headers("POST", self.video_endpoint)
+        self._log(f"生成视频：{prompt[:60]}...", "INFO")
+        try:
+            resp = requests.post(self.video_endpoint, json=body, headers=headers, timeout=60)
+        except requests.RequestException as e:
+            self._log(f"提交视频任务失败：{e}", "ERROR")
+            return None
+
+        if resp.status_code != 200:
+            self._log(f"提交视频任务失败：HTTP {resp.status_code} - {resp.text[:200]}", "ERROR")
+            return None
+
+        data = resp.json()
+        if data.get("code") not in (200, None):
+            self._log(f"提交视频任务被拒绝：code={data.get('code')}, msg={data.get('msg')}", "ERROR")
+            return None
+        inner = data.get("data") or {}
+        raw_status = inner.get("status")
+        status = raw_status if isinstance(raw_status, dict) else {}
+        task_id = (
+            inner.get("taskId")
+            or status.get("taskId")
+            or inner.get("imgId")
+            or inner.get("aseetRecordId")
+            or inner.get("aigcSessionId")
+            or data.get("taskId")
+        )
+        if not task_id or task_id == 0:
+            self._log(f"响应中无 taskId：{json.dumps(data, ensure_ascii=False)[:400]}", "ERROR")
+            return None
+
+        self._log(f"视频任务已提交，taskId={task_id}，开始轮询...", "INFO")
+        result = _poll_async_task(
+            task_id=task_id,
+            query_url=self.video_poll_endpoint,
+            access_key=self.access_key,
+            secret_key=self.secret_key,
+            success_values=("FINISHED", "SUCCESS", "success", 2, "2"),
+            result_key="videoUrl",
+            timeout_seconds=kwargs.get("poll_timeout", 600),
+            poll_interval=kwargs.get("poll_interval", 10.0),
+            log_fn=self._log,
+            use_path_param=True,
+        )
+        if not result:
+            return None
+        if isinstance(result, str):
+            return result
+        url = result.get("videoUrl") or result.get("url")
+        return url
+
+
 class CloudPlatformManager:
     """云平台管理器 - 智能选择和调度"""
     
@@ -374,6 +726,24 @@ class CloudPlatformManager:
                 self._log(f"初始化平台：{name}", "INFO")
             except Exception as e:
                 self._log(f"初始化平台 {name} 失败：{e}", "ERROR")
+
+        mgtv_cfg = _load_ai_config('image_generation')
+        if mgtv_cfg and mgtv_cfg.get('access_key') and mgtv_cfg.get('secret_key'):
+            try:
+                self.platforms['mgtv'] = MGTVImagePlatform(
+                    access_key=mgtv_cfg.get('access_key', ''),
+                    secret_key=mgtv_cfg.get('secret_key', ''),
+                    api_base=mgtv_cfg.get('api_base', 'https://aigc.mgtv.com'),
+                    verbose=self.verbose,
+                )
+                self.platform_stats['mgtv'] = {
+                    'success_count': 0,
+                    'fail_count': 0,
+                    'avg_speed': 0.0,
+                }
+                self._log("初始化平台：mgtv", "INFO")
+            except Exception as e:
+                self._log(f"初始化平台 mgtv 失败：{e}", "ERROR")
     
     def get_available_platforms(self) -> List[str]:
         """获取可用的平台列表"""

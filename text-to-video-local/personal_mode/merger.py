@@ -156,12 +156,12 @@ class VideoMerger:
         filters = []
         for i in range(num_chunks):
             if i == 0:
-                filters.append(f"[{i}:v]fade=t=in:st=0:d=0.3,vf{i}[v{i}]")
+                filters.append(f"[{i}:v]fade=t=in:st=0:d=0.3[v{i}]")
             elif i == num_chunks - 1:
-                filters.append(f"[{i}:v]fade=t=out:st=0:d=0.3,vf{i}[v{i}]")
+                filters.append(f"[{i}:v]fade=t=out:st=0:d=0.3[v{i}]")
             else:
                 filters.append(
-                    f"[{i}:v]fade=t=in:st=0:d=0.15,fade=t=out:st=0.85:d=0.15,vf{i}[v{i}]"
+                    f"[{i}:v]fade=t=in:st=0:d=0.15,fade=t=out:st=0.85:d=0.15[v{i}]"
                 )
         
         concat_inputs = ' '.join([f"[v{i}]" for i in range(num_chunks)])
