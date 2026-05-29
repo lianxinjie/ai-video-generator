@@ -87,204 +87,118 @@ class CloudPlatformBase:
 
 
 class SeaArtPlatform(CloudPlatformBase):
-    """SeaArt.ai 平台"""
-    
+    """SeaArt.ai 平台（框架实现，尚未接入真实 API）"""
+
     def __init__(self, api_key: str = None, verbose: bool = True):
         super().__init__(api_key, verbose)
-        self.daily_limit = 100  # 每日约 60-100 积分
+        self.daily_limit = 100
         self.base_url = "https://api.seaart.ai"
-    
+
     @property
     def platform_name(self) -> str:
         return "SeaArt"
-    
+
+    def is_available(self) -> bool:
+        return False
+
     def generate_image(self, prompt: str, **kwargs) -> Optional[str]:
-        """
-        使用 SeaArt 生成图片
-        
-        注意：实际使用需要注册账号并获取 API key
-        这里提供接口框架，实际调用需要根据官方 API 文档实现
-        """
-        self._log(f"生成图片：{prompt[:50]}...", "INFO")
-        
-        # TODO: 实现真实的 API 调用
-        # 示例代码结构：
-        # headers = {"Authorization": f"Bearer {self.api_key}"}
-        # payload = {
-        #     "prompt": prompt,
-        #     "width": kwargs.get('width', 512),
-        #     "height": kwargs.get('height', 512),
-        #     "steps": kwargs.get('steps', 20),
-        # }
-        # response = requests.post(f"{self.base_url}/generate", json=payload, headers=headers)
-        # result = response.json()
-        # image_url = self.parse_response(result)
-        
-        # 模拟返回（实际使用时删除）
-        time.sleep(random.uniform(5, 10))  # 模拟 API 延迟
-        self.used_today += 1
-        self._log(f"积分剩余：{self.remaining_quota}/{self.daily_limit}", "INFO")
-        
-        # 返回示例 URL
-        return f"https://example.com/seaart_{int(time.time())}.jpg"
-    
+        self._log("SeaArt 平台尚未接入真实 API，请等待实现或手动贡献代码", "WARNING")
+        return None
+
     def parse_response(self, response: dict) -> Optional[str]:
-        """解析 SeaArt 响应"""
-        # TODO: 根据实际 API 响应结构调整
-        try:
-            return response.get('data', {}).get('image_url')
-        except Exception as e:
-            self._log(f"解析响应失败：{e}", "ERROR")
-            return None
+        return None
 
 
 class TensorPlatform(CloudPlatformBase):
-    """Tensor.art 平台"""
-    
+    """Tensor.art 平台（框架实现，尚未接入真实 API）"""
+
     def __init__(self, api_key: str = None, verbose: bool = True):
         super().__init__(api_key, verbose)
-        self.daily_limit = 100  # 每日 100 积分
+        self.daily_limit = 100
         self.base_url = "https://api.tensor.art"
-    
+
     @property
     def platform_name(self) -> str:
         return "Tensor"
-    
+
+    def is_available(self) -> bool:
+        return False
+
     def generate_image(self, prompt: str, **kwargs) -> Optional[str]:
-        self._log(f"生成图片：{prompt[:50]}...", "INFO")
-        
-        # TODO: 实现真实的 API 调用
-        time.sleep(random.uniform(3, 8))
-        self.used_today += 1
-        self._log(f"积分剩余：{self.remaining_quota}/{self.daily_limit}", "INFO")
-        
-        return f"https://example.com/tensor_{int(time.time())}.jpg"
-    
+        self._log("Tensor 平台尚未接入真实 API，请等待实现或手动贡献代码", "WARNING")
+        return None
+
     def parse_response(self, response: dict) -> Optional[str]:
-        try:
-            return response.get('result', {}).get('url')
-        except Exception as e:
-            self._log(f"解析响应失败：{e}", "ERROR")
-            return None
+        return None
 
 
 class BingPlatform(CloudPlatformBase):
-    """Bing Image Creator (免费)"""
-    
+    """Bing Image Creator（框架实现，尚未接入真实 API）"""
+
     def __init__(self, api_key: str = None, verbose: bool = True):
         super().__init__(api_key, verbose)
-        self.daily_limit = 100  # Bing 限制较宽松
+        self.daily_limit = 100
         self.session = requests.Session()
-    
+
     @property
     def platform_name(self) -> str:
         return "Bing"
-    
+
+    def is_available(self) -> bool:
+        return False
+
     def generate_image(self, prompt: str, **kwargs) -> Optional[str]:
-        self._log(f"生成图片：{prompt[:50]}...", "INFO")
-        
-        # Bing Image Creator 通常需要浏览器 cookie
-        # 这里提供框架，实际使用需要实现 cookie 管理
-        
-        try:
-            # TODO: 实现真实的 API 调用
-            time.sleep(random.uniform(10, 20))  # Bing 通常较慢
-            self.used_today += 1
-            
-            return f"https://example.com/bing_{int(time.time())}.jpg"
-        except Exception as e:
-            self._log(f"生成失败：{e}", "ERROR")
-            return None
-    
+        self._log("Bing 平台尚未接入真实 API，请等待实现或手动贡献代码", "WARNING")
+        return None
+
     def parse_response(self, response: dict) -> Optional[str]:
-        try:
-            if 'images' in response:
-                return response['images'][0].get('url')
-            return None
-        except Exception as e:
-            self._log(f"解析响应失败：{e}", "ERROR")
-            return None
+        return None
 
 
 class AliyunPlatform(CloudPlatformBase):
-    """通义万相 (阿里云)"""
-    
+    """通义万相 (阿里云)（框架实现，尚未接入真实 API）"""
+
     def __init__(self, api_key: str = None, verbose: bool = True):
         super().__init__(api_key, verbose)
-        self.daily_limit = 200  # 免费额度较高
+        self.daily_limit = 200
         self.base_url = "https://dashscope.aliyuncs.com"
-    
+
     @property
     def platform_name(self) -> str:
         return "Aliyun"
-    
+
+    def is_available(self) -> bool:
+        return False
+
     def generate_image(self, prompt: str, **kwargs) -> Optional[str]:
-        self._log(f"生成图片：{prompt[:50]}...", "INFO")
-        
-        # 通义万相 API
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
-            
-            payload = {
-                "model": "wanx-v1",
-                "input": {
-                    "prompt": prompt
-                },
-                "parameters": {
-                    "style": kwargs.get('style', '<auto>'),
-                    "size": kwargs.get('size', '1024*1024'),
-                    "n": 1
-                }
-            }
-            
-            # TODO: 实现真实调用
-            # response = requests.post(f"{self.base_url}/api/v1/services/aigc/text-generation/generation",
-            #                        json=payload, headers=headers)
-            
-            time.sleep(random.uniform(5, 15))
-            self.used_today += 1
-            self._log(f"额度剩余：{self.remaining_quota}/{self.daily_limit}", "INFO")
-            
-            return f"https://example.com/aliyun_{int(time.time())}.jpg"
-        except Exception as e:
-            self._log(f"生成失败：{e}", "ERROR")
-            return None
-    
+        self._log("Aliyun 平台尚未接入真实 API，请等待实现或手动贡献代码", "WARNING")
+        return None
+
     def parse_response(self, response: dict) -> Optional[str]:
-        try:
-            return response.get('output', {}).get('results', [{}])[0].get('url')
-        except Exception as e:
-            self._log(f"解析响应失败：{e}", "ERROR")
-            return None
+        return None
 
 
 class LiblibPlatform(CloudPlatformBase):
-    """LiblibAI (国内平台，速度快)"""
-    
+    """LiblibAI (国内平台，速度快)（框架实现，尚未接入真实 API）"""
+
     def __init__(self, api_key: str = None, verbose: bool = True):
         super().__init__(api_key, verbose)
         self.daily_limit = 150
         self.base_url = "https://api.liblib.ai"
-    
+
     @property
     def platform_name(self) -> str:
         return "Liblib"
-    
+
+    def is_available(self) -> bool:
+        return False
+
     def generate_image(self, prompt: str, **kwargs) -> Optional[str]:
-        self._log(f"生成图片：{prompt[:50]}...", "INFO")
-        
-        try:
-            # TODO: 实现真实 API 调用
-            time.sleep(random.uniform(2, 6))  # 国内速度快
-            self.used_today += 1
-            
-            return f"https://example.com/liblib_{int(time.time())}.jpg"
-        except Exception as e:
-            self._log(f"生成失败：{e}", "ERROR")
-            return None
+        self._log("Liblib 平台尚未接入真实 API，请等待实现或手动贡献代码", "WARNING")
+        return None
+
+    def parse_response(self, response: dict) -> Optional[str]:
+        return None
     
     def parse_response(self, response: dict) -> Optional[str]:
         try:
@@ -295,29 +209,26 @@ class LiblibPlatform(CloudPlatformBase):
 
 
 class RaphaelPlatform(CloudPlatformBase):
-    """Raphael AI"""
-    
+    """Raphael AI（框架实现，尚未接入真实 API）"""
+
     def __init__(self, api_key: str = None, verbose: bool = True):
         super().__init__(api_key, verbose)
         self.daily_limit = 100
         self.base_url = "https://api.raphael.ai"
-    
+
     @property
     def platform_name(self) -> str:
         return "Raphael"
-    
+
+    def is_available(self) -> bool:
+        return False
+
     def generate_image(self, prompt: str, **kwargs) -> Optional[str]:
-        self._log(f"生成图片：{prompt[:50]}...", "INFO")
-        
-        try:
-            # TODO: 实现真实 API 调用
-            time.sleep(random.uniform(3, 8))
-            self.used_today += 1
-            
-            return f"https://example.com/raphael_{int(time.time())}.jpg"
-        except Exception as e:
-            self._log(f"生成失败：{e}", "ERROR")
-            return None
+        self._log("Raphael 平台尚未接入真实 API，请等待实现或手动贡献代码", "WARNING")
+        return None
+
+    def parse_response(self, response: dict) -> Optional[str]:
+        return None
     
     def parse_response(self, response: dict) -> Optional[str]:
         try:

@@ -20,8 +20,10 @@ import json
 import shutil
 import hmac
 import hashlib
+import time
 from pathlib import Path
 from datetime import datetime
+from typing import Dict, Optional
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 import subprocess
@@ -46,9 +48,89 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
 app.config['UPLOAD_FOLDER'].mkdir(parents=True, exist_ok=True)
 app.config['OUTPUT_FOLDER'].mkdir(parents=True, exist_ok=True)
 
-# 任务状态存储
-tasks = {}
-packages = {}  # package_id -> package_dir
+# ---------- 线程安全的任务注册表（带 TTL 自动清理） ----------
+class _TaskStore:
+    """线程安全的任务状态存储，已完成/失败/取消任务保留 30 分钟后自动清理。"""
+
+    TTL_SECONDS = 30 * 60
+    CLEANUP_INTERVAL = 5 * 60
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._data: Dict[str, Dict] = {}
+        self._start_cleanup()
+
+    def _start_cleanup(self):
+        def _loop():
+            while True:
+                time.sleep(self.CLEANUP_INTERVAL)
+                try:
+                    self._purge_stale()
+                except Exception as e:
+                    print(f"[TaskStore] cleanup error: {e}")
+
+        t = threading.Thread(target=_loop, daemon=True, name='task-store-cleanup')
+        t.start()
+
+    def _purge_stale(self):
+        now = time.time()
+        with self._lock:
+            to_delete = []
+            for tid, task in self._data.items():
+                terminal = task.get('status') in ('completed', 'failed', 'cancelled')
+                finished_at = task.get('_finished_at') or 0
+                if terminal and (now - finished_at) > self.TTL_SECONDS:
+                    to_delete.append(tid)
+            for tid in to_delete:
+                del self._data[tid]
+            if to_delete:
+                print(f"[TaskStore] purged {len(to_delete)} stale tasks, {len(self._data)} remain")
+
+    def _mark_finished(self, task: Dict):
+        if task.get('status') in ('completed', 'failed', 'cancelled'):
+            if '_finished_at' not in task:
+                task['_finished_at'] = time.time()
+
+    def set(self, task_id: str, task: Dict):
+        with self._lock:
+            self._data[task_id] = task
+            self._mark_finished(task)
+
+    def get(self, task_id: str) -> Optional[Dict]:
+        with self._lock:
+            return self._data.get(task_id)
+
+    def __contains__(self, task_id: str) -> bool:
+        with self._lock:
+            return task_id in self._data
+
+    def __setitem__(self, task_id: str, task: Dict):
+        self.set(task_id, task)
+
+    def __getitem__(self, task_id: str) -> Dict:
+        with self._lock:
+            return self._data[task_id]
+
+    def __delitem__(self, task_id: str):
+        with self._lock:
+            del self._data[task_id]
+
+    def items(self):
+        with self._lock:
+            return list(self._data.items())
+
+    def update(self, task_id: str, **kw):
+        with self._lock:
+            task = self._data.get(task_id)
+            if task is None:
+                return
+            task.update(kw)
+            self._mark_finished(task)
+
+
+tasks = _TaskStore()
+offline_packages = {}  # package_id -> package_dir
+_dep_check_cache = None  # {'ts': float, 'result': dict} 用于缓存依赖检测结果
 
 
 def allowed_file(filename):
@@ -249,16 +331,25 @@ def api_generate():
 
 
 
+_TASK_ID_RE = re.compile(r'^[0-9a-fA-F-]{36}$|^[0-9a-fA-F]{16,}$')
+
+
 @app.route('/api/output/<task_id>/<filename>')
 def api_output_file(task_id, filename):
     """API: 获取输出文件"""
+    if not _TASK_ID_RE.match(task_id) or '..' in filename or '/' in filename or '\\' in filename:
+        return jsonify({'error': 'invalid task_id or filename'}), 400
     output_dir = app.config['OUTPUT_FOLDER'] / task_id
+    if not output_dir.exists():
+        return jsonify({'error': 'task output not found'}), 404
     return send_from_directory(output_dir, filename)
 
 
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     """提供静态文件"""
+    if '..' in filename or filename.startswith('/') or filename.startswith('\\'):
+        return jsonify({'error': 'invalid path'}), 400
     return send_from_directory('static', filename)
 
 
@@ -323,7 +414,7 @@ def api_generate_package():
                 package_files.append({'name': file.name, 'size': file.stat().st_size})
         
         # 存储 package 映射
-        packages[task_id] = str(output_path.absolute())
+        offline_packages[task_id] = str(output_path.absolute())
         
         return jsonify({
             'success': True,
@@ -351,10 +442,10 @@ def api_download_package():
             return jsonify({'error': '缺少 package 参数'}), 400
         
         # 从映射中查找 package_dir
-        if package_id not in packages:
+        if package_id not in offline_packages:
             return jsonify({'error': f'安装包不存在：{package_id}'}), 404
         
-        package_path = Path(packages[package_id])
+        package_path = Path(offline_packages[package_id])
         if not package_path.exists():
             return jsonify({'error': f'包目录不存在：{package_path}'}), 404
         
@@ -1073,7 +1164,17 @@ def api_analyze_models():
 @app.route('/api/check-dependencies', methods=['GET'])
 @app.route('/api/check-dependencies')
 def api_check_dependencies():
-    """API: 检查依赖安装状态"""
+    """API: 检查依赖安装状态
+
+    ?force=1 强制刷新，跳过缓存（用于刚安装完依赖后验证）。
+    其它情况使用 30 秒缓存避免重复 import 10 个包的开销。
+    """
+    global _dep_check_cache
+    force = request.args.get('force') == '1'
+
+    if not force and _dep_check_cache and (time.time() - _dep_check_cache['ts']) < 30:
+        return jsonify(_dep_check_cache['result'])
+
     try:
         import sys
         import importlib.util
@@ -1254,6 +1355,7 @@ def api_check_dependencies():
         print(f"[依赖检测] 缺少必需：{required_missing if required_missing else '无'}")
         print(f"[依赖检测] ====== 检测完成 ======\n")
         
+        _dep_check_cache = {'ts': time.time(), 'result': result}
         return jsonify(result)
     
     except Exception as e:
@@ -1405,13 +1507,11 @@ def api_install_dependencies():
                         tasks[task_id]['status'] = 'failed'
                         tasks[task_id]['error'] = f"安装失败：{', '.join(failed)}"
                         print(f"[pip] ❌ 安装失败：{', '.join(failed)}")
+                # 安装完成后清除依赖检测缓存，下次请求可拿到最新状态
+                global _dep_check_cache
+                _dep_check_cache = None
         
-        thread = threading.Thread(target=install_task)
-        thread.daemon = True
-        thread.start()
-        
-        # 注册任务到 tasks 字典
-        from datetime import datetime
+        # 先注册任务到 tasks 注册表，再启动线程（避免竞态：后台线程先于 dict 写入）
         tasks[task_id] = {
             'status': 'running',
             'progress': 10,
@@ -1420,8 +1520,11 @@ def api_install_dependencies():
             'packages': packages,
             'start_time': datetime.now().isoformat()
         }
-        
         print(f"[pip 安装] ✅ 任务已注册：{task_id}")
+
+        thread = threading.Thread(target=install_task)
+        thread.daemon = True
+        thread.start()
         
         result_data = {
             'success': True,

@@ -803,6 +803,13 @@
                             <input type="number" value="${c.video_duration || 5}" min="1" max="30"
                                 onchange="onCardFieldChange('${c.id}', 'video_duration', this.value)"></div>
                     </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>每次生成视频数</label>
+                            <input type="number" value="${c.video_num_videos || 1}" min="1" max="4"
+                                onchange="onCardFieldChange('${c.id}', 'video_num_videos', this.value)"></div>
+                        <div class="form-group"></div>
+                    </div>
                     <h4>在线生成测试</h4>
                     <div class="test-generation-box" style="background:#f8f9fa;padding:14px;border-radius:8px;">
                         <div class="form-group">
